@@ -216,7 +216,7 @@ val_sources = os.path.join(DATA_DIR, 'sources_val.hkl')
 # Training parameters
 nt = 10
 nb_epoch = 150 # 150
-batch_size = 4 # 4
+batch_size = 2 # 4
 samples_per_epoch = 500 # 500
 N_seq_val = 100  # number of sequences to use for validation
 
@@ -237,5 +237,5 @@ if save_model:
 if tensorboard:
     callbacks.append(TensorBoard(log_dir=LOG_DIR, histogram_freq=1, write_graph=True, write_images=False))
 
-history = PPN.fit(train_generator, steps_per_epoch=samples_per_epoch / batch_size, epochs=nb_epoch, callbacks=None, 
+history = PPN.fit(train_generator, steps_per_epoch=samples_per_epoch / batch_size, epochs=nb_epoch, callbacks=callbacks, 
                 validation_data=val_generator, validation_steps=N_seq_val / batch_size)
