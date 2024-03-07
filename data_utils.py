@@ -1,7 +1,10 @@
+import os
 import hickle as hkl
 import numpy as np
 from keras import backend as K
 from keras.preprocessing.image import Iterator
+from keras.models import Model, model_from_json
+from keras.callbacks import Callback
 
 from keras import backend as K
 from kitti_settings import *
@@ -54,7 +57,7 @@ class SequenceGenerator(Iterator):
             current_index = (self.batch_index * self.batch_size) % self.n
             index_array, current_batch_size = next(self.index_generator), self.batch_size
         batch_x = np.zeros((current_batch_size, self.nt) + self.im_shape, np.float32)
-        for i, idx in enumerate(index_array[0]):
+        for i, idx in enumerate(index_array):
             idx = self.possible_starts[idx]
             batch_x[i] = self.preprocess(self.X[idx:idx+self.nt])
         if self.output_mode == 'error':  # model outputs errors, so y should be zeros
@@ -96,7 +99,7 @@ class SequenceGenerator(Iterator):
 #         self.layer_config = self.train_model.layers[1].get_config()
 #         self.layer_config['output_mode'] = 'prediction'
 #         self.data_format = self.layer_config['data_format'] if 'data_format' in self.layer_config else self.layer_config['dim_ordering']
-        
+
 #         input_shape = list(self.train_model.layers[0].batch_input_shape[1:])
 #         input_shape[0] = self.nt
 #         self.inputs = Input(shape=tuple(input_shape))
@@ -122,7 +125,7 @@ class SequenceGenerator(Iterator):
 #         self.train_model.load_weights(self.weights_file)
 #         test_weights_file = os.path.join(self.test_weights_path, 'sample_weights_' + str(epoch) + '.hdf5')
 #         self.train_model.save_weights(test_weights_file)
-        
+
 #         test_prednet = PredNet(weights=self.train_model.layers[1].get_weights(), **self.layer_config)
 #         predictions = test_prednet(self.inputs)
 #         self.test_model = Model(inputs=self.inputs, outputs=predictions)

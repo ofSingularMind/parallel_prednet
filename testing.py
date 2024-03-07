@@ -13,6 +13,103 @@ from kitti_settings import *
 import keras
 from keras import layers
 
+import keras
+from keras import backend as K
+import numpy as np
+from keras.layers import Input, Dense, Layer
+from keras.models import Model
+
+class MyLayer(Layer):
+
+    def __init__(self, output_dim, top_layer=False, **kwargs):
+        self.output_dim = output_dim
+        self.top_layer = top_layer
+        super(MyLayer, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        # Create a trainable weight variable for this layer.
+        self.kernel = self.add_weight(shape=(input_shape[1], self.output_dim),
+                                      initializer='uniform',
+                                      trainable=True)
+        super(MyLayer, self).build(input_shape)  # Be sure to call this somewhere!
+
+    def call(self, x):
+        if self.top_layer:
+            return 10*K.dot(x, self.kernel)
+        else:
+            return K.dot(x, self.kernel)
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], self.output_dim)
+
+# please instantiate a MyLayer object, create some dummy data to train on, and then wrap the layer in a model and fit
+inp = Input(shape=(3,))
+test_layer = MyLayer(output_dim=2, name="test_layer", top_layer=True)
+out = test_layer(inp)
+out = MyLayer(output_dim=2, name="a")(out)
+out = MyLayer(output_dim=2, name="b")(out)
+out = MyLayer(output_dim=2, name="c")(out)
+out = MyLayer(output_dim=2, name="d")(out)
+model = Model(inp, out)
+data = np.random.random((1000, 3))
+labels = np.random.random((1000, 2))
+model.compile(optimizer='adam', loss='mean_squared_error')
+model.fit(data, labels, epochs=10, batch_size=32)
+
+
+# # Construct the input layer with no definite frame size.
+# inp = layers.Input(shape=(None, 64, 64, 1))
+
+# # We will construct 3 `ConvLSTM2D` layers with batch normalization,
+# # followed by a `Conv3D` layer for the spatiotemporal outputs.
+# x = layers.ConvLSTM2D(
+#     filters=2,
+#     kernel_size=(5, 5),
+#     padding="same",
+#     return_sequences=True,
+#     activation="relu",
+# )(inp)
+
+# # Next, we will build the complete model and compile it.
+# model = keras.models.Model(inp, x)
+# model.compile(
+#     loss=keras.losses.binary_crossentropy,
+#     optimizer=keras.optimizers.Adam(),
+# )
+# print(model.summary())
+# nt = 1
+# a = model(np.random.random((4, nt, 64, 64, 1)).astype(np.float32))
+# print(a.shape)
+
+# Construct the input layer with no definite frame size.
+# inp = layers.Input(shape=(None, 64, 64, 1))
+
+# We will construct 3 `ConvLSTM2D` layers with batch normalization,
+# followed by a `Conv3D` layer for the spatiotemporal outputs.
+# x = layers.ConvLSTM2D(
+#     filters=2,
+#     kernel_size=(3, 3),
+#     padding="same",
+#     return_sequences=True,
+#     activation="relu",
+# )
+# y = layers.Conv2D(
+#     filters=1,
+#     kernel_size=(3, 3),
+#     padding="same",
+#     activation="relu",
+# )
+
+# Next, we will build the complete model and compile it.
+# model = keras.models.Model(inp, x)
+# model.compile(
+#     loss=keras.losses.binary_crossentropy,
+#     optimizer=keras.optimizers.Adam(),
+# )
+# print(model.summary())
+# nt = 1
+# a = y
+
 # # Construct the input layer with no definite frame size.
 # inp = layers.Input(shape=(None, 64, 64, 1))
 
@@ -43,19 +140,19 @@ from keras import layers
 
 # We will construct 3 `ConvLSTM2D` layers with batch normalization,
 # followed by a `Conv3D` layer for the spatiotemporal outputs.
-x = layers.ConvLSTM2D(
-    filters=2,
-    kernel_size=(3, 3),
-    padding="same",
-    return_sequences=True,
-    activation="relu",
-)
-y = layers.Conv2D(
-    filters=1,
-    kernel_size=(3, 3),
-    padding="same",
-    activation="relu",
-)
+# x = layers.ConvLSTM2D(
+#     filters=2,
+#     kernel_size=(3, 3),
+#     padding="same",
+#     return_sequences=True,
+#     activation="relu",
+# )
+# y = layers.Conv2D(
+#     filters=1,
+#     kernel_size=(3, 3),
+#     padding="same",
+#     activation="relu",
+# )
 
 # Next, we will build the complete model and compile it.
 # model = keras.models.Model(inp, x)
@@ -64,9 +161,9 @@ y = layers.Conv2D(
 #     optimizer=keras.optimizers.Adam(),
 # )
 # print(model.summary())
-nt = 1
-a = y(np.random.random((4, 64, 64, 1)).astype(np.float32))
-print(a[0].shape)
+# nt = 1
+# a = y(np.random.random((4, 64, 64, 1)).astype(np.float32))
+# print(a[0].shape)
 
 
 
