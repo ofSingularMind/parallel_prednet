@@ -88,7 +88,7 @@ class PredLayer(keras.layers.Layer):
         self.states['T'] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
         self.states['E'] = tf.zeros((batch_size, self.im_height, self.im_width, 2*self.output_channels))
         self.states['TD_Inp'] = None
-        self.states['L_Inp'] = None
+        self.states['P_Inp'] = None
 
     def clear_states(self):
         # Clear internal layer states
@@ -97,21 +97,22 @@ class PredLayer(keras.layers.Layer):
         self.states['T'] = None
         self.states['E'] = None
         self.states['TD_Inp'] = None
-        self.states['L_Inp'] = None
+        self.states['P_Inp'] = None
 
     def call(self, inputs=None):
         # print(f"Calling PredLayer... {self.name}")
         # PredLayer should update internal states when called with new TD and BU inputs, inputs[0] = BU, inputs[1] = TD
         
         # UPDATE REPRESENTATION
+        self.states['P_Inp'] = inputs[2]
         if self.top_layer:
-            R_inp = keras.layers.Concatenate()([self.states['E'], self.states['R']])
+            R_inp = keras.layers.Concatenate()([self.states['E'], self.states['R'], self.states['P_Inp']])
             R_inp = tf.expand_dims(R_inp, axis=1)
             self.states['R'] = self.representation(R_inp)
         else:
             self.states['TD_Inp'] = self.upsample(inputs[1])
             # self.states['L_Inp'] = self.upsample(inputs[2])
-            R_inp = keras.layers.Concatenate()([self.states['E'], self.states['R'], self.states['TD_Inp']])
+            R_inp = keras.layers.Concatenate()([self.states['E'], self.states['R'], self.states['TD_Inp'], self.states['P_Inp']])
             R_inp = tf.expand_dims(R_inp, axis=1)
             self.states['R'] = self.representation(R_inp)
         
@@ -140,17 +141,23 @@ class ParaPredNet(keras.Model):
         self.im_height = 128
         self.im_width = 160
         self.num_layers = 4
-        self.layer_input_channels = [3, 2*3, 2*48, 2*96]
-        self.layer_output_channels = [3, 48, 96, 192]
+        self.layer_output_channels = [3, 6, 12, 24]
+        C = self.layer_output_channels
+        self.layer_input_channels = [C[0], 2*C[0], 2*C[1], 2*C[2]]
         self.layer_weights = [1, 0.1, 0.1, 0.1]
         self.time_loss_weights = 1./ (self.nt - 1) * np.ones((self.nt,1))  # equally weight all timesteps except the first
         self.time_loss_weights[0] = 0
         self.output_mode = output_mode
-        self.panLayer = PanRepresentation(sum(self.layer_output_channels))
+        self.panLayer = PanRepresentation(sum(self.layer_output_channels), name='PanLayer')
         temp = tf.random.uniform((self.batch_size, self.nt, self.im_height, self.im_width, 2*sum(self.layer_output_channels)), maxval=255, dtype=tf.float32)
-        temp_out = self.panLayer(temp)
+        temp_P = self.panLayer(temp)
         self.predlayers = []
         for l, c in enumerate(self.layer_output_channels):
+            P_idx_start = 0 if l == 0 else sum(self.layer_output_channels[:l])
+            P_idx_end = sum(self.layer_output_channels[:l+1])
+            l_temp_P = temp_P[..., P_idx_start:P_idx_end]
+            for _ in range(l):
+                l_temp_P = keras.layers.MaxPool2D((2, 2))(l_temp_P)
             self.predlayers.append(PredLayer(self.im_height // 2**l, self.im_width // 2**l, c, bottom_layer=(l==0), top_layer=(l==self.num_layers-1), name=f'PredLayer_{l}'))
             # initialize layer states
             self.predlayers[-1].initialize_states(self.batch_size)
@@ -163,31 +170,46 @@ class ParaPredNet(keras.Model):
                 temp_TD = tf.random.uniform((self.batch_size, self.im_height // 2**(l+1), self.im_width // 2**(l+1), self.layer_output_channels[l+1]), maxval=255, dtype=tf.float32)
             else:
                 temp_TD = None
-            temp_out = self.predlayers[l]([temp_BU, temp_TD])
+            temp_out = self.predlayers[l]([temp_BU, temp_TD, l_temp_P])
             
     def call(self, inputs):
-        # print("Calling PredNet...")
         # inputs will be a sequence of video frames
 
         # Initialize layer states
         for layer in self.predlayers:
             layer.initialize_states(self.batch_size)
+        self.panLayer.initialize_states((self.batch_size, self.im_height, self.im_width, 2*sum(self.layer_output_channels)))
         
         # Iterate through the time-steps manually
         for t in range(self.nt):
-            # print(f"...Time-step: {t}")
             # Starting from the top layer
+            all_P_inp = self.panLayer.states['P']
             for l, layer in reversed(list(enumerate(self.predlayers))):
+                # BU_inp = bottom-up input, TD_inp = top-down input, P_inp = pan-hierarchical input
+                
+                P_idx_start = 0 if l == 0 else sum(self.layer_output_channels[:l])
+                P_idx_end = sum(self.layer_output_channels[:l+1])
+                P_inp = all_P_inp[..., P_idx_start:P_idx_end]
+                for _ in range(l):
+                    P_inp = keras.layers.MaxPool2D((2, 2))(P_inp)
+                
+                # Top layer
                 if l == self.num_layers - 1:
-                    error = layer([self.predlayers[l-1].states['E'], None])
+                    BU_inp = self.predlayers[l-1].states['E']
+                    TD_inp = None
+                    error = layer([BU_inp, TD_inp, P_inp])
+                # Middle layers
                 elif l < self.num_layers - 1 and l > 0:
                     BU_inp = self.predlayers[l-1].states['E'] # TODO: Confirm that this is appropriate iteration's data to compare
                     TD_inp = self.predlayers[l+1].states['R']
-                    error = layer([BU_inp, TD_inp]) #, self.predlayers[l+1].states['L_Inp']])
+                    error = layer([BU_inp, TD_inp, P_inp]) #, self.predlayers[l+1].states['L_Inp']])
+                # Bottom layer
                 else:
                     BU_inp = inputs[:,t,...] # (self.batch_size, self.im_height, self.im_width, self.layer_input_channels[0])
                     TD_inp = self.predlayers[l+1].states['R']
-                    error = layer([BU_inp, TD_inp]) #, self.predlayers[l+1].states['L_Inp']])
+                    error = layer([BU_inp, TD_inp, P_inp]) #, self.predlayers[l+1].states['L_Inp']])
+                
+                # Update outputs
                 if self.output_mode == 'Error':
                     layer_error = self.layer_weights[l] * K.mean(K.batch_flatten(error), axis=-1, keepdims=True) # (batch_size, 1)
                     all_error = layer_error if l == self.num_layers - 1 else tf.add(all_error, layer_error) # (batch_size, 1)
@@ -201,6 +223,15 @@ class ParaPredNet(keras.Model):
                     all_predictions = tf.expand_dims(self.predlayers[0].states['P'], axis=1)
                 else:
                     all_predictions = tf.concat([all_predictions, tf.expand_dims(self.predlayers[0].states['P'], axis=1)], axis=1)
+            
+            # Update pan-hierarchical states
+            for l in reversed(range(self.num_layers)):
+                e = self.predlayers[l].states['E']
+                for _ in range(l):
+                    e = keras.layers.UpSampling2D((2, 2))(e)
+                all_e = e if l == self.num_layers - 1 else tf.concat([all_e, e], axis=-1)
+            all_e = tf.expand_dims(all_e, axis=1)
+            self.panLayer(all_e)
 
         if self.output_mode == 'Error':
             output = all_errors_over_time
@@ -210,14 +241,25 @@ class ParaPredNet(keras.Model):
         # Clear states from computation graph
         for layer in self.predlayers:
             layer.clear_states()
+        self.panLayer.clear_states()
                 
         return output
     
 class PanRepresentation(keras.layers.Layer):
-    def __init__(self, output_channels):
-        super().__init__()
+    def __init__(self, output_channels, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         # Add ConvLSTM, being sure to pass previous states in OR use stateful=True
         self.conv_lstm = layers.ConvLSTM2D(output_channels, (3, 3), padding='same', return_sequences=False, activation='relu')
+        self.states = {'P': None}
 
     def call(self, inputs):
-        return self.conv_lstm(inputs)
+        self.states['P'] = self.conv_lstm(inputs)
+        return self.states['P']
+
+    def initialize_states(self, shape):
+        self.states['P'] = tf.zeros(shape)
+    
+    def clear_states(self):
+        self.states['P'] = None
+
+    
