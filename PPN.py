@@ -146,8 +146,8 @@ class ParaPredNet(keras.Model):
         self.im_height = 128
         self.im_width = 160
         self.num_layers = 4
-        self.layer_input_channels = [3, 4*3, 4*48, 4*96] # The 4x comes from the pos/neg error channels and pos/neg error-delta channels
-        self.layer_output_channels = [3, 48, 96, 192]
+        self.layer_output_channels = [3, 24, 48, 96]
+        self.layer_input_channels = [3, 4*3, 4*24, 4*48] # The 4x comes from the pos/neg error channels and pos/neg error-delta channels
         self.layer_weights = [1, 0.1, 0.1, 0.1]
         self.time_loss_weights = 1./ (self.nt - 1) * np.ones((self.nt,1))  # equally weight all timesteps except the first
         self.time_loss_weights[0] = 0

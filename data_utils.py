@@ -98,10 +98,10 @@ def predict(x, model, batch_size=2):
 class MyCustomCallback(Callback):
     def __init__(self, batch_size=4, nt=10):
         super(MyCustomCallback, self).__init__()
-        self.n_plot = 4 # 40
-        self.batch_size = 4
+        self.n_plot = batch_size # 40
+        self.batch_size = batch_size
         self.nt = nt
-        self.plot_nt = 4
+        self.plot_nt = nt
         self.weights_file = os.path.join(WEIGHTS_DIR, 'tensorflow_weights/para_prednet_kitti_weights.hdf5')
         self.test_file = os.path.join(DATA_DIR, 'X_test.hkl')
         self.test_sources = os.path.join(DATA_DIR, 'sources_test.hkl')
