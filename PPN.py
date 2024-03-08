@@ -86,7 +86,10 @@ class PredLayer(keras.layers.Layer):
         self.states['R'] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
         self.states['P'] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
         self.states['T'] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
-        self.states['E'] = tf.zeros((batch_size, self.im_height, self.im_width, 2*self.output_channels))
+        self.states['E'] = tf.zeros((batch_size, self.im_height, self.im_width, 4*self.output_channels))
+        self.states['E_current'] = tf.zeros((batch_size, self.im_height, self.im_width, 2*self.output_channels))
+        self.states['E_last'] = tf.zeros((batch_size, self.im_height, self.im_width, 2*self.output_channels))
+        self.states['E_delta'] = tf.zeros((batch_size, self.im_height, self.im_width, 2*self.output_channels))
         self.states['TD_Inp'] = None
         self.states['L_Inp'] = None
 
@@ -126,7 +129,10 @@ class PredLayer(keras.layers.Layer):
             self.states['T'] = self.target(target)
         
         # COMPUTE ERROR
-        self.states['E'] = self.error(self.states['P'], self.states['T'])
+        self.states['E_current'] = self.error(self.states['P'], self.states['T'])
+        self.states['E_delta'] = self.states['E_current'] - self.states['E_last']
+        self.states['E_last'] = self.states['E_current']
+        self.states['E'] = keras.layers.Concatenate(axis=-1)([self.states['E_current'], self.states['E_delta']])
 
         # Print out shapes of all states:
         # print(f"R: {self.states['R'].shape}, P: {self.states['P'].shape}, T: {self.states['T'].shape}, E: {self.states['E'].shape}")
@@ -140,7 +146,7 @@ class ParaPredNet(keras.Model):
         self.im_height = 128
         self.im_width = 160
         self.num_layers = 4
-        self.layer_input_channels = [3, 2*3, 2*48, 2*96]
+        self.layer_input_channels = [3, 4*3, 4*48, 4*96] # The 4x comes from the pos/neg error channels and pos/neg error-delta channels
         self.layer_output_channels = [3, 48, 96, 192]
         self.layer_weights = [1, 0.1, 0.1, 0.1]
         self.time_loss_weights = 1./ (self.nt - 1) * np.ones((self.nt,1))  # equally weight all timesteps except the first
