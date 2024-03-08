@@ -1,0 +1,6 @@
+Things to try:
+
+Pass L+1 predictions down, instead of representation
+Include in the error signal a second set of channels for delta error
+Include parallel Prednets operating on different data image channels (depth, oFlow)
+Try including more channels in the input (depth, oFlow), without parallel Prednets

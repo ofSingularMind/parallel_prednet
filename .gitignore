@@ -9,7 +9,9 @@ __pycache__/
 # Video and data folders
 kitti_data/
 kitti_results/
+kitti_results_archive/
 model_data_keras*/
+*.hdf5
 
 # Distribution / packaging
 .Python

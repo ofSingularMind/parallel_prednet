@@ -7,25 +7,10 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # or '2' to filter out INFO messages t
 
 import numpy as np
 import tensorflow as tf
-import shutil
 import keras
 from keras import backend as K
 from keras import layers
 from kitti_settings import *
-from data_utils import SequenceGenerator#, MyCustomCallback
-from keras.callbacks import LearningRateScheduler, ModelCheckpoint, TensorBoard
-
-# if results directory already exists, then delete it
-if os.path.exists(RESULTS_SAVE_DIR): shutil.rmtree(RESULTS_SAVE_DIR)
-if os.path.exists(LOG_DIR): shutil.rmtree(LOG_DIR)
-os.mkdir(LOG_DIR)
-
-save_model = True  # if weights will be saved
-plot_intermediate = False  # if the intermediate model predictions will be plotted
-tensorboard = True  # if the Tensorboard callback will be used
-weights_checkpoint_file = os.path.join(WEIGHTS_DIR, 'tensorflow_weights/para_prednet_kitti_weights.hdf5')  # where weights are loaded prior to training
-weights_file = os.path.join(WEIGHTS_DIR, 'tensorflow_weights/para_prednet_kitti_weights.hdf5')  # where weights will be saved
-json_file = os.path.join(WEIGHTS_DIR, 'para_prednet_kitti_model_ALEX.json')
 
 
 class Target(keras.layers.Layer):
@@ -81,6 +66,7 @@ class PredLayer(keras.layers.Layer):
         super(PredLayer, self).__init__(*args, **kwargs)
         self.im_height = im_height
         self.im_width = im_width
+        self.pixel_max = 1
         self.output_channels = output_channels
         self.top_layer = top_layer
         self.bottom_layer = bottom_layer
@@ -117,14 +103,7 @@ class PredLayer(keras.layers.Layer):
         # print(f"Calling PredLayer... {self.name}")
         # PredLayer should update internal states when called with new TD and BU inputs, inputs[0] = BU, inputs[1] = TD
         
-        # DEFINE TARGETS
-        target = inputs[0] # (batch_size, im_height, im_width, output_channels)
-        if self.bottom_layer:
-            self.states['T'] = target
-        else:
-            self.states['T'] = self.target(target)
-        
-        # UPDATE STATES
+        # UPDATE REPRESENTATION
         if self.top_layer:
             R_inp = keras.layers.Concatenate()([self.states['E'], self.states['R']])
             R_inp = tf.expand_dims(R_inp, axis=1)
@@ -135,16 +114,27 @@ class PredLayer(keras.layers.Layer):
             R_inp = keras.layers.Concatenate()([self.states['E'], self.states['R'], self.states['TD_Inp']])
             R_inp = tf.expand_dims(R_inp, axis=1)
             self.states['R'] = self.representation(R_inp)
-        self.states['P'] = self.prediction(self.states['R'])    
+        
+        # FORM PREDICTION
+        self.states['P'] = K.minimum(self.prediction(self.states['R']), self.pixel_max)
+
+        # RETRIEVE TARGET
+        target = inputs[0] # (batch_size, im_height, im_width, output_channels)
+        if self.bottom_layer:
+            self.states['T'] = target
+        else:
+            self.states['T'] = self.target(target)
+        
+        # COMPUTE ERROR
         self.states['E'] = self.error(self.states['P'], self.states['T'])
 
         # Print out shapes of all states:
         # print(f"R: {self.states['R'].shape}, P: {self.states['P'].shape}, T: {self.states['T'].shape}, E: {self.states['E'].shape}")
         return self.states['E']
 
-class PredNet(keras.Model):
-    def __init__(self, batch_size=4, nt=10, *args, **kwargs):
-        super(PredNet, self).__init__(*args, **kwargs)
+class ParaPredNet(keras.Model):
+    def __init__(self, batch_size=4, nt=10, output_mode='Error', *args, **kwargs):
+        super(ParaPredNet, self).__init__(*args, **kwargs)
         self.batch_size = batch_size
         self.nt = nt
         self.im_height = 128
@@ -155,6 +145,7 @@ class PredNet(keras.Model):
         self.layer_weights = [1, 0.1, 0.1, 0.1]
         self.time_loss_weights = 1./ (self.nt - 1) * np.ones((self.nt,1))  # equally weight all timesteps except the first
         self.time_loss_weights[0] = 0
+        self.output_mode = output_mode
         self.predlayers = []
         for l, c in enumerate(self.layer_output_channels):
             self.predlayers.append(PredLayer(self.im_height // 2**l, self.im_width // 2**l, c, bottom_layer=(l==0), top_layer=(l==self.num_layers-1), name=f'PredLayer_{l}'))
@@ -172,7 +163,7 @@ class PredNet(keras.Model):
             temp_out = self.predlayers[l]([temp_BU, temp_TD])
             
     def call(self, inputs):
-        print("Calling PredNet...")
+        # print("Calling PredNet...")
         # inputs will be a sequence of video frames
 
         # Initialize layer states
@@ -197,45 +188,18 @@ class PredNet(keras.Model):
                 layer_error = self.layer_weights[l] * K.mean(K.batch_flatten(error), axis=-1, keepdims=True) # (batch_size, 1)
                 all_error = layer_error if l == self.num_layers - 1 else tf.add(all_error, layer_error) # (batch_size, 1)
             all_errors_over_time = self.time_loss_weights[t] * all_error if t == 0 else tf.add(all_errors_over_time, self.time_loss_weights[t] * all_error) # (batch_size, 1)
+            if t == 0:
+                all_predictions = tf.expand_dims(self.predlayers[0].states['P'], axis=1)
+            else:
+                all_predictions = tf.concat([all_predictions, tf.expand_dims(self.predlayers[0].states['P'], axis=1)], axis=1)
 
+        if self.output_mode == 'Error':
+            output = all_errors_over_time
+        elif self.output_mode == 'Prediction':
+            output = all_predictions
+        
         # Clear states from computation graph
         for layer in self.predlayers:
             layer.clear_states()
                 
-        return all_errors_over_time
-
-
-# Run code
-
-# Data files
-train_file = os.path.join(DATA_DIR, 'X_train.hkl')
-train_sources = os.path.join(DATA_DIR, 'sources_train.hkl')
-val_file = os.path.join(DATA_DIR, 'X_val.hkl')
-val_sources = os.path.join(DATA_DIR, 'sources_val.hkl')
-    
-# Training parameters
-nt = 10
-nb_epoch = 150 # 150
-batch_size = 2 # 4
-samples_per_epoch = 500 # 500
-N_seq_val = 100  # number of sequences to use for validation
-
-train_generator = SequenceGenerator(train_file, train_sources, nt, batch_size=batch_size, shuffle=True)
-val_generator = SequenceGenerator(val_file, val_sources, nt, batch_size=batch_size, N_seq=N_seq_val)
-
-PPN = PredNet(batch_size=batch_size, nt=nt)
-PPN.compile(optimizer='adam', loss='mean_squared_error')
-print("PredNet compiled...")
-
-lr_schedule = lambda epoch: 0.001 if epoch < 75 else 0.0001    # start with lr of 0.001 and then drop to 0.0001 after 75 epochs
-callbacks = [LearningRateScheduler(lr_schedule)]
-if save_model:
-    if not os.path.exists(WEIGHTS_DIR): os.mkdir(WEIGHTS_DIR)
-    callbacks.append(ModelCheckpoint(filepath=weights_file, monitor='val_loss', save_best_only=True))
-# if plot_intermediate:
-#     callbacks.append(MyCustomCallback())
-if tensorboard:
-    callbacks.append(TensorBoard(log_dir=LOG_DIR, histogram_freq=1, write_graph=True, write_images=False))
-
-history = PPN.fit(train_generator, steps_per_epoch=samples_per_epoch / batch_size, epochs=nb_epoch, callbacks=callbacks, 
-                validation_data=val_generator, validation_steps=N_seq_val / batch_size)
+        return output
