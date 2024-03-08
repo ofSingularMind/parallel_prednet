@@ -191,16 +191,22 @@ class ParaPredNet(keras.Model):
                     BU_inp = inputs[:,t,...] # (self.batch_size, self.im_height, self.im_width, self.layer_input_channels[0])
                     TD_inp = self.predlayers[l+1].states['R']
                     error = layer([BU_inp, TD_inp]) #, self.predlayers[l+1].states['L_Inp']])
-                layer_error = self.layer_weights[l] * K.mean(K.batch_flatten(error), axis=-1, keepdims=True) # (batch_size, 1)
-                all_error = layer_error if l == self.num_layers - 1 else tf.add(all_error, layer_error) # (batch_size, 1)
-            all_errors_over_time = self.time_loss_weights[t] * all_error if t == 0 else tf.add(all_errors_over_time, self.time_loss_weights[t] * all_error) # (batch_size, 1)
-            if t == 0:
-                all_predictions = tf.expand_dims(self.predlayers[0].states['P'], axis=1)
-            else:
-                all_predictions = tf.concat([all_predictions, tf.expand_dims(self.predlayers[0].states['P'], axis=1)], axis=1)
+                if self.output_mode == 'Error':
+                    layer_error = self.layer_weights[l] * K.mean(K.batch_flatten(error), axis=-1, keepdims=True) # (batch_size, 1)
+                    all_error = layer_error if l == self.num_layers - 1 else tf.add(all_error, layer_error) # (batch_size, 1)
+            if self.output_mode == 'Error':
+                if t == 0:
+                    all_errors_over_time = self.time_loss_weights[t] * all_error
+                else:
+                    all_errors_over_time = tf.add(all_errors_over_time, self.time_loss_weights[t] * all_error) # (batch_size, 1)
+            elif self.output_mode == 'Prediction':    
+                if t == 0:
+                    all_predictions = tf.expand_dims(self.predlayers[0].states['P'], axis=1)
+                else:
+                    all_predictions = tf.concat([all_predictions, tf.expand_dims(self.predlayers[0].states['P'], axis=1)], axis=1)
 
         if self.output_mode == 'Error':
-            output = all_errors_over_time
+            output = all_errors_over_time * 100
         elif self.output_mode == 'Prediction':
             output = all_predictions
         
