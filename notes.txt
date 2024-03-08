@@ -2,5 +2,9 @@ Things to try:
 
 Pass L+1 predictions down, instead of representation
 Include in the error signal a second set of channels for delta error
-Include parallel Prednets operating on different data image channels (depth, oFlow)
 Try including more channels in the input (depth, oFlow), without parallel Prednets
+Replace ConvLSTM with other more powerful models
+Try custom dataset with moving objects
+Include parallel Prednets operating on different data image channels (depth, oFlow)
+Add Pan-Hierarchical Predictive Engine
+Try different model weights for the different time-steps, at least for the first step, and subsequent steps. The idea is that the first step should bring the representation closely to the previous frame, and subsequent ones should operate on the differences between frames.
