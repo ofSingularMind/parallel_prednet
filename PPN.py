@@ -146,6 +146,9 @@ class ParaPredNet(keras.Model):
         self.time_loss_weights = 1./ (self.nt - 1) * np.ones((self.nt,1))  # equally weight all timesteps except the first
         self.time_loss_weights[0] = 0
         self.output_mode = output_mode
+        self.panLayer = PanRepresentation(sum(self.layer_output_channels))
+        temp = tf.random.uniform((self.batch_size, self.nt, self.im_height, self.im_width, 2*sum(self.layer_output_channels)), maxval=255, dtype=tf.float32)
+        temp_out = self.panLayer(temp)
         self.predlayers = []
         for l, c in enumerate(self.layer_output_channels):
             self.predlayers.append(PredLayer(self.im_height // 2**l, self.im_width // 2**l, c, bottom_layer=(l==0), top_layer=(l==self.num_layers-1), name=f'PredLayer_{l}'))
@@ -185,13 +188,19 @@ class ParaPredNet(keras.Model):
                     BU_inp = inputs[:,t,...] # (self.batch_size, self.im_height, self.im_width, self.layer_input_channels[0])
                     TD_inp = self.predlayers[l+1].states['R']
                     error = layer([BU_inp, TD_inp]) #, self.predlayers[l+1].states['L_Inp']])
-                layer_error = self.layer_weights[l] * K.mean(K.batch_flatten(error), axis=-1, keepdims=True) # (batch_size, 1)
-                all_error = layer_error if l == self.num_layers - 1 else tf.add(all_error, layer_error) # (batch_size, 1)
-            all_errors_over_time = self.time_loss_weights[t] * all_error if t == 0 else tf.add(all_errors_over_time, self.time_loss_weights[t] * all_error) # (batch_size, 1)
-            if t == 0:
-                all_predictions = tf.expand_dims(self.predlayers[0].states['P'], axis=1)
-            else:
-                all_predictions = tf.concat([all_predictions, tf.expand_dims(self.predlayers[0].states['P'], axis=1)], axis=1)
+                if self.output_mode == 'Error':
+                    layer_error = self.layer_weights[l] * K.mean(K.batch_flatten(error), axis=-1, keepdims=True) # (batch_size, 1)
+                    all_error = layer_error if l == self.num_layers - 1 else tf.add(all_error, layer_error) # (batch_size, 1)
+            if self.output_mode == 'Error':
+                if t == 0:
+                    all_errors_over_time = self.time_loss_weights[t] * all_error
+                else:
+                    all_errors_over_time = tf.add(all_errors_over_time, self.time_loss_weights[t] * all_error) # (batch_size, 1)
+            elif self.output_mode == 'Prediction':    
+                if t == 0:
+                    all_predictions = tf.expand_dims(self.predlayers[0].states['P'], axis=1)
+                else:
+                    all_predictions = tf.concat([all_predictions, tf.expand_dims(self.predlayers[0].states['P'], axis=1)], axis=1)
 
         if self.output_mode == 'Error':
             output = all_errors_over_time
@@ -203,3 +212,12 @@ class ParaPredNet(keras.Model):
             layer.clear_states()
                 
         return output
+    
+class PanRepresentation(keras.layers.Layer):
+    def __init__(self, output_channels):
+        super().__init__()
+        # Add ConvLSTM, being sure to pass previous states in OR use stateful=True
+        self.conv_lstm = layers.ConvLSTM2D(output_channels, (3, 3), padding='same', return_sequences=False, activation='relu')
+
+    def call(self, inputs):
+        return self.conv_lstm(inputs)
