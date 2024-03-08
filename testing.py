@@ -18,6 +18,7 @@ from keras import backend as K
 import numpy as np
 from keras.layers import Input, Dense, Layer
 from keras.models import Model
+from PPN import ParaPredNet
 
 # Data files
 train_file = os.path.join(DATA_DIR, 'X_train.hkl')
@@ -80,19 +81,6 @@ def hickle_swap(data_files):
                 print("Error installing new package.")
 
 def test_hickle(data_files):
-    # uninstall_result = subprocess.call(["pip", "uninstall", "hickle"])
-    # if uninstall_result == 0:
-    #     print("Old package uninstalled successfully.")
-    # else:
-    #     print("Error uninstalling old package.")
-
-    # install_result = subprocess.call(["pip", "install", "hickle"])
-    # if install_result == 0:
-    #     print("New package installed successfully.")
-    # else:
-    #     print("Error installing new package.")
-    
-    # ensure each file can load in hickle==3.4.9
     for data_file in data_files:
         with open(data_file, 'r') as file:
             print("opens file")
@@ -137,12 +125,24 @@ def grab_single_data_and_save(data_file):
 # rehickling(files, file_names)
 # hickle_swap(files)
 # test_hickle(files)
-grab_data_and_save(files)
+# grab_data_and_save(files)
 # grab_single_data_and_save(train_file)
 
+n_plot = 4 # 40
+batch_size = 4
+nt = 4
+plot_nt = 4
+weights_file = os.path.join(WEIGHTS_DIR, 'tensorflow_weights/para_prednet_kitti_weights.hdf5')
+test_file = os.path.join(DATA_DIR, 'X_test.hkl')
+test_sources = os.path.join(DATA_DIR, 'sources_test.hkl')
 
+test_PPN = ParaPredNet(batch_size=batch_size, nt=nt)
+test_PPN.output_mode = 'Prediction'
+test_PPN.compile(optimizer='adam', loss='mean_squared_error')
+test_PPN.build(input_shape=(None, nt, 128, 160, 3))
+print("ParaPredNet compiled...")
 
-
+print(test_PPN.summary())
 
 
 
