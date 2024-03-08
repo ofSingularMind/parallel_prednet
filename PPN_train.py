@@ -41,7 +41,7 @@ val_sources = os.path.join(DATA_DIR, 'sources_val.hkl')
 nt = 5
 nb_epoch = 150 # 150
 batch_size = 4 # 4
-samples_per_epoch = 200 # 500
+samples_per_epoch = 100 # 500
 N_seq_val = 20  # number of sequences to use for validation
 
 train_generator = SequenceGenerator(train_file, train_sources, nt, batch_size=batch_size, shuffle=True)
