@@ -152,7 +152,7 @@ class ParaPredNet(keras.Model):
             if i == 0:
                 self.layer_input_channels[i] = self.layer_output_channels[i]
             else:
-                self.layer_input_channels[i] = 2 * self.layer_output_channels[i-1]
+                self.layer_input_channels[i] = 4 * self.layer_output_channels[i-1]
         self.layer_weights = [1] + [0.1] * (self.num_layers - 1)  # weighting for each layer's contribution to the loss
         self.time_loss_weights = 1./ (self.nt - 1) * np.ones((self.nt,1))  # equally weight all timesteps except the first
         self.time_loss_weights[0] = 0
