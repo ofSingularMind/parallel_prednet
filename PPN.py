@@ -139,10 +139,15 @@ class ParaPredNet(keras.Model):
         self.nt = nt
         self.im_height = 128
         self.im_width = 160
-        self.num_layers = 4
-        self.layer_input_channels = [3, 2*3, 2*48, 2*96]
         self.layer_output_channels = [3, 48, 96, 192]
-        self.layer_weights = [1, 1, 1, 1]
+        self.num_layers = len(self.layer_output_channels)
+        self.layer_input_channels = [0] * self.num_layers
+        for i in range(len(self.layer_output_channels)):
+            if i == 0:
+                self.layer_input_channels[i] = self.layer_output_channels[i]
+            else:
+                self.layer_input_channels[i] = 2 * self.layer_output_channels[i-1]
+        self.layer_weights = [1] + [0.1] * (self.num_layers - 1)  # weighting for each layer's contribution to the loss
         self.time_loss_weights = 1./ (self.nt - 1) * np.ones((self.nt,1))  # equally weight all timesteps except the first
         self.time_loss_weights[0] = 0
         self.output_mode = output_mode
@@ -176,7 +181,9 @@ class ParaPredNet(keras.Model):
             # Starting from the top layer
             for l, layer in reversed(list(enumerate(self.predlayers))):
                 if l == self.num_layers - 1:
-                    error = layer([self.predlayers[l-1].states['E'], None])
+                    BU_inp = self.predlayers[l-1].states['E']
+                    TD_inp = None
+                    error = layer([BU_inp, TD_inp])
                 elif l < self.num_layers - 1 and l > 0:
                     BU_inp = self.predlayers[l-1].states['E'] # TODO: Confirm that this is appropriate iteration's data to compare
                     TD_inp = self.predlayers[l+1].states['R']

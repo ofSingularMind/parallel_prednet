@@ -28,6 +28,7 @@ tensorboard = True  # if the Tensorboard callback will be used
 weights_checkpoint_file = os.path.join(WEIGHTS_DIR, 'tensorflow_weights/para_prednet_kitti_weights.hdf5')  # where weights are loaded prior to training
 weights_file = os.path.join(WEIGHTS_DIR, 'tensorflow_weights/para_prednet_kitti_weights.hdf5')  # where weights will be saved
 json_file = os.path.join(WEIGHTS_DIR, 'para_prednet_kitti_model_ALEX.json')
+if os.path.exists(weights_file): os.remove(weights_file) # Careful: this will delete the weights file
 
 # Run code
 
