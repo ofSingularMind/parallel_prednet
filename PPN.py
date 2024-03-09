@@ -102,31 +102,40 @@ class PredLayer(keras.layers.Layer):
         self.states['TD_Inp'] = None
         self.states['L_Inp'] = None
 
-    def call(self, inputs=None):
+    def call(self, inputs=None, direction='top_down'):
         # print(f"Calling PredLayer... {self.name}")
         # PredLayer should update internal states when called with new TD and BU inputs, inputs[0] = BU, inputs[1] = TD
         
-        # UPDATE REPRESENTATION
-        if self.top_layer:
-            R_inp = keras.layers.Concatenate()([self.states['E'], self.states['R']])
-            R_inp = tf.expand_dims(R_inp, axis=1)
-            self.states['R'] = self.representation(R_inp)
-        else:
-            self.states['TD_Inp'] = self.upsample(inputs[1])
-            # self.states['L_Inp'] = self.upsample(inputs[2])
-            R_inp = keras.layers.Concatenate()([self.states['E'], self.states['R'], self.states['TD_Inp']])
-            R_inp = tf.expand_dims(R_inp, axis=1)
-            self.states['R'] = self.representation(R_inp)
-        
-        # FORM PREDICTION
-        self.states['P'] = K.minimum(self.prediction(self.states['R']), self.pixel_max)
+        if direction == 'top_down':
+            # UPDATE REPRESENTATION
+            if self.top_layer:
+                R_inp = keras.layers.Concatenate()([self.states['E'], self.states['R']])
+                R_inp = tf.expand_dims(R_inp, axis=1)
+                self.states['R'] = self.representation(R_inp)
+            else:
+                self.states['TD_Inp'] = self.upsample(inputs[1])
+                # self.states['L_Inp'] = self.upsample(inputs[2])
+                R_inp = keras.layers.Concatenate()([self.states['E'], self.states['R'], self.states['TD_Inp']])
+                R_inp = tf.expand_dims(R_inp, axis=1)
+                self.states['R'] = self.representation(R_inp)
+            
+            # FORM PREDICTION
+            self.states['P'] = K.minimum(self.prediction(self.states['R']), self.pixel_max)
 
-        # RETRIEVE TARGET
-        target = inputs[0] # (batch_size, im_height, im_width, output_channels)
-        if self.bottom_layer:
-            self.states['T'] = target
-        else:
-            self.states['T'] = self.target(target)
+        elif direction == 'bottom_up':
+            # RETRIEVE TARGET (bottom-up input)
+            target = inputs[0] # (batch_size, im_height, im_width, output_channels)
+            if self.bottom_layer:
+                self.states['T'] = target
+            else:
+                self.states['T'] = self.target(target)
+            
+            # COMPUTE ERROR
+            self.states['E'] = self.error(self.states['P'], self.states['T'])
+
+            # Print out shapes of all states:
+            # print(f"R: {self.states['R'].shape}, P: {self.states['P'].shape}, T: {self.states['T'].shape}, E: {self.states['E'].shape}")
+            return self.states['E']
         
         # COMPUTE ERROR
         self.states['E_current'] = self.error(self.states['P'], self.states['T'])
@@ -183,24 +192,36 @@ class ParaPredNet(keras.Model):
         
         # Iterate through the time-steps manually
         for t in range(self.nt):
-            # print(f"...Time-step: {t}")
-            # Starting from the top layer
+            # Perform top-down pass, starting from the top layer
             for l, layer in reversed(list(enumerate(self.predlayers))):
+                # Top layer
                 if l == self.num_layers - 1:
+                    BU_inp = None
+                    TD_inp = None
+                    layer([BU_inp, TD_inp], direction='top_down')
+                # Bottom and Middle layers
+                else:
+                    BU_inp = None
+                    TD_inp = self.predlayers[l+1].states['R']
+                    layer([BU_inp, TD_inp], direction='top_down')
+            # Perform bottom-up pass, starting from the bottom layer
+            for l, layer in list(enumerate(self.predlayers)):
+                # Bottom layer
+                if l == 0:
+                    BU_inp = inputs[:,t,...] # (self.batch_size, self.im_height, self.im_width, self.layer_input_channels[0])
+                    TD_inp = None
+                    error = layer([BU_inp, TD_inp], direction='bottom_up')
+                # Middle and Top layers
+                else:
                     BU_inp = self.predlayers[l-1].states['E']
                     TD_inp = None
-                    error = layer([BU_inp, TD_inp])
-                elif l < self.num_layers - 1 and l > 0:
-                    BU_inp = self.predlayers[l-1].states['E'] # TODO: Confirm that this is appropriate iteration's data to compare
-                    TD_inp = self.predlayers[l+1].states['R']
-                    error = layer([BU_inp, TD_inp]) #, self.predlayers[l+1].states['L_Inp']])
-                else:
-                    BU_inp = inputs[:,t,...] # (self.batch_size, self.im_height, self.im_width, self.layer_input_channels[0])
-                    TD_inp = self.predlayers[l+1].states['R']
-                    error = layer([BU_inp, TD_inp]) #, self.predlayers[l+1].states['L_Inp']])
+                    error = layer([BU_inp, TD_inp], direction='bottom_up')
+                # Update error in bottom-up pass
                 if self.output_mode == 'Error':
                     layer_error = self.layer_weights[l] * K.mean(K.batch_flatten(error), axis=-1, keepdims=True) # (batch_size, 1)
-                    all_error = layer_error if l == self.num_layers - 1 else tf.add(all_error, layer_error) # (batch_size, 1)
+                    all_error = layer_error if l == 0 else tf.add(all_error, layer_error) # (batch_size, 1)
+            
+            # save outputs over time
             if self.output_mode == 'Error':
                 if t == 0:
                     all_errors_over_time = self.time_loss_weights[t] * all_error
