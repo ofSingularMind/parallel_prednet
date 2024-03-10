@@ -129,23 +129,16 @@ class PredLayer(keras.layers.Layer):
                 self.states['T'] = target
             else:
                 self.states['T'] = self.target(target)
-            
+        
             # COMPUTE ERROR
-            self.states['E'] = self.error(self.states['P'], self.states['T'])
+            self.states['E_current'] = self.error(self.states['P'], self.states['T'])
+            self.states['E_delta'] = self.states['E_current'] - self.states['E_last']
+            self.states['E_last'] = self.states['E_current']
+            self.states['E'] = keras.layers.Concatenate(axis=-1)([self.states['E_current'], self.states['E_delta']])
 
             # Print out shapes of all states:
             # print(f"R: {self.states['R'].shape}, P: {self.states['P'].shape}, T: {self.states['T'].shape}, E: {self.states['E'].shape}")
             return self.states['E']
-        
-        # COMPUTE ERROR
-        self.states['E_current'] = self.error(self.states['P'], self.states['T'])
-        self.states['E_delta'] = self.states['E_current'] - self.states['E_last']
-        self.states['E_last'] = self.states['E_current']
-        self.states['E'] = keras.layers.Concatenate(axis=-1)([self.states['E_current'], self.states['E_delta']])
-
-        # Print out shapes of all states:
-        # print(f"R: {self.states['R'].shape}, P: {self.states['P'].shape}, T: {self.states['T'].shape}, E: {self.states['E'].shape}")
-        return self.states['E']
 
 class ParaPredNet(keras.Model):
     def __init__(self, batch_size=4, nt=10, output_mode='Error', *args, **kwargs):
@@ -180,7 +173,9 @@ class ParaPredNet(keras.Model):
                 temp_TD = tf.random.uniform((self.batch_size, self.im_height // 2**(l+1), self.im_width // 2**(l+1), self.layer_output_channels[l+1]), maxval=255, dtype=tf.float32)
             else:
                 temp_TD = None
-            temp_out = self.predlayers[l]([temp_BU, temp_TD])
+            self.predlayers[l]([temp_BU, temp_TD], direction='top_down')
+            temp_out = self.predlayers[l]([temp_BU, temp_TD], direction='bottom_up')
+        # self.call(tf.random.uniform((1, self.nt, self.im_height, self.im_width, 3)))
             
     def call(self, inputs):
         # print("Calling PredNet...")
