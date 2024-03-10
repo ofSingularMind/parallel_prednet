@@ -138,13 +138,13 @@ class PredLayer(keras.layers.Layer):
             raise ValueError("Invalid direction. Must be 'top_down' or 'bottom_up'.")
 
 class ParaPredNet(keras.Model):
-    def __init__(self, batch_size=4, nt=10, output_mode='Error', *args, **kwargs):
+    def __init__(self, batch_size=4, nt=10, output_channels = [3, 48, 96, 192], output_mode='Error', *args, **kwargs):
         super(ParaPredNet, self).__init__(*args, **kwargs)
         self.batch_size = batch_size
         self.nt = nt
         self.im_height = 128
         self.im_width = 160
-        self.layer_output_channels = [3, 48, 96, 192]
+        self.layer_output_channels = output_channels
         self.num_layers = len(self.layer_output_channels)
         self.layer_input_channels = [0] * self.num_layers
         for i in range(len(self.layer_output_channels)):

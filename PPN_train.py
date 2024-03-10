@@ -48,7 +48,7 @@ N_seq_val = 20  # number of sequences to use for validation
 train_generator = SequenceGenerator(train_file, train_sources, nt, batch_size=batch_size, shuffle=True)
 val_generator = SequenceGenerator(val_file, val_sources, nt, batch_size=batch_size, N_seq=N_seq_val)
 
-PPN = ParaPredNet(batch_size=batch_size, nt=nt)
+PPN = ParaPredNet(batch_size=batch_size, nt=nt, output_channels=[3, 48, 96, 192])
 PPN.compile(optimizer='adam', loss='mean_squared_error')
 PPN.build(input_shape=(None, nt, 128, 160, 3))
 print("ParaPredNet compiled...")
