@@ -56,10 +56,15 @@ class Representation(keras.layers.Layer):
     def __init__(self, output_channels):
         super().__init__()
         # Add ConvLSTM, being sure to pass previous states in OR use stateful=True
-        self.conv_lstm = layers.ConvLSTM2D(output_channels, (3, 3), padding='same', return_sequences=False, activation='relu')
+        self.conv_lstm = layers.ConvLSTM2D(output_channels, (3, 3), padding='same', return_sequences=False, activation='relu', return_state=True)
 
-    def call(self, inputs):
-        return self.conv_lstm(inputs)
+    def call(self, inputs, initial_state=None):
+        ret = self.conv_lstm(inputs, initial_state=initial_state)
+        output, h, c = ret[0], ret[1], ret[2]
+        return output, h, c
+    
+    def reset_states(self):
+        self.conv_lstm.reset_states()
 
 class PredLayer(keras.layers.Layer):
     def __init__(self, im_height, im_width, output_channels, bottom_layer=False, top_layer=False, *args, **kwargs):
@@ -89,6 +94,7 @@ class PredLayer(keras.layers.Layer):
         self.states['E'] = tf.zeros((batch_size, self.im_height, self.im_width, 2*self.output_channels))
         self.states['TD_Inp'] = None
         self.states['L_Inp'] = None
+        self.states['lstm'] = None
 
     def clear_states(self):
         # Clear internal layer states
@@ -98,6 +104,8 @@ class PredLayer(keras.layers.Layer):
         self.states['E'] = None
         self.states['TD_Inp'] = None
         self.states['L_Inp'] = None
+        self.states['lstm'] = None
+        # self.representation.reset_states()
 
     def call(self, inputs=None, direction='top_down'):
         # print(f"Calling PredLayer... {self.name}")
@@ -106,15 +114,17 @@ class PredLayer(keras.layers.Layer):
         if direction == 'top_down':
             # UPDATE REPRESENTATION
             if self.top_layer:
-                R_inp = keras.layers.Concatenate()([self.states['E'], self.states['R']])
-                R_inp = tf.expand_dims(R_inp, axis=1)
-                self.states['R'] = self.representation(R_inp)
+                R_inp = tf.expand_dims(keras.layers.Concatenate()([self.states['E'], self.states['R']]), axis=1)
             else:
                 self.states['TD_Inp'] = self.upsample(inputs[1])
-                # self.states['L_Inp'] = self.upsample(inputs[2])
-                R_inp = keras.layers.Concatenate()([self.states['E'], self.states['R'], self.states['TD_Inp']])
-                R_inp = tf.expand_dims(R_inp, axis=1)
-                self.states['R'] = self.representation(R_inp)
+                R_inp = tf.expand_dims(keras.layers.Concatenate()([self.states['E'], self.states['R'], self.states['TD_Inp']]), axis=1)
+            
+            if self.states['lstm'] is None:
+                self.states['R'], h, c = self.representation(R_inp)
+                self.states['lstm'] = [h, c]
+            else:
+                self.states['R'], h, c = self.representation(R_inp, initial_state=self.states['lstm'])
+                self.states['lstm'] = [h, c]
             
             # FORM PREDICTION
             self.states['P'] = K.minimum(self.prediction(self.states['R']), self.pixel_max)

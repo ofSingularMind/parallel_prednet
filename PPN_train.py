@@ -28,7 +28,7 @@ tensorboard = True  # if the Tensorboard callback will be used
 weights_checkpoint_file = os.path.join(WEIGHTS_DIR, 'tensorflow_weights/para_prednet_kitti_weights.hdf5')  # where weights are loaded prior to training
 weights_file = os.path.join(WEIGHTS_DIR, 'tensorflow_weights/para_prednet_kitti_weights.hdf5')  # where weights will be saved
 json_file = os.path.join(WEIGHTS_DIR, 'para_prednet_kitti_model_ALEX.json')
-if os.path.exists(weights_file): os.remove(weights_file) # Careful: this will delete the weights file
+# if os.path.exists(weights_file): os.remove(weights_file) # Careful: this will delete the weights file
 
 # Run code
 
@@ -39,10 +39,10 @@ val_file = os.path.join(DATA_DIR, 'X_val.hkl')
 val_sources = os.path.join(DATA_DIR, 'sources_val.hkl')
     
 # Training parameters
-nt = 5
+nt = 10  # number of time steps
 nb_epoch = 150 # 150
-batch_size = 4 # 4
-samples_per_epoch = 100 # 500
+batch_size = 2 # 4
+samples_per_epoch = 20 # 500
 N_seq_val = 20  # number of sequences to use for validation
 
 train_generator = SequenceGenerator(train_file, train_sources, nt, batch_size=batch_size, shuffle=True)

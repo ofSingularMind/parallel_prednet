@@ -13,3 +13,4 @@ think about using FC layers to decode cnn feature maps into more discrete featur
     what about a binary FC?
     what about an encoded SDR? So, we take the representation activations and enocde them into an SDR that is sensitive to the minute RV variations in the representation tensors. Does this do anything to elucidate the stored information, make it more interpretable? Then this SDR gets passed as the top-down modulation instead of the representation tensor itself.
 Can the representation tensors be SDRs with sparse minkowski convolutions? Or rather, can the representations be sparse semantically-encoded HDC vectors and the convLSTM implemented with monkowski engine. I think we need pytorch and to implement the convLSTM manually.
+Is an image not a 3D tensor? and a video a 4D tensor? Are there 4D convolutions? Or maybe I just need 3D, considering Conv2D is for images.
