@@ -59,8 +59,8 @@ class Representation(keras.layers.Layer):
         self.conv_lstm = layers.ConvLSTM2D(output_channels, (3, 3), padding='same', return_sequences=False, activation='relu', return_state=True)
 
     def call(self, inputs, initial_state=None):
-        ret = self.conv_lstm(inputs, initial_state=initial_state)
-        output, h, c = ret[0], ret[1], ret[2]
+        output, h, c = self.conv_lstm(inputs, initial_state=initial_state)
+        # output, h, c = ret[0], ret[1], ret[2]
         return output, h, c
     
     def reset_states(self):

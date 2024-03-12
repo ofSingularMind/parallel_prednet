@@ -1,6 +1,8 @@
 import os
 import hickle as hkl
 import numpy as np
+import keras
+import tensorflow as tf
 from keras import backend as K
 from keras.preprocessing.image import Iterator
 
@@ -88,16 +90,8 @@ class SequenceGenerator(Iterator):
             X_all[i] = self.preprocess(self.X[idx:idx+self.nt])
         return X_all
 
-
-def predict(x, model, batch_size=2):
-    y_batches = []
-    for x_batch in get_batches(x, batch_size):
-        y_batch = model(x).numpy()
-        y_batches.append(y_batch)
-    return np.concatenate(y_batches)
-
 class MyCustomCallback(Callback):
-    def __init__(self, batch_size=4, nt=10):
+    def __init__(self, batch_size=4, nt=10, output_channels=[3, 48, 96, 192]):
         super(MyCustomCallback, self).__init__()
         self.n_plot = batch_size # 40
         self.batch_size = batch_size
@@ -107,7 +101,7 @@ class MyCustomCallback(Callback):
         self.test_file = os.path.join(DATA_DIR, 'X_test.hkl')
         self.test_sources = os.path.join(DATA_DIR, 'sources_test.hkl')
 
-        self.test_PPN = ParaPredNet(batch_size=self.batch_size, nt=self.nt)
+        self.test_PPN = ParaPredNet(batch_size=self.batch_size, nt=self.nt, output_channels=output_channels)
         self.test_PPN.output_mode = 'Prediction'
         self.test_PPN.compile(optimizer='adam', loss='mean_squared_error')
         self.test_PPN.build(input_shape=(None, self.nt, 128, 160, 3))
@@ -118,8 +112,6 @@ class MyCustomCallback(Callback):
         if not os.path.exists(RESULTS_SAVE_DIR): os.mkdir(RESULTS_SAVE_DIR)
         self.test_weights_path = os.path.join(RESULTS_SAVE_DIR, 'tensorflow_weights/')
         if not os.path.exists(self.test_weights_path): os.mkdir(self.test_weights_path)
-
-
 
     def on_epoch_end(self, epoch, logs=None):
         if epoch % 1 == 0 or epoch == 1:
@@ -136,19 +128,8 @@ class MyCustomCallback(Callback):
             self.test_PPN.load_weights(self.weights_file)
 
         X_test = self.test_generator.create_n(self.n_plot)
+        # X_hat = tf.cast(self.test_PPN(X_test), dtype=tf.float32)
         X_hat = self.test_PPN(X_test)
-
-        # X_test = self.test_generator.create_all()
-        # num_to_keep = (X_test.shape[0] // 2) * 2
-        # X_test = X_test[:num_to_keep]  # make number of test sequences even
-        # print("\nForming test predictions...")
-        # for i in range(num_to_keep // self.batch_size):
-        #     idxes = np.random.choice(X_test.shape[0], self.batch_size, replace=False)
-        #     X_batch = X_test[idxes]
-        #     if i == 0:
-        #         X_hat = self.test_PPN(X_batch)
-        #     else:
-        #         X_hat = np.concatenate((X_hat, self.test_PPN(X_batch)), axis=0)
 
         # Compare MSE of PredNet predictions vs. using last frame.  Write results to prediction_scores.txt
         mse_model = np.mean( (X_test[:, 1:] - X_hat[:, 1:])**2 )  # look at all timesteps except the first
@@ -170,19 +151,14 @@ class MyCustomCallback(Callback):
         for i in plot_idx:
             for t in range(self.plot_nt):
                 plt.subplot(gs[t])
+                plt.imshow(X_hat[i,t], interpolation='none')
+                plt.tick_params(axis='both', which='both', bottom='off', top='off', left='off', right='off', labelbottom='off', labelleft='off')
+                if t==0: plt.ylabel('Predicted', fontsize=10)
+                
+                plt.subplot(gs[t + self.plot_nt])
                 plt.imshow(X_test[i,t], interpolation='none')
                 plt.tick_params(axis='both', which='both', bottom='off', top='off', left='off', right='off', labelbottom='off', labelleft='off')
                 if t==0: plt.ylabel('Actual', fontsize=10)
 
-                plt.subplot(gs[t + self.plot_nt])
-                plt.imshow(X_hat[i,t], interpolation='none')
-                plt.tick_params(axis='both', which='both', bottom='off', top='off', left='off', right='off', labelbottom='off', labelleft='off')
-                if t==0: plt.ylabel('Predicted', fontsize=10)
-
             plt.savefig(plot_save_dir + 'e' + str(epoch) + '_plot_' + str(i) + '.png')
             plt.clf()
-
-# class printWeightsCallback(Callback):
-#     def __init__(self):
-#     super(printWeightsCallback, self).__init__()
-#     print(model.layers[2].get_weights())
