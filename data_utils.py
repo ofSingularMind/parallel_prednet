@@ -15,6 +15,10 @@ from keras import backend as K
 from kitti_settings import *
 
 from PPN import ParaPredNet
+import re
+import sys
+ 
+
 
 # Data generator that creates sequences for input into PredNet.
 class SequenceGenerator(Iterator):
@@ -162,3 +166,207 @@ class MyCustomCallback(Callback):
 
             plt.savefig(plot_save_dir + 'e' + str(epoch) + '_plot_' + str(i) + '.png')
             plt.clf()
+
+
+
+def writePFM(file, image, scale=1):
+    file = open(file, 'wb')
+
+    color = None
+
+    if image.dtype.name != 'float32':
+        raise Exception('Image dtype must be float32.')
+      
+    image = np.flipud(image)  
+
+    if len(image.shape) == 3 and image.shape[2] == 3: # color image
+        color = True
+    elif len(image.shape) == 2 or len(image.shape) == 3 and image.shape[2] == 1: # greyscale
+        color = False
+    else:
+        raise Exception('Image must have H x W x 3, H x W x 1 or H x W dimensions.')
+
+    file.write('PF\n' if color else 'Pf\n')
+    file.write('%d %d\n' % (image.shape[1], image.shape[0]))
+
+    endian = image.dtype.byteorder
+
+    if endian == '<' or endian == '=' and sys.byteorder == 'little':
+        scale = -scale
+
+    file.write('%f\n' % scale)
+
+    image.tofile(file)
+
+def dir_PFM_to_PNG(dir):
+    for obj in os.listdir(dir):
+        print(f"Processing {obj}. Isdir == {os.path.isdir(dir + obj)}")
+        if os.path.isdir(dir + obj):
+            dir_PFM_to_PNG(dir + obj + '/')
+        elif obj.endswith(".pfm"):
+            data, scale = readPFM(dir + obj)
+            print(f"Converting {obj} to {obj[:-4]}.png")
+            if (np.max(data) > 1) or (np.min(data) < 0):
+                data = (data - np.min(data)) / (np.max(data) - np.min(data))
+            plt.imsave(dir + obj[:-4] + '.png', data)
+            print(f"Processed {obj} to {obj[:-4]}.png")
+
+def readPFM(file):
+    file = open(file, 'rb')
+
+    color = None
+    width = None
+    height = None
+    scale = None
+    endian = None
+
+    header = file.readline().rstrip()
+    if header == b'PF':
+        color = True
+    elif header == b'Pf':
+        color = False
+    else:
+        raise Exception('Not a PFM file.')
+
+    dim_match = re.match(b'^(\d+)\s(\d+)\s$', file.readline())
+    if dim_match:
+        width, height = map(int, dim_match.groups())
+    else:
+        raise Exception('Malformed PFM header.')
+
+    scale = float(file.readline().rstrip())
+    if scale < 0: # little-endian
+        endian = '<'
+        scale = -scale
+    else:
+        endian = '>' # big-endian
+
+    data = np.fromfile(file, endian + 'f')
+    shape = (height, width, 3) if color else (height, width)
+
+    data = np.reshape(data, shape)
+    data = np.flipud(data)
+    return data
+
+import tensorflow as tf
+import numpy as np
+import glob
+from PIL import Image
+
+def create_dataset_from_generator(pfm_paths, pgm_paths, png_paths, img_height=960, img_width=540, batch_size=1, nt=10):
+
+    num_pfm_paths = len(pfm_paths)
+    num_pgm_paths = len(pgm_paths)
+    num_png_paths = len(png_paths)
+    total_paths = num_pfm_paths + num_pgm_paths + num_png_paths
+
+    def sort_files_by_name(files):
+        return sorted(files, key=lambda x: os.path.basename(x))
+
+    def generator():
+
+        pfm_sources = []
+        pgm_sources = []
+        png_sources = []
+
+        for pfm_path in pfm_paths:
+            pfm_sources += [sort_files_by_name(glob.glob(pfm_path + '/*.pfm'))]
+        for pgm_path in pgm_paths:
+            pgm_sources += [sort_files_by_name(glob.glob(pgm_path + '/*.pgm'))]
+        for png_path in png_paths:
+            png_sources += [sort_files_by_name(glob.glob(png_path + '/*.png'))]
+
+        t = 0
+        for files in zip(*pfm_sources, *pgm_sources, *png_sources):
+            if t == 0:
+                nt_outs = []
+            
+            out = []
+            for i in range(num_pfm_paths):
+                out.append(readPFM(files[i]))
+            for i in range(num_pgm_paths):
+                out.append(np.array(Image.open(files[i + num_pfm_paths])) / 255.0)
+            for i in range(num_png_paths):
+                out.append(np.array(Image.open(files[i + num_pfm_paths + num_pgm_paths])) / 255.0)
+            nt_outs.append(out)
+            t += 1
+            
+            if t == nt:
+                t == 0
+                TODO: "yield nt_outs"
+                yield nt_outs
+
+    dataset = tf.data.Dataset.from_generator(generator, output_signature=(
+        tf.TensorSpec(shape=(None, None, None), dtype=tf.float32),
+        tf.TensorSpec(shape=(None, None, None), dtype=tf.float32),
+        tf.TensorSpec(shape=(None, None, None), dtype=tf.float32),
+        tf.TensorSpec(shape=(None, None, None, 3), dtype=tf.float32),
+        tf.TensorSpec(shape=(None, None, None), dtype=tf.float32),
+        tf.TensorSpec(shape=(None, None, None, 3), dtype=tf.float32)
+    ))
+
+    # Batch and prefetch the dataset
+    dataset = dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
+
+    return dataset
+
+# Define paths to .pfm and .png directories
+pfm_paths = []
+pfm_paths.append('/home/evalexii/remote_dataset/disparity/family_x2/left/')
+pfm_paths.append('/home/evalexii/remote_dataset/material_index/family_x2/left/')
+pfm_paths.append('/home/evalexii/remote_dataset/object_index/family_x2/left/')
+pfm_paths.append('/home/evalexii/remote_dataset/optical_flow/family_x2/into_future/left/')
+pgm_paths = []
+pgm_paths.append('/home/evalexii/remote_dataset/motion_boundaries/family_x2/into_future/left/')
+png_paths = []
+png_paths.append('/home/evalexii/remote_dataset/frames_cleanpass/family_x2/left')
+
+batch_size = 3
+nt = 10
+dataset = create_dataset_from_generator(pfm_paths, pgm_paths, png_paths, batch_size=batch_size, nt=nt)
+
+# Iterate over the dataset
+for batch in dataset:
+    for j in range(batch_size):
+        fig, axes = plt.subplots(1, len(batch), figsize=(15, 5))
+        for i, image in enumerate(batch):
+            print(image.shape)
+            axes[i].imshow(image[j])
+        plt.show()
+
+# def sort_files_by_name(files):
+#     return sorted(files, key=lambda x: os.path.basename(x))
+
+# def generator(pfm_paths, pgm_paths, png_paths):
+#     num_pfm_paths = len(pfm_paths)
+#     num_pgm_paths = len(pgm_paths)
+#     num_png_paths = len(png_paths)
+
+#     pfm_sources = []
+#     pgm_sources = []
+#     png_sources = []
+    
+#     for pfm_path in pfm_paths:
+#         pfm_sources += [sort_files_by_name(glob.glob(pfm_path + '/*.pfm'))]
+#     for pgm_path in pgm_paths:
+#         pgm_sources += [sort_files_by_name(glob.glob(pgm_path + '/*.pgm'))]
+#     for png_path in png_paths:
+#         png_sources += [sort_files_by_name(glob.glob(png_path + '/*.png'))]
+
+#     outs = []
+    
+#     for files in zip(*pfm_sources, *pgm_sources, *png_sources):
+#         out = []
+#         for i in range(num_pfm_paths):
+#             out.append(readPFM(files[i]))
+#         for i in range(num_pgm_paths):
+#             out.append(np.array(Image.open(files[i + num_pfm_paths])) / 255.0)
+#         for i in range(num_png_paths):
+#             out.append(np.array(Image.open(files[i + num_pfm_paths + num_pgm_paths])) / 255.0)
+#         outs.append(out)
+    
+#     return outs
+
+# generator = generator(pfm_paths, pgm_paths, png_paths)
+# print("asd")
+

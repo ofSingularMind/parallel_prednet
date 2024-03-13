@@ -19,6 +19,7 @@ import numpy as np
 from keras.layers import Input, Dense, Layer
 from keras.models import Model
 from PPN import ParaPredNet
+from data_utils import dir_PFM_to_PNG
 
 # Data files
 train_file = os.path.join(DATA_DIR, 'X_train.hkl')
@@ -128,29 +129,64 @@ def grab_single_data_and_save(data_file):
 # grab_data_and_save(files)
 # grab_single_data_and_save(train_file)
 
-n_plot = 4 # 40
-batch_size = 4
-nt = 4
-plot_nt = 4
-weights_file = os.path.join(WEIGHTS_DIR, 'tensorflow_weights/para_prednet_kitti_weights.hdf5')
-test_file = os.path.join(DATA_DIR, 'X_test.hkl')
-test_sources = os.path.join(DATA_DIR, 'sources_test.hkl')
+# n_plot = 4 # 40
+# batch_size = 4
+# nt = 4
+# plot_nt = 4
+# weights_file = os.path.join(WEIGHTS_DIR, 'tensorflow_weights/para_prednet_kitti_weights.hdf5')
+# test_file = os.path.join(DATA_DIR, 'X_test.hkl')
+# test_sources = os.path.join(DATA_DIR, 'sources_test.hkl')
 
-test_PPN = ParaPredNet(batch_size=batch_size, nt=nt)
-test_PPN.output_mode = 'Prediction'
-test_PPN.compile(optimizer='adam', loss='mean_squared_error')
-test_PPN.build(input_shape=(None, nt, 128, 160, 3))
-print("ParaPredNet compiled...")
+# test_PPN = ParaPredNet(batch_size=batch_size, nt=nt)
+# test_PPN.output_mode = 'Prediction'
+# test_PPN.compile(optimizer='adam', loss='mean_squared_error')
+# test_PPN.build(input_shape=(None, nt, 128, 160, 3))
+# print("ParaPredNet compiled...")
 
-print(test_PPN.summary())
+# print(test_PPN.summary())
+    
 
-
-
-
-
+# dir_PFM_to_PNG("/home/evalexii/Downloads/Sampler/Monkaa/")
 
 
+# Training parameters
+nt = 10  # number of time steps
+nb_epoch = 150 # 150
+batch_size = 1 # 4
+samples_per_epoch = 100 # 500
+N_seq_val = 20  # number of sequences to use for validation
+output_channels = [3, 48, 96, 192]
+im_shape = (540, 960, 3)
+import tensorflow as tf
+import matplotlib.pyplot as plt
 
+# Dataset for images
+train_ds = tf.keras.utils.image_dataset_from_directory(
+    "/home/evalexii/Downloads/Sampler/Monkaa/",
+    validation_split=0,
+    subset=None,
+    batch_size=batch_size,
+    image_size=(im_shape[0], im_shape[1])
+)
+class_names = train_ds.class_names
+
+# batch = next(iter(train_ds))
+
+plt.figure(figsize=(10, 10))
+for images, labels in train_ds.batch(24):
+  for i in range(9):
+    ax = plt.subplot(3, 3, i + 1)
+    plt.imshow(images[i,0].numpy().astype("uint8"))
+    plt.title(class_names[labels[i,0]])
+    plt.axis("off")
+plt.show()
+    
+# from data_utils import readPFM
+
+# im = readPFM("/home/evalexii/Downloads/Sampler/Monkaa/material_index/0048.pfm")
+# print(type(im))
+# print(im[0].shape)
+# plt.imshow(im[0])
 
 
 
