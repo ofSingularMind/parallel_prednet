@@ -49,8 +49,17 @@ N_seq_val = 20  # number of sequences to use for validation
 output_channels = [3, 48, 96, 192]
 im_shape = (128, 160, 3)
 
-train_generator = SequenceGenerator(train_file, train_sources, nt, batch_size=batch_size, shuffle=True)
-val_generator = SequenceGenerator(val_file, val_sources, nt, batch_size=batch_size, N_seq=N_seq_val)
+# train_generator = SequenceGenerator(train_file, train_sources, nt, batch_size=batch_size, shuffle=True)
+# val_generator = SequenceGenerator(val_file, val_sources, nt, batch_size=batch_size, N_seq=N_seq_val)
+
+# Dataset for images
+train_ds = tf.keras.utils.image_dataset_from_directory(
+    "/home/evalexii/remote_datasets/",
+    validation_split=0.2,
+    subset="training",
+    batch_size=batch_size,
+    image_size=(im_shape[0], im_shape[1])
+)
 
 PPN = ParaPredNet(batch_size=batch_size, nt=nt, output_channels=output_channels) # [3, 48, 96, 192]
 PPN.compile(optimizer='adam', loss='mean_squared_error')
