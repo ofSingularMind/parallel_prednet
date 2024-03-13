@@ -12,10 +12,12 @@ import keras
 from keras import backend as K
 from keras import layers
 from kitti_settings import *
-from data_utils import SequenceGenerator, MyCustomCallback
+from data_utils import SequenceGenerator, PlotPredictions_Epoch, print_sample_callback
 from keras.callbacks import LearningRateScheduler, ModelCheckpoint, TensorBoard
-
 from PPN import ParaPredNet
+
+# use mixed precision for faster runtimes and lower memory usage
+# keras.mixed_precision.set_global_policy("mixed_float16")
 
 # if results directory already exists, then delete it
 if os.path.exists(RESULTS_SAVE_DIR): shutil.rmtree(RESULTS_SAVE_DIR)
@@ -39,21 +41,25 @@ val_file = os.path.join(DATA_DIR, 'X_val.hkl')
 val_sources = os.path.join(DATA_DIR, 'sources_val.hkl')
     
 # Training parameters
-nt = 5
+nt = 10  # number of time steps
 nb_epoch = 150 # 150
-batch_size = 2 # 4
-samples_per_epoch = 100 # 500
+batch_size = 1 # 4
+samples_per_epoch = 10 # 500
 N_seq_val = 20  # number of sequences to use for validation
+output_channels = [3, 48, 96, 192] # [3, 48, 96, 192]
+im_shape = (128, 160, 3)
 
 train_generator = SequenceGenerator(train_file, train_sources, nt, batch_size=batch_size, shuffle=True)
 val_generator = SequenceGenerator(val_file, val_sources, nt, batch_size=batch_size, N_seq=N_seq_val)
 print("Sequence Generators created...")
 
-PPN = ParaPredNet(batch_size=batch_size, nt=nt)
+PPN = ParaPredNet(batch_size=batch_size, nt=nt, output_channels=output_channels) 
 PPN.compile(optimizer='adam', loss='mean_squared_error')
-PPN.build(input_shape=(None, nt, 128, 160, 3))
+PPN.build(input_shape=(None, nt) + im_shape)
 print("ParaPredNet compiled...")
 print(PPN.summary())
+num_layers = len(output_channels)  # number of layers in the architecture
+print(f"Top layer resolution: {int(im_shape[0]/(2**(num_layers-1)))} x {int(im_shape[1]/(2**(num_layers-1)))}")
 
 # load previously saved weights
 if os.path.exists(weights_checkpoint_file):
@@ -65,7 +71,8 @@ if save_model:
     if not os.path.exists(WEIGHTS_DIR): os.mkdir(WEIGHTS_DIR)
     callbacks.append(ModelCheckpoint(filepath=weights_file, monitor='val_loss', save_best_only=True, save_weights_only=True))
 if plot_intermediate:
-    callbacks.append(MyCustomCallback(batch_size=batch_size, nt=nt))
+    # callbacks.append(print_sample_callback())
+    callbacks.append(PlotPredictions_Epoch(batch_size=batch_size, nt=nt, output_channels=output_channels))
 if tensorboard:
     callbacks.append(TensorBoard(log_dir=LOG_DIR, histogram_freq=1, write_graph=True, write_images=False))
 
