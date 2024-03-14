@@ -12,9 +12,10 @@ import keras
 from keras import backend as K
 from keras import layers
 from kitti_settings import *
-from data_utils import SequenceGenerator, MyCustomCallback
+from data_utils import SequenceGenerator, MyCustomCallback, create_dataset_from_generator, create_dataset_from_serialized_generator
 from keras.callbacks import LearningRateScheduler, ModelCheckpoint, TensorBoard
 from PPN import ParaPredNet
+import matplotlib.pyplot as plt
 
 # use mixed precision for faster runtimes and lower memory usage
 # keras.mixed_precision.set_global_policy("mixed_float16")
@@ -32,56 +33,75 @@ weights_file = os.path.join(WEIGHTS_DIR, 'tensorflow_weights/para_prednet_kitti_
 json_file = os.path.join(WEIGHTS_DIR, 'para_prednet_kitti_model_ALEX.json')
 if os.path.exists(weights_file): os.remove(weights_file) # Careful: this will delete the weights file
 
-# Run code
-
-# Data files
-train_file = os.path.join(DATA_DIR, 'X_train.hkl')
-train_sources = os.path.join(DATA_DIR, 'sources_train.hkl')
-val_file = os.path.join(DATA_DIR, 'X_val.hkl')
-val_sources = os.path.join(DATA_DIR, 'sources_val.hkl')
+# Training data
+pfm_paths = []
+pfm_paths.append('/home/evalexii/remote_dataset/disparity/family_x2/left/')
+pfm_paths.append('/home/evalexii/remote_dataset/material_index/family_x2/left/')
+pfm_paths.append('/home/evalexii/remote_dataset/object_index/family_x2/left/')
+pfm_paths.append('/home/evalexii/remote_dataset/optical_flow/family_x2/into_future/left/')
+pgm_paths = []
+pgm_paths.append('/home/evalexii/remote_dataset/motion_boundaries/family_x2/into_future/left/')
+png_paths = []
+png_paths.append('/home/evalexii/remote_dataset/frames_cleanpass/family_x2/left')
     
 # Training parameters
 nt = 10  # number of time steps
 nb_epoch = 150 # 150
-batch_size = 2 # 4
+batch_size = 3 # 4
 samples_per_epoch = 100 # 500
 N_seq_val = 20  # number of sequences to use for validation
 output_channels = [3, 48, 96, 192]
-im_shape = (128, 160, 3)
+im_shape = (540, 960, 3)
 
-# train_generator = SequenceGenerator(train_file, train_sources, nt, batch_size=batch_size, shuffle=True)
-# val_generator = SequenceGenerator(val_file, val_sources, nt, batch_size=batch_size, N_seq=N_seq_val)
+#  Create and split dataset
+dataset, length = create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, 
+                                                           im_height=im_shape[0], im_width=im_shape[1], 
+                                                           batch_size=batch_size, nt=nt, reserialize=False, shuffle=True)
 
-# Dataset for images
-train_ds = tf.keras.utils.image_dataset_from_directory(
-    "/home/evalexii/remote_datasets/",
-    validation_split=0.2,
-    subset="training",
-    batch_size=batch_size,
-    image_size=(im_shape[0], im_shape[1])
-)
+ts = 0.7
+vs = (1 - ts) / 2
+train_size = int(ts * length)
+val_size = int(vs * length)
+test_size = int(vs * length)
 
-PPN = ParaPredNet(batch_size=batch_size, nt=nt, output_channels=output_channels) # [3, 48, 96, 192]
-PPN.compile(optimizer='adam', loss='mean_squared_error')
-PPN.build(input_shape=(None, nt) + im_shape)
-print("ParaPredNet compiled...")
-print(PPN.summary())
-num_layers = len(output_channels)  # number of layers in the architecture
-print(f"Top layer resolution: {int(im_shape[0]/(2**(num_layers-1)))} x {int(im_shape[1]/(2**(num_layers-1)))}")
+train_dataset = dataset.take(train_size)
+test_dataset = dataset.skip(train_size)
+val_dataset = test_dataset.skip(val_size)
+test_dataset = test_dataset.take(test_size)
 
-# load previously saved weights
-if os.path.exists(weights_checkpoint_file):
-    PPN.load_weights(weights_checkpoint_file)
+# Iterate over the dataset
+for b, batch in enumerate(dataset):
+    lth = len(batch)
+    for bs, batch_seq in enumerate(batch):
+        # print(item.shape)
+        fig, axes = plt.subplots(batch_size, nt, figsize=(15, 5))
+        for i in range(batch_size):
+            for j in range(nt):
+                axes[i,j].imshow(batch_seq[i,j])
+        plt.savefig(f'./images/test_{b}_{bs}_{i}_{j}.png')
 
-lr_schedule = lambda epoch: 0.01 if epoch < 5 else 0.0001    # start with lr of 0.001 and then drop to 0.0001 after 75 epochs
-callbacks = [LearningRateScheduler(lr_schedule)]
-if save_model:
-    if not os.path.exists(WEIGHTS_DIR): os.mkdir(WEIGHTS_DIR)
-    callbacks.append(ModelCheckpoint(filepath=weights_file, monitor='val_loss', save_best_only=True, save_weights_only=True))
-if plot_intermediate:
-    callbacks.append(MyCustomCallback(batch_size=batch_size, nt=nt, output_channels=output_channels))
-if tensorboard:
-    callbacks.append(TensorBoard(log_dir=LOG_DIR, histogram_freq=1, write_graph=True, write_images=False))
+# PPN = ParaPredNet(batch_size=batch_size, nt=nt, output_channels=output_channels) # [3, 48, 96, 192]
+# PPN.compile(optimizer='adam', loss='mean_squared_error')
+# PPN.build(input_shape=(None, nt) + im_shape)
+# print("ParaPredNet compiled...")
+# print(PPN.summary())
+# num_layers = len(output_channels)  # number of layers in the architecture
+# print(f"Top layer resolution: {int(im_shape[0]/(2**(num_layers-1)))} x {int(im_shape[1]/(2**(num_layers-1)))}")
 
-history = PPN.fit(train_generator, steps_per_epoch=samples_per_epoch / batch_size, epochs=nb_epoch, callbacks=callbacks, 
-                validation_data=val_generator, validation_steps=N_seq_val / batch_size)
+# # load previously saved weights
+# if os.path.exists(weights_checkpoint_file):
+#     PPN.load_weights(weights_checkpoint_file)
+
+# lr_schedule = lambda epoch: 0.01 if epoch < 5 else 0.0001    # start with lr of 0.001 and then drop to 0.0001 after 75 epochs
+# callbacks = [LearningRateScheduler(lr_schedule)]
+# if save_model:
+#     if not os.path.exists(WEIGHTS_DIR): os.mkdir(WEIGHTS_DIR)
+#     callbacks.append(ModelCheckpoint(filepath=weights_file, monitor='val_loss', save_best_only=True, save_weights_only=True))
+# if plot_intermediate:
+#     callbacks.append(MyCustomCallback(batch_size=batch_size, nt=nt, output_channels=output_channels))
+# if tensorboard:
+#     callbacks.append(TensorBoard(log_dir=LOG_DIR, histogram_freq=1, write_graph=True, write_images=False))
+
+# history = PPN.fit(train_dataset, steps_per_epoch=samples_per_epoch / batch_size, epochs=nb_epoch, callbacks=callbacks, 
+#                 validation_data=val_dataset, validation_steps=N_seq_val / batch_size)
+        

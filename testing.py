@@ -19,7 +19,8 @@ import numpy as np
 from keras.layers import Input, Dense, Layer
 from keras.models import Model
 from PPN import ParaPredNet
-from data_utils import dir_PFM_to_PNG
+from data_utils import dir_PFM_to_PNG, create_dataset_from_generator
+import matplotlib.pyplot as plt
 
 # Data files
 train_file = os.path.join(DATA_DIR, 'X_train.hkl')
@@ -149,167 +150,73 @@ def grab_single_data_and_save(data_file):
 # dir_PFM_to_PNG("/home/evalexii/Downloads/Sampler/Monkaa/")
 
 
-# Training parameters
-nt = 10  # number of time steps
-nb_epoch = 150 # 150
-batch_size = 1 # 4
-samples_per_epoch = 100 # 500
-N_seq_val = 20  # number of sequences to use for validation
-output_channels = [3, 48, 96, 192]
-im_shape = (540, 960, 3)
-import tensorflow as tf
-import matplotlib.pyplot as plt
+# Define paths to .pfm and .png directories
+pfm_paths = []
+pfm_paths.append('/home/evalexii/remote_dataset/disparity/family_x2/left/')
+pfm_paths.append('/home/evalexii/remote_dataset/material_index/family_x2/left/')
+pfm_paths.append('/home/evalexii/remote_dataset/object_index/family_x2/left/')
+pfm_paths.append('/home/evalexii/remote_dataset/optical_flow/family_x2/into_future/left/')
+pgm_paths = []
+pgm_paths.append('/home/evalexii/remote_dataset/motion_boundaries/family_x2/into_future/left/')
+png_paths = []
+png_paths.append('/home/evalexii/remote_dataset/frames_cleanpass/family_x2/left')
 
-# Dataset for images
-train_ds = tf.keras.utils.image_dataset_from_directory(
-    "/home/evalexii/Downloads/Sampler/Monkaa/",
-    validation_split=0,
-    subset=None,
-    batch_size=batch_size,
-    image_size=(im_shape[0], im_shape[1])
-)
-class_names = train_ds.class_names
+batch_size = 3
+nt = 10
+dataset, length = create_dataset_from_generator(pfm_paths, pgm_paths, png_paths, batch_size=batch_size, nt=nt)
+ts = 0.7
+vs = (1 - ts) / 2
+train_size = int(ts * length)
+val_size = int(vs * length)
+test_size = int(vs * length)
 
-# batch = next(iter(train_ds))
+train_dataset = dataset.take(train_size)
+test_dataset = dataset.skip(train_size)
+val_dataset = test_dataset.skip(val_size)
+test_dataset = test_dataset.take(test_size)
 
-plt.figure(figsize=(10, 10))
-for images, labels in train_ds.batch(24):
-  for i in range(9):
-    ax = plt.subplot(3, 3, i + 1)
-    plt.imshow(images[i,0].numpy().astype("uint8"))
-    plt.title(class_names[labels[i,0]])
-    plt.axis("off")
-plt.show()
+# Iterate over the dataset
+for batch in train_dataset:
+    for j in range(batch_size):
+        fig, axes = plt.subplots(len(batch), nt, figsize=(15, 5))
+        for i, image in enumerate(batch):
+            print(image.shape)
+            for k in range(nt):
+                axes[i,k].imshow(image[j,k])
+        plt.show()
+
+# def sort_files_by_name(files):
+#     return sorted(files, key=lambda x: os.path.basename(x))
+
+# def generator(pfm_paths, pgm_paths, png_paths, nt=10):
+#     num_pfm_paths = len(pfm_paths)
+#     num_pgm_paths = len(pgm_paths)
+#     num_png_paths = len(png_paths)
+#     total_paths = num_pfm_paths + num_pgm_paths + num_png_paths
     
-# from data_utils import readPFM
+#     pfm_sources = []
+#     pgm_sources = []
+#     png_sources = []
 
-# im = readPFM("/home/evalexii/Downloads/Sampler/Monkaa/material_index/0048.pfm")
-# print(type(im))
-# print(im[0].shape)
-# plt.imshow(im[0])
+#     for pfm_path in pfm_paths:
+#         pfm_sources += [sort_files_by_name(glob.glob(pfm_path + '/*.pfm'))]
+#     for pgm_path in pgm_paths:
+#         pgm_sources += [sort_files_by_name(glob.glob(pgm_path + '/*.pgm'))]
+#     for png_path in png_paths:
+#         png_sources += [sort_files_by_name(glob.glob(png_path + '/*.png'))]
 
-
-
-
-
-# # Data files
-# train_file = os.path.join(DATA_DIR, 'X_train.hkl')
-# train_sources = os.path.join(DATA_DIR, 'sources_train.hkl')
-# val_file = os.path.join(DATA_DIR, 'X_val.hkl')
-# val_sources = os.path.join(DATA_DIR, 'sources_val.hkl')
-
-# files = [train_file, train_sources, val_file, val_sources]
-# file_names = [os.path.join(DATA_DIR, 'X_train.pkl'), os.path.join(DATA_DIR, 'sources_train.pkl'), os.path.join(DATA_DIR, 'X_val.pkl'), os.path.join(DATA_DIR, 'sources_val.pkl')]
-
-
-# def fix_my_hickle_files(data_files):
-#     for data_file, file_name in zip(data_files, file_names):
-#         data = hkl.load(data_file)
-#         print("gets here")
-#         pickle.dump(data, open(file_name, 'w'))
-
-# def rehickling(data_files, file_names):
-#     for data_file, file_name in zip(data_files, file_names):
-#         with open(file_name, 'rb') as file:
-#             data = pickle.load(file)
-#             print("gets here")
-#             hkl.dump(data, data_file)
-
-# def hickle_swap(data_files):
-#     for data_file in data_files:
-#         with open(data_file, 'r') as file:
-#             print("opens file")
-#             data = hkl.load(file)
-#             print("loads file")
-
-#             uninstall_result = subprocess.call(["pip", "uninstall", "hickle"])
-#             if uninstall_result == 0:
-#                 print("Old package uninstalled successfully.")
-#             else:
-#                 print("Error uninstalling old package.")
-
-#             install_result = subprocess.call(["pip", "install", "hickle"])
-#             if install_result == 0:
-#                 print("New package installed successfully.")
-#             else:
-#                 print("Error installing new package.")
-
-#             # Continue with the rest of your script logic
-#             hkl.dump(data, data_file)
-#             print("dumps file")
-
-#             uninstall_result = subprocess.call(["pip", "uninstall", "hickle"])
-#             if uninstall_result == 0:
-#                 print("Old package uninstalled successfully.")
-#             else:
-#                 print("Error uninstalling old package.")
-
-#             install_result = subprocess.call(["pip", "install", "hickle==2.1.0"])
-#             if install_result == 0:
-#                 print("New package installed successfully.")
-#             else:
-#                 print("Error installing new package.")
-
-# def test_hickle(data_files):
-#     # uninstall_result = subprocess.call(["pip", "uninstall", "hickle"])
-#     # if uninstall_result == 0:
-#     #     print("Old package uninstalled successfully.")
-#     # else:
-#     #     print("Error uninstalling old package.")
-
-#     # install_result = subprocess.call(["pip", "install", "hickle"])
-#     # if install_result == 0:
-#     #     print("New package installed successfully.")
-#     # else:
-#     #     print("Error installing new package.")
+#     all_files = np.array(list(zip(*pfm_sources, *pgm_sources, *png_sources)))
+#     for i in range(all_files.shape[0]):
+        
+#         nt_outs = []
+#         for j in range(num_pfm_paths):
+#             nt_outs.append(np.array([readPFM(all_files[i+k, j]) for k in range(nt)]))
+#         for j in range(num_pgm_paths):
+#             nt_outs.append(np.array([Image.open(all_files[i+k, j + num_pfm_paths]) for k in range(nt)]) / 255.0)
+#         for j in range(num_png_paths):
+#             nt_outs.append(np.array([Image.open(all_files[i+k, j + num_pfm_paths + num_pgm_paths]) for k in range(nt)]) / 255.0)
     
-#     # ensure each file can load in hickle==3.4.9
-#     for data_file in data_files:
-#         with open(data_file, 'r') as file:
-#             print("opens file")
-#             data = hkl.load(file)
-#             print("loads file")
+#         return nt_outs
 
-# def grab_data_and_save(data_files):
-#     files = [
-#         "/home/evalexii/Documents/Thesis/code/prednet/kitti_data/X_train.npy",
-#         "/home/evalexii/Documents/Thesis/code/prednet/kitti_data/sources_train.npy",
-#         "/home/evalexii/Documents/Thesis/code/prednet/kitti_data/X_val.npy",
-#         "/home/evalexii/Documents/Thesis/code/prednet/kitti_data/sources_val.npy"
-#     ]
-#     for i, data_file in enumerate(data_files):
-#         data = np.load(files[i], allow_pickle=True)
-#         hkl.dump(data, data_file)
-#         print("dumps file")
-#     for data_file in data_files:
-#         data = hkl.load(data_file)
-#         print("loads file")
-#     while input("Hold: ") != "q":
-#         pass
-
-# def grab_single_data_and_save(data_file):
-#     data = np.load("/home/evalexii/Documents/Thesis/code/prednet/add.npy", allow_pickle=True)
-#     hkl.dump(data, data_file)
-#     print("dumps to file")
-#     while input("Hold: ") != "q":
-#         pass
-    
-#     # uninstall_result = subprocess.call(["pip", "uninstall", "hickle"])
-#     # if uninstall_result == 0:
-#     #     print("Old package uninstalled successfully.")
-#     # else:
-#     #     print("Error uninstalling old package.")
-
-#     # install_result = subprocess.call(["pip", "install", "hickle==2.1.0"])
-#     # if install_result == 0:
-#     #     print("New package installed successfully.")
-#     # else:
-#     #     print("Error installing new package.")
-
-# fix_my_hickle_files(files)
-# rehickling(files, file_names)
-# hickle_swap(files)
-# test_hickle(files)
-# grab_data_and_save(files)
-# grab_single_data_and_save(train_file)
-
+# generator = generator(pfm_paths, pgm_paths, png_paths)
+# print("asd")

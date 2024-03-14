@@ -12,12 +12,16 @@ from keras.layers import Input
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from keras import backend as K
-from kitti_settings import *
+from monkaa_settings import *
 
 from PPN import ParaPredNet
 import re
 import sys
- 
+
+import glob
+from PIL import Image
+import time
+import random
 
 
 # Data generator that creates sequences for input into PredNet.
@@ -167,8 +171,6 @@ class MyCustomCallback(Callback):
             plt.savefig(plot_save_dir + 'e' + str(epoch) + '_plot_' + str(i) + '.png')
             plt.clf()
 
-
-
 def writePFM(file, image, scale=1):
     file = open(file, 'wb')
 
@@ -248,23 +250,97 @@ def readPFM(file):
     data = np.flipud(data)
     return data
 
-import tensorflow as tf
-import numpy as np
-import glob
-from PIL import Image
+def sort_files_by_name(files):
+    return sorted(files, key=lambda x: os.path.basename(x))
 
-def create_dataset_from_generator(pfm_paths, pgm_paths, png_paths, img_height=960, img_width=540, batch_size=1, nt=10):
+def serialize_dataset(pfm_paths, pgm_paths, png_paths, start_time=time.perf_counter()):
+    
+    print(f"Start to serialize at {time.perf_counter() - start_time} seconds.")
+    pfm_sources = []
+    pgm_sources = []
+    png_sources = []
+
+    for pfm_path in pfm_paths:
+        pfm_sources += [sort_files_by_name(glob.glob(pfm_path + '/*.pfm'))]
+    for pgm_path in pgm_paths:
+        pgm_sources += [sort_files_by_name(glob.glob(pgm_path + '/*.pgm'))]
+    for png_path in png_paths:
+        png_sources += [sort_files_by_name(glob.glob(png_path + '/*.png'))]
+
+    all_files = np.array(list(zip(*pfm_sources, *pgm_sources, *png_sources)))
+
+    # Get the length of the dataset
+    length = all_files.shape[0]
+
+    # Store the dataset in list with one key per source
+    dataset = [0 for _ in range(all_files.shape[1])]
+
+    # Prepare array for filling with data
+    # data = np.zeros_like(all_files, dtype=np.float32)
+
+    temp = length
+    print(f"Start to load images at {time.perf_counter() - start_time} seconds.")
+
+    for j in range(len(pfm_paths)):
+        l = []
+        last = time.perf_counter()
+        for i in range(temp):
+            l.append(readPFM(all_files[i, j]))
+            # print(f"PFM image {i} of {temp-1} done in {time.perf_counter() - last} seconds.")
+            last = time.perf_counter()
+        dataset[j] = np.array(l)
+        print(f"PFM source {j+1} of {len(pfm_paths)} done at {time.perf_counter() - start_time} seconds.")
+    
+    for j in range(len(pgm_paths)):
+        l = []
+        last = time.perf_counter()
+        for i in range(temp):
+            l.append(np.array(Image.open(all_files[i, j + len(pfm_paths)])) / 255.0)
+            # print(f"PGM image {i} of {temp-1} done in {time.perf_counter() - last} seconds.")
+            last = time.perf_counter()
+        dataset[j + len(pfm_paths)] = np.array(l)
+        # dataset[j + len(pfm_paths)] = np.array([n for i in range(temp)])
+        print(f"PGM source {j+1} of {len(pgm_paths)} done at {time.perf_counter() - start_time} seconds.")
+    
+    for j in range(len(png_paths)):
+        l = []
+        last = time.perf_counter()
+        for i in range(temp):
+            l.append(np.array(Image.open(all_files[i, j + len(pfm_paths) + len(pgm_paths)])) / 255.0)
+            # print(f"PNG image {i} of {temp-1} done in {time.perf_counter() - last} seconds.")
+            last = time.perf_counter()
+        dataset[j + len(pfm_paths) + len(pgm_paths)] = np.array(l)
+        # dataset[j + len(pfm_paths) + len(pgm_paths)] = np.array([np.array(Image.open(all_files[i, j + len(pfm_paths) + len(pgm_paths)])) / 255.0 for i in range(temp)])
+        print(f"PNG source {j+1} of {len(png_paths)} done at {time.perf_counter() - start_time} seconds.")
+    
+    # # normalize all image data to float between 0..1
+    # for source in dataset:
+    #     s_min = np.min(source)
+    #     s_max = np.max(source)
+    #     print(f"Before: Min: {s_min}, Max: {s_max}")
+    #     # -3, 0, 1 -> 0, 3, 4 -> 0, 0.75, 1
+    #     source = (source - s_min) / (s_max - s_min)
+    #     s_min = np.min(source)
+    #     s_max = np.max(source)
+    #     print(f"After: Min: {s_min}, Max: {s_max}")
+    # print(f"Image normalization complete at {time.perf_counter() - start_time} seconds.")
+    
+    if not os.path.exists(DATA_DIR): os.mkdir(DATA_DIR)
+    dataset_file = os.path.join(DATA_DIR, 'monkaa_train.hkl')  # where weights are loaded prior to training
+
+    hkl.dump(dataset, dataset_file, mode='w')
+    print(f"HKL dump done at {time.perf_counter() - start_time} seconds.")
+    print(f"Dataset serialization complete at {time.perf_counter() - start_time} seconds.")
+
+def create_dataset_from_generator(pfm_paths, pgm_paths, png_paths, im_height=540, im_width=960, batch_size=1, nt=10, shuffle=True):
 
     num_pfm_paths = len(pfm_paths)
     num_pgm_paths = len(pgm_paths)
     num_png_paths = len(png_paths)
     total_paths = num_pfm_paths + num_pgm_paths + num_png_paths
 
-    def sort_files_by_name(files):
-        return sorted(files, key=lambda x: os.path.basename(x))
-
     def generator():
-
+        
         pfm_sources = []
         pgm_sources = []
         png_sources = []
@@ -276,97 +352,91 @@ def create_dataset_from_generator(pfm_paths, pgm_paths, png_paths, img_height=96
         for png_path in png_paths:
             png_sources += [sort_files_by_name(glob.glob(png_path + '/*.png'))]
 
-        t = 0
-        for files in zip(*pfm_sources, *pgm_sources, *png_sources):
-            if t == 0:
-                nt_outs = []
-            
-            out = []
-            for i in range(num_pfm_paths):
-                out.append(readPFM(files[i]))
-            for i in range(num_pgm_paths):
-                out.append(np.array(Image.open(files[i + num_pfm_paths])) / 255.0)
-            for i in range(num_png_paths):
-                out.append(np.array(Image.open(files[i + num_pfm_paths + num_pgm_paths])) / 255.0)
-            nt_outs.append(out)
-            t += 1
-            
-            if t == nt:
-                t == 0
-                TODO: "yield nt_outs"
-                yield nt_outs
+        all_files = np.array(list(zip(*pfm_sources, *pgm_sources, *png_sources)))
+
+        assert nt <= all_files.shape[0], "nt must be less than or equal to the number of files in the dataset"
+        
+        for i in range(all_files.shape[0]+1-nt):
+            nt_outs = []
+            for j in range(num_pfm_paths):
+                nt_outs.append([readPFM(all_files[i+k, j]) for k in range(nt)])
+            for j in range(num_pgm_paths):
+                nt_outs.append([np.array(Image.open(all_files[i+k, j + num_pfm_paths]))  / 255.0 for k in range(nt)])
+            for j in range(num_png_paths):
+                nt_outs.append([np.array(Image.open(all_files[i+k, j + num_pfm_paths + num_pgm_paths])) / 255.0 for k in range(nt)])
+        
+            yield tuple(nt_outs)
 
     dataset = tf.data.Dataset.from_generator(generator, output_signature=(
-        tf.TensorSpec(shape=(None, None, None), dtype=tf.float32),
-        tf.TensorSpec(shape=(None, None, None), dtype=tf.float32),
-        tf.TensorSpec(shape=(None, None, None), dtype=tf.float32),
-        tf.TensorSpec(shape=(None, None, None, 3), dtype=tf.float32),
-        tf.TensorSpec(shape=(None, None, None), dtype=tf.float32),
-        tf.TensorSpec(shape=(None, None, None, 3), dtype=tf.float32)
+        (tf.TensorSpec(shape=(nt, im_height, im_width), dtype=tf.float32)),
+        (tf.TensorSpec(shape=(nt, im_height, im_width), dtype=tf.float32)),
+        (tf.TensorSpec(shape=(nt, im_height, im_width), dtype=tf.float32)),
+        (tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32)),
+        (tf.TensorSpec(shape=(nt, im_height, im_width), dtype=tf.float32)),
+        (tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32))
+    ))
+
+    # Get the length of the dataset
+    length = len(glob.glob(pfm_paths[0] + '/*.pfm'))
+
+    # Shuffle, batch and prefetch the dataset
+    if shuffle:
+        dataset = dataset.shuffle(buffer_size=length, reshuffle_each_iteration=True)
+    dataset = dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
+
+    return dataset, length
+
+
+def create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, im_height=540, im_width=960, batch_size=3, nt=10, reserialize=False, shuffle=True):
+
+    start_time = time.perf_counter()
+    if reserialize:
+        serialize_dataset(pfm_paths, pgm_paths, png_paths, start_time=start_time)
+        print("Reserialized dataset.")
+    else:
+        print("Using previously serialized dataset.")
+    print(f"Begin tf.data.Dataset creation at {time.perf_counter() - start_time} seconds.")
+
+
+    num_pfm_paths = len(pfm_paths)
+    num_pgm_paths = len(pgm_paths)
+    num_png_paths = len(png_paths)
+    num_total_paths = num_pfm_paths + num_pgm_paths + num_png_paths
+
+    all_files = hkl.load(os.path.join(DATA_DIR, 'monkaa_train.hkl')) # list of numpy arrays, one for each source
+    num_samples = all_files[0].shape[0]
+    assert all([all_files[i].shape[0] == num_samples for i in range(num_total_paths)]), "All sources must have the same number of samples"
+
+    # Get the length of the dataset
+    length = len(glob.glob(pfm_paths[0] + '/*.pfm'))
+
+
+    def generator():
+        last = time.perf_counter()
+        # num unique sequences, nus
+        nus = num_samples + 1 - nt
+        for i in random.sample(range(nus), nus) if shuffle else range(num_samples +1 -nt): # per source
+            nt_outs = []
+            for j in range(num_total_paths):
+                nt_outs.append([all_files[j][i+k] for k in range(nt)])
+                last = time.perf_counter()
+            yield tuple(nt_outs)
+
+    dataset = tf.data.Dataset.from_generator(generator, output_signature=(
+        (tf.TensorSpec(shape=(nt, im_height, im_width), dtype=tf.float32)),
+        (tf.TensorSpec(shape=(nt, im_height, im_width), dtype=tf.float32)),
+        (tf.TensorSpec(shape=(nt, im_height, im_width), dtype=tf.float32)),
+        (tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32)),
+        (tf.TensorSpec(shape=(nt, im_height, im_width), dtype=tf.float32)),
+        (tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32))
     ))
 
     # Batch and prefetch the dataset
+
+    # if shuffle:
+    #     dataset = dataset.shuffle(buffer_size=int(1.2*num_total_paths*length), reshuffle_each_iteration=True)
     dataset = dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
+    print(f"End tf.data.Dataset creation at {time.perf_counter() - start_time} seconds.")
 
-    return dataset
-
-# Define paths to .pfm and .png directories
-pfm_paths = []
-pfm_paths.append('/home/evalexii/remote_dataset/disparity/family_x2/left/')
-pfm_paths.append('/home/evalexii/remote_dataset/material_index/family_x2/left/')
-pfm_paths.append('/home/evalexii/remote_dataset/object_index/family_x2/left/')
-pfm_paths.append('/home/evalexii/remote_dataset/optical_flow/family_x2/into_future/left/')
-pgm_paths = []
-pgm_paths.append('/home/evalexii/remote_dataset/motion_boundaries/family_x2/into_future/left/')
-png_paths = []
-png_paths.append('/home/evalexii/remote_dataset/frames_cleanpass/family_x2/left')
-
-batch_size = 3
-nt = 10
-dataset = create_dataset_from_generator(pfm_paths, pgm_paths, png_paths, batch_size=batch_size, nt=nt)
-
-# Iterate over the dataset
-for batch in dataset:
-    for j in range(batch_size):
-        fig, axes = plt.subplots(1, len(batch), figsize=(15, 5))
-        for i, image in enumerate(batch):
-            print(image.shape)
-            axes[i].imshow(image[j])
-        plt.show()
-
-# def sort_files_by_name(files):
-#     return sorted(files, key=lambda x: os.path.basename(x))
-
-# def generator(pfm_paths, pgm_paths, png_paths):
-#     num_pfm_paths = len(pfm_paths)
-#     num_pgm_paths = len(pgm_paths)
-#     num_png_paths = len(png_paths)
-
-#     pfm_sources = []
-#     pgm_sources = []
-#     png_sources = []
-    
-#     for pfm_path in pfm_paths:
-#         pfm_sources += [sort_files_by_name(glob.glob(pfm_path + '/*.pfm'))]
-#     for pgm_path in pgm_paths:
-#         pgm_sources += [sort_files_by_name(glob.glob(pgm_path + '/*.pgm'))]
-#     for png_path in png_paths:
-#         png_sources += [sort_files_by_name(glob.glob(png_path + '/*.png'))]
-
-#     outs = []
-    
-#     for files in zip(*pfm_sources, *pgm_sources, *png_sources):
-#         out = []
-#         for i in range(num_pfm_paths):
-#             out.append(readPFM(files[i]))
-#         for i in range(num_pgm_paths):
-#             out.append(np.array(Image.open(files[i + num_pfm_paths])) / 255.0)
-#         for i in range(num_png_paths):
-#             out.append(np.array(Image.open(files[i + num_pfm_paths + num_pgm_paths])) / 255.0)
-#         outs.append(out)
-    
-#     return outs
-
-# generator = generator(pfm_paths, pgm_paths, png_paths)
-# print("asd")
+    return dataset, length
 
