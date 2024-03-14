@@ -107,7 +107,7 @@ class PredLayer(keras.layers.Layer):
         self.states['lstm'] = None
         # self.representation.reset_states()
 
-    def call(self, inputs=None, direction='top_down'):
+    def call(self, inputs=None, direction='top_down', paddings=None):
         # print(f"Calling PredLayer... {self.name}")
         # PredLayer should update internal states when called with new TD and BU inputs, inputs[0] = BU, inputs[1] = TD
         
@@ -117,6 +117,7 @@ class PredLayer(keras.layers.Layer):
                 R_inp = tf.expand_dims(keras.layers.Concatenate()([self.states['E'], self.states['R']]), axis=1)
             else:
                 self.states['TD_Inp'] = self.upsample(inputs[1])
+                self.states['TD_Inp'] = keras.layers.ZeroPadding2D(paddings)(self.states['TD_Inp'])
                 R_inp = tf.expand_dims(keras.layers.Concatenate()([self.states['E'], self.states['R'], self.states['TD_Inp']]), axis=1)
             
             if self.states['lstm'] is None:
@@ -148,14 +149,16 @@ class PredLayer(keras.layers.Layer):
             raise ValueError("Invalid direction. Must be 'top_down' or 'bottom_up'.")
 
 class ParaPredNet(keras.Model):
-    def __init__(self, batch_size=4, nt=10, output_channels = [3, 48, 96, 192], output_mode='Error', *args, **kwargs):
+    def __init__(self, batch_size=4, nt=10, im_height=540, im_width=960, output_channels=[3, 48, 96, 192], output_mode='Error', *args, **kwargs):
         super(ParaPredNet, self).__init__(*args, **kwargs)
         self.batch_size = batch_size
         self.nt = nt
-        self.im_height = 128
-        self.im_width = 160
+        self.im_height = im_height
+        self.im_width = im_width
         self.layer_output_channels = output_channels
         self.num_layers = len(self.layer_output_channels)
+        self.resolutions = self.calculate_resolutions(self.im_height, self.im_width, self.num_layers)
+        self.paddings = self.calculate_padding(self.im_height, self.im_width, self.num_layers)
         self.layer_input_channels = [0] * self.num_layers
         for i in range(len(self.layer_output_channels)):
             if i == 0:
@@ -173,18 +176,19 @@ class ParaPredNet(keras.Model):
             self.predlayers[-1].initialize_states(self.batch_size)
             # build layers
             if l == 0:
-                temp_BU = tf.random.uniform((self.batch_size, self.im_height, self.im_width, self.layer_input_channels[l]), maxval=255, dtype=tf.float32)
+                temp_BU = tf.random.uniform((self.batch_size, self.resolutions[l,0], self.resolutions[l,1], self.layer_input_channels[l]), maxval=255, dtype=tf.float32)
             else:
-                temp_BU = tf.random.uniform((self.batch_size, self.im_height // 2**(l-1), self.im_width // 2**(l-1), self.layer_input_channels[l]), maxval=255, dtype=tf.float32)
+                temp_BU = tf.random.uniform((self.batch_size, self.resolutions[l,0], self.resolutions[l,1], self.layer_input_channels[l]), maxval=255, dtype=tf.float32)
             if l < self.num_layers - 1:
-                temp_TD = tf.random.uniform((self.batch_size, self.im_height // 2**(l+1), self.im_width // 2**(l+1), self.layer_output_channels[l+1]), maxval=255, dtype=tf.float32)
+                temp_TD = tf.random.uniform((self.batch_size, self.resolutions[l+1,0], self.resolutions[l+1,1], self.layer_output_channels[l+1]), maxval=255, dtype=tf.float32)
             else:
                 temp_TD = None
-            temp_out = self.predlayers[l]([temp_BU, temp_TD])
+            temp_out = self.predlayers[l]([temp_BU, temp_TD], paddings=self.paddings[l])
             
     def call(self, inputs):
         # print("Calling PredNet...")
-        # inputs will be a sequence of video frames
+        # inputs will be a batch of sequences of video frames
+        inputs = inputs[-1]
 
         # Initialize layer states
         for layer in self.predlayers:
@@ -198,12 +202,12 @@ class ParaPredNet(keras.Model):
                 if l == self.num_layers - 1:
                     BU_inp = None
                     TD_inp = None
-                    layer([BU_inp, TD_inp], direction='top_down')
+                    layer([BU_inp, TD_inp], direction='top_down', paddings=self.paddings[l])
                 # Bottom and Middle layers
                 else:
                     BU_inp = None
                     TD_inp = self.predlayers[l+1].states['R']
-                    layer([BU_inp, TD_inp], direction='top_down')
+                    layer([BU_inp, TD_inp], direction='top_down', paddings=self.paddings[l])
             # Perform bottom-up pass, starting from the bottom layer
             for l, layer in list(enumerate(self.predlayers)):
                 # Bottom layer
@@ -243,3 +247,32 @@ class ParaPredNet(keras.Model):
             layer.clear_states()
                 
         return output
+    
+    def calculate_resolutions(self, im_height, im_width, num_layers):
+        # Calculate resolutions for each layer
+        resolutions = np.array([[im_height, im_width]])
+        for i in range(num_layers-1):
+            resolutions = np.concatenate((resolutions, np.array([[resolutions[-1][0]//2, resolutions[-1][1]//2]])), axis=0)
+        return resolutions
+
+    def calculate_padding(self, im_height, im_width, num_layers):
+        # Calculate padding for the input image to be divisible by 2**num_layers
+        paddings = np.array([[[0,0],[0,0]] for _ in range(num_layers)])
+        
+        pooled_sizes = np.array([[im_height, im_width]])
+        for i in range(num_layers-1):
+            # Going down:
+            pooled_sizes = np.concatenate((pooled_sizes, np.array([[pooled_sizes[-1][0]//2, pooled_sizes[-1][1]//2]])), axis=0)
+        
+        upsampled_sizes = np.array([pooled_sizes[-1]])
+        for i in reversed(range(num_layers-1)):
+            # Going up:
+            upsampled_sizes = np.concatenate((np.array([[upsampled_sizes[0][0]*2, upsampled_sizes[0][1]*2]]), upsampled_sizes), axis=0)
+            diff = (pooled_sizes[i][0] - upsampled_sizes[0][0], pooled_sizes[i][1] - upsampled_sizes[0][1])
+            paddings[i] = [[0, diff[0]], [0, diff[1]]]
+            upsampled_sizes[0] += np.array(diff)
+        
+        # print(np.concatenate((np.array(pooled_sizes), np.array(upsampled_sizes)), axis=1))
+        # print(np.array(paddings))
+        
+        return paddings
