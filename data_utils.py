@@ -116,26 +116,27 @@ class SequenceGenerator(Iterator):
 
 
 class IntermediateEvaluations(Callback):
-    def __init__(self, batch_size=4, nt=10, output_channels=[3, 48, 96, 192]):
+    def __init__(self, test_dataset, batch_size=4, nt=10, output_channels=[3, 48, 96, 192]):
         super(IntermediateEvaluations, self).__init__()
+        self.test_dataset = test_dataset
         self.n_plot = batch_size  # 40
         self.batch_size = batch_size
         self.nt = nt
         self.plot_nt = nt
         self.weights_file = os.path.join(
-            WEIGHTS_DIR, 'tensorflow_weights/para_prednet_kitti_weights.hdf5')
-        self.test_file = os.path.join(DATA_DIR, 'X_test.hkl')
-        self.test_sources = os.path.join(DATA_DIR, 'sources_test.hkl')
+            WEIGHTS_DIR, 'tensorflow_weights/para_prednet_monkaa_weights.hdf5')
+        # self.test_file = os.path.join(DATA_DIR, 'X_test.hkl')
+        # self.test_sources = os.path.join(DATA_DIR, 'sources_test.hkl')
 
-        self.test_PPN = ParaPredNet(
-            batch_size=self.batch_size, nt=self.nt, output_channels=output_channels)
-        self.test_PPN.output_mode = 'Prediction'
-        self.test_PPN.compile(optimizer='adam', loss='mean_squared_error')
-        self.test_PPN.build(input_shape=(None, self.nt, 128, 160, 3))
-        print("ParaPredNet compiled...")
+        # self.test_PPN = ParaPredNet(
+        #     batch_size=self.batch_size, nt=self.nt, output_channels=output_channels)
+        # self.test_PPN.output_mode = 'Prediction'
+        # self.test_PPN.compile(optimizer='adam', loss='mean_squared_error')
+        # self.test_PPN.build(input_shape=(None, self.nt, 128, 160, 3))
+        # print("ParaPredNet compiled...")
 
-        self.test_generator = SequenceGenerator(
-            self.test_file, self.test_sources, self.nt, sequence_start_mode='unique')
+        # self.test_generator = SequenceGenerator(
+        #     self.test_file, self.test_sources, self.nt, sequence_start_mode='unique')
 
         if not os.path.exists(RESULTS_SAVE_DIR):
             os.mkdir(RESULTS_SAVE_DIR)
@@ -155,13 +156,16 @@ class IntermediateEvaluations(Callback):
         '''
 
         # load latest weights and regenerate test model
-        if os.path.exists(self.weights_file):
-            self.test_PPN.load_weights(self.weights_file)
+        # if os.path.exists(self.weights_file):
+        #     self.test_PPN.load_weights(self.weights_file)
 
-        X_test = self.test_generator.create_n(self.n_plot)
+        X_test = next(iter(self.test_dataset.take(self.n_plot)))[0] # take just batch_x not batch_y
         # X_hat = tf.cast(self.test_PPN(X_test), dtype=tf.float32)
-        X_hat = self.test_PPN(X_test)
-
+        self.model.layers[-1].output_mode = 'Prediction'
+        X_hat = self.model(X_test)
+        self.model.layers[-1].output_mode = 'Error'
+        
+        X_test = X_test[-1] # take only the PNG images for MSE calcs and plotting
         # Compare MSE of PredNet predictions vs. using last frame.  Write results to prediction_scores.txt
         # look at all timesteps except the first
         mse_model = np.mean((X_test[:, 1:] - X_hat[:, 1:])**2)

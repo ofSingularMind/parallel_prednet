@@ -12,6 +12,7 @@ __pycache__/
 # Video and data folders
 images/
 monkaa_data/
+monkaa_results/
 kitti_data/
 kitti_results/
 kitti_results_archive/
