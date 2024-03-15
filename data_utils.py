@@ -619,18 +619,14 @@ def grab_single_data_and_save(data_file):
 def test_dataset():
     # Training data
     pfm_paths = []
-    pfm_paths.append('/home/evalexii/local_dataset/disparity/family_x2/left/')
-    pfm_paths.append(
-        '/home/evalexii/local_dataset/material_index/family_x2/left/')
-    pfm_paths.append('/home/evalexii/local_dataset/object_index/family_x2/left/')
-    pfm_paths.append(
-        '/home/evalexii/local_dataset/optical_flow/family_x2/into_future/left/')
+    pfm_paths.append(DATA_DIR + 'disparity/family_x2/left/')
+    pfm_paths.append(DATA_DIR + 'material_index/family_x2/left/')
+    pfm_paths.append(DATA_DIR + 'object_index/family_x2/left/')
+    pfm_paths.append(DATA_DIR + 'optical_flow/family_x2/into_future/left/')
     pgm_paths = []
-    pgm_paths.append(
-        '/home/evalexii/local_dataset/motion_boundaries/family_x2/into_future/left/')
+    pgm_paths.append(DATA_DIR + 'motion_boundaries/family_x2/into_future/left/')
     png_paths = []
-    png_paths.append(
-        '/home/evalexii/local_dataset/frames_cleanpass/family_x2/left')
+    png_paths.append(DATA_DIR + 'frames_cleanpass/family_x2/left')
     num_sources = len(pfm_paths) + len(pgm_paths) + len(png_paths)
 
     # Training parameters
