@@ -3,10 +3,16 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# VS Code
+.vscode/
+
 # C extensions
 *.so
 
 # Video and data folders
+images/
+monkaa_data/
+monkaa_results/
 kitti_data/
 kitti_results/
 kitti_results_archive/
