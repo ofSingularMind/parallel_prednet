@@ -152,8 +152,8 @@ if __name__ == "__main__":
     parser.add_argument("--sequences_per_epoch_val", type=int, default=5, help="number of sequences per epoch for validation")
     parser.add_argument("--num_P_CNN", type=int, default=2, help="number of parallel CNNs")
     parser.add_argument("--num_R_CLSTM", type=int, default=2, help="number of recurrent CLSTMs")
-    parser.add_argument("--output_channels", type=list, default=[3, 12], help="output channels")
-    parser.add_argument("--original_im_shape", type=tuple, default=(540, 960, 3), help="original image shape")
+    parser.add_argument("--output_channels", nargs='+', type=int, default=[3, 12], help="output channels")
+    parser.add_argument("--original_im_shape", nargs='+', type=int, default=(540, 960, 3), help="original image shape")
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor")
     parser.add_argument("--train_proportion", type=float, default=0.7, help="downscale factor")
     
