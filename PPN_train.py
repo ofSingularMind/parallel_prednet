@@ -34,10 +34,10 @@ plot_intermediate = True  # if the intermediate model predictions will be plotte
 tensorboard = True  # if the Tensorboard callback will be used
 # where weights are loaded prior to training
 weights_checkpoint_file = os.path.join(
-    WEIGHTS_DIR, 'tensorflow_weights/para_prednet_monkaa_weights.hdf5')
+    WEIGHTS_DIR, 'para_prednet_monkaa_weights.hdf5')
 # where weights will be saved
 weights_file = os.path.join(
-    WEIGHTS_DIR, 'tensorflow_weights/para_prednet_monkaa_weights.hdf5')
+    WEIGHTS_DIR, 'para_prednet_monkaa_weights.hdf5')
 json_file = os.path.join(WEIGHTS_DIR, 'para_prednet_monkaa_model_ALEX.json')
 if os.path.exists(weights_file): os.remove(weights_file)  # Careful: this will delete the weights file
 
@@ -59,7 +59,7 @@ nb_epoch = 150  # 150
 batch_size = 1  # 4
 samples_per_epoch = 100  # 500
 N_seq_val = 20  # number of sequences to use for validation
-output_channels = [3, 12, 24]  # [3, 48, 96, 192]
+output_channels = [3, 6]  # [3, 48, 96, 192]
 original_im_shape = (540, 960, 3)
 downscale_factor = 4
 im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3)
@@ -125,7 +125,7 @@ if tensorboard:
     callbacks.append(TensorBoard(
         log_dir=LOG_DIR, histogram_freq=1, write_graph=True, write_images=False))
 
-history = PPN.fit(train_dataset, steps_per_epoch=5, epochs=nb_epoch, callbacks=callbacks,
+history = PPN.fit(train_dataset, steps_per_epoch=samples_per_epoch / batch_size, epochs=nb_epoch, callbacks=callbacks,
                   validation_data=val_dataset, validation_steps=val_size / batch_size)
 
 # train_size / batch_size

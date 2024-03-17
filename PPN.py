@@ -14,15 +14,14 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 
 class Target(keras.layers.Layer):
-    def __init__(self, output_channels):
-        super().__init__()
+    def __init__(self, output_channels, layer_num, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.output_channels = output_channels
         # Add Conv
-        self.conv = layers.Conv2D(
-            self.output_channels, (3, 3), padding='same', activation='relu')
+        self.conv = layers.Conv2D(self.output_channels, (3, 3), padding='same', activation='relu', name=f'Target_Conv_{layer_num}')
         # Add Pool
         # self.pool = None
-        self.pool = layers.MaxPooling2D((2, 2), padding='valid')
+        self.pool = layers.MaxPooling2D((2, 2), padding='valid', name=f'Target_Pool_{layer_num}')
 
     def call(self, inputs):
         x = self.conv(inputs)
@@ -33,20 +32,25 @@ class Target(keras.layers.Layer):
 
 
 class Prediction(keras.layers.Layer):
-    def __init__(self, output_channels):
-        super().__init__()
+    def __init__(self, output_channels, layer_num, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.output_channels = output_channels
         # Add Conv
-        self.conv = layers.Conv2D(
-            self.output_channels, (3, 3), padding='same', activation='relu')
+        self.conv1 = layers.Conv2D(self.output_channels, (3, 3), padding='same', activation='relu', name=f'Prediction_Conv1_{layer_num}')
+        self.conv2 = layers.Conv2D(self.output_channels, (3, 3), padding='same', activation='relu', name=f'Prediction_Conv2_{layer_num}')
+        self.conv3 = layers.Conv2D(self.output_channels, (3, 3), padding='same', activation='relu', name=f'Prediction_Conv3_{layer_num}')
 
     def call(self, inputs):
-        return self.conv(inputs)
+        x = self.conv1(inputs)
+        x = self.conv2(x)
+        out = self.conv3(x)
+        return out
 
 
 class Error(keras.layers.Layer):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, layer_num, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.layer_num = layer_num
         # Add Subtract
         # Add ReLU
 
@@ -58,24 +62,34 @@ class Error(keras.layers.Layer):
 
 
 class Representation(keras.layers.Layer):
-    def __init__(self, output_channels):
-        super().__init__()
+    def __init__(self, output_channels, layer_num, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         # Add ConvLSTM, being sure to pass previous states in OR use stateful=True
-        self.conv_lstm = layers.ConvLSTM2D(
-            output_channels, (3, 3), padding='same', return_sequences=False, activation='relu', return_state=True)
+        self.conv_lstm1 = layers.ConvLSTM2D(output_channels, (3, 3), padding='same', return_sequences=False, activation='tanh', recurrent_activation='hard_sigmoid', return_state=True, name=f'Representation_ConvLSTM1_{layer_num}')
+        self.conv_lstm2 = layers.ConvLSTM2D(output_channels, (3, 3), padding='same', return_sequences=False, activation='tanh', recurrent_activation='hard_sigmoid', return_state=True, name=f'Representation_ConvLSTM2_{layer_num}')
+        self.conv_lstm3 = layers.ConvLSTM2D(output_channels, (3, 3), padding='same', return_sequences=False, activation='tanh', recurrent_activation='hard_sigmoid', return_state=True, name=f'Representation_ConvLSTM3_{layer_num}')
 
-    def call(self, inputs, initial_state=None):
-        output, h, c = self.conv_lstm(inputs, initial_state=initial_state)
+    def call(self, inputs, initial_states=None):
+        out1, h1, c1 = self.conv_lstm1(inputs, initial_state=initial_states[0] if initial_states is not None else None)
+        i_out1 = tf.expand_dims(out1, axis=1)
+        out2, h2, c2 = self.conv_lstm2(i_out1, initial_state=initial_states[1] if initial_states is not None else None)
+        i_out2 = tf.expand_dims(out2, axis=1)
+        out3, h3, c3 = self.conv_lstm3(i_out2, initial_state=initial_states[2] if initial_states is not None else None)
         # output, h, c = ret[0], ret[1], ret[2]
-        return output, h, c
+        output = keras.layers.Concatenate(axis=-1)([out1, out2, out3])
+        states = [[h1, c1], [h2, c2], [h3, c3]]
+        return output, states
 
     def reset_states(self):
-        self.conv_lstm.reset_states()
+        self.conv_lstm1.reset_states()
+        self.conv_lstm2.reset_states()
+        self.conv_lstm3.reset_states()
 
 
 class PredLayer(keras.layers.Layer):
-    def __init__(self, im_height, im_width, output_channels, bottom_layer=False, top_layer=False, *args, **kwargs):
+    def __init__(self, im_height, im_width, output_channels, layer_num, bottom_layer=False, top_layer=False, *args, **kwargs):
         super(PredLayer, self).__init__(*args, **kwargs)
+        self.layer_num = layer_num
         self.im_height = im_height
         self.im_width = im_width
         self.pixel_max = 1
@@ -87,17 +101,17 @@ class PredLayer(keras.layers.Layer):
                        'E': None, 'TD_Inp': None, 'L_Inp': None}
         # self.input_shape=(None, nt, im_height, im_width, output_channels)
         # self.inputs = keras.Input(shape=self.input_shape)
-        self.representation = Representation(output_channels)
-        self.prediction = Prediction(output_channels)
+        self.representation = Representation(output_channels, layer_num=self.layer_num, name=f'Representation_{self.layer_num}')
+        self.prediction = Prediction(output_channels, layer_num=self.layer_num, name=f'Prediction_{self.layer_num}')
         if not self.bottom_layer:
-            self.target = Target(output_channels)
-        self.error = Error()
-        self.upsample = layers.UpSampling2D((2, 2))
+            self.target = Target(output_channels, layer_num=self.layer_num, name=f'Target_{self.layer_num}')
+        self.error = Error(layer_num=self.layer_num, name=f'Error_{self.layer_num}')
+        self.upsample = layers.UpSampling2D((2, 2), name=f'Upsample_{self.layer_num}')
 
     def initialize_states(self, batch_size):
         # Initialize internal layer states
         self.states['R'] = tf.zeros(
-            (batch_size, self.im_height, self.im_width, self.output_channels))
+            (batch_size, self.im_height, self.im_width, 3*self.output_channels))
         self.states['P'] = tf.zeros(
             (batch_size, self.im_height, self.im_width, self.output_channels))
         self.states['T'] = tf.zeros(
@@ -136,12 +150,11 @@ class PredLayer(keras.layers.Layer):
                     [self.states['E'], self.states['R'], self.states['TD_Inp']]), axis=1)
 
             if self.states['lstm'] is None:
-                self.states['R'], h, c = self.representation(R_inp)
-                self.states['lstm'] = [h, c]
+                self.states['R'], self.states['lstm'] = self.representation(R_inp)
             else:
-                self.states['R'], h, c = self.representation(
-                    R_inp, initial_state=self.states['lstm'])
-                self.states['lstm'] = [h, c]
+                self.states['R'], new_lstm_states = self.representation(
+                    R_inp, initial_states=self.states['lstm'])
+                self.states['lstm'] = new_lstm_states
 
             # FORM PREDICTION
             self.states['P'] = K.minimum(
@@ -196,8 +209,8 @@ class ParaPredNet(keras.Model):
         self.output_mode = output_mode
         self.predlayers = []
         for l, c in enumerate(self.layer_output_channels):
-            self.predlayers.append(PredLayer(self.resolutions[l, 0], self.resolutions[l, 1], c, bottom_layer=(
-                l == 0), top_layer=(l == self.num_layers-1), name=f'PredLayer_{l}'))
+            self.predlayers.append(PredLayer(self.resolutions[l, 0], self.resolutions[l, 1], c, l, 
+                                             bottom_layer=(l == 0), top_layer=(l == self.num_layers-1), name=f'PredLayer_{l}'))
             # initialize layer states
             self.predlayers[-1].initialize_states(self.batch_size)
             # build layers
@@ -209,7 +222,7 @@ class ParaPredNet(keras.Model):
                     (self.batch_size, self.resolutions[l, 0], self.resolutions[l, 1], self.layer_input_channels[l]), maxval=255, dtype=tf.float32)
             if l < self.num_layers - 1:
                 temp_TD = tf.random.uniform(
-                    (self.batch_size, self.resolutions[l+1, 0], self.resolutions[l+1, 1], self.layer_output_channels[l+1]), maxval=255, dtype=tf.float32)
+                    (self.batch_size, self.resolutions[l+1, 0], self.resolutions[l+1, 1], 3*self.layer_output_channels[l+1]), maxval=255, dtype=tf.float32)
             else:
                 temp_TD = None
             temp_out = self.predlayers[l](

@@ -178,7 +178,7 @@ class IntermediateEvaluations(Callback):
 
         # Plot some training predictions
         aspect_ratio = float(X_hat.shape[2]) / X_hat.shape[3]
-        plt.figure(figsize=(2*self.plot_nt, 4*aspect_ratio))
+        plt.figure(figsize=(4*self.plot_nt, 8*aspect_ratio))
         gs = gridspec.GridSpec(2, self.plot_nt)
         gs.update(wspace=0., hspace=0.)
         plot_save_dir = os.path.join(RESULTS_SAVE_DIR, 'training_plots/')
