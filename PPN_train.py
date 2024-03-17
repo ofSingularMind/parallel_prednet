@@ -34,10 +34,10 @@ plot_intermediate = True  # if the intermediate model predictions will be plotte
 tensorboard = True  # if the Tensorboard callback will be used
 # where weights are loaded prior to training
 weights_checkpoint_file = os.path.join(
-    WEIGHTS_DIR, 'tensorflow_weights/para_prednet_monkaa_weights.hdf5')
+    WEIGHTS_DIR, 'para_prednet_monkaa_weights.hdf5')
 # where weights will be saved
 weights_file = os.path.join(
-    WEIGHTS_DIR, 'tensorflow_weights/para_prednet_monkaa_weights.hdf5')
+    WEIGHTS_DIR, 'para_prednet_monkaa_weights.hdf5')
 json_file = os.path.join(WEIGHTS_DIR, 'para_prednet_monkaa_model_ALEX.json')
 if os.path.exists(weights_file): os.remove(weights_file)  # Careful: this will delete the weights file
 
@@ -54,12 +54,12 @@ png_paths.append(DATA_DIR + 'frames_cleanpass/family_x2/left')
 num_sources = len(pfm_paths) + len(pgm_paths) + len(png_paths)
 
 # Training parameters
-nt = 5  # number of time steps
+nt = 10  # number of time steps
 nb_epoch = 150  # 150
-batch_size = 1  # 4
+batch_size = 2  # 4
 samples_per_epoch = 100  # 500
 N_seq_val = 20  # number of sequences to use for validation
-output_channels = [3, 12, 24]  # [3, 48, 96, 192]
+output_channels = [3, 48, 96, 192]
 original_im_shape = (540, 960, 3)
 downscale_factor = 4
 im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3)
@@ -67,7 +67,7 @@ im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // do
 #  Create and split dataset
 dataset, length = create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode='Error',
                                                            im_height=im_shape[0], im_width=im_shape[1],
-                                                           batch_size=batch_size, nt=nt, reserialize=False, shuffle=True, resize=True)
+                                                           batch_size=batch_size, nt=nt, reserialize=True, shuffle=True, resize=True)
 
 ts = 0.7
 vs = (1 - ts) / 2

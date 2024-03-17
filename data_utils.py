@@ -123,8 +123,8 @@ class IntermediateEvaluations(Callback):
         self.batch_size = batch_size
         self.nt = nt
         self.plot_nt = nt
-        self.weights_file = os.path.join(
-            WEIGHTS_DIR, 'tensorflow_weights/para_prednet_monkaa_weights.hdf5')
+        # self.weights_file = os.path.join(
+        #     WEIGHTS_DIR, 'tensorflow_weights/para_prednet_monkaa_weights.hdf5')
         # self.test_file = os.path.join(DATA_DIR, 'X_test.hkl')
         # self.test_sources = os.path.join(DATA_DIR, 'sources_test.hkl')
 
@@ -503,13 +503,13 @@ def create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, ou
         (tf.TensorSpec(shape=(1), dtype=tf.float32)))
     ))
 
-    # Ensure infinite dataset
-    dataset = dataset.repeat()
-
     # Batch and prefetch the dataset
     dataset = dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
     print(
         f"End tf.data.Dataset creation at {time.perf_counter() - start_time} seconds.")
+
+    # Ensure infinite dataset
+    dataset = dataset.repeat()
 
     return dataset, length
 
