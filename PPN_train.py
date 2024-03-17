@@ -12,8 +12,8 @@ import shutil
 import keras
 from keras import backend as K
 from keras import layers
-from kitti_settings import *
-from data_utils import SequenceGenerator, IntermediateEvaluations, create_dataset_from_generator, create_dataset_from_serialized_generator
+from monkaa_settings import *
+from data_utils import IntermediateEvaluations, create_dataset_from_serialized_generator, config_gpus
 from keras.callbacks import LearningRateScheduler, ModelCheckpoint, TensorBoard
 from PPN import ParaPredNet
 import matplotlib.pyplot as plt
@@ -21,6 +21,7 @@ import matplotlib.pyplot as plt
 
 # use mixed precision for faster runtimes and lower memory usage
 # keras.mixed_precision.set_global_policy("mixed_float16")
+config_gpus()
 
 # if results directory already exists, then delete it
 if os.path.exists(RESULTS_SAVE_DIR):
@@ -39,27 +40,32 @@ weights_checkpoint_file = os.path.join(
 weights_file = os.path.join(
     WEIGHTS_DIR, 'para_prednet_monkaa_weights.hdf5')
 json_file = os.path.join(WEIGHTS_DIR, 'para_prednet_monkaa_model_ALEX.json')
-if os.path.exists(weights_file): os.remove(weights_file)  # Careful: this will delete the weights file
+# if os.path.exists(weights_file): os.remove(weights_file)  # Careful: this will delete the weights file
 
 # Training data
 pfm_paths = []
-pfm_paths.append('/home/evalexii/local_dataset/disparity/family_x2/left/')
-pfm_paths.append('/home/evalexii/local_dataset/material_index/family_x2/left/')
-pfm_paths.append('/home/evalexii/local_dataset/object_index/family_x2/left/')
-pfm_paths.append('/home/evalexii/local_dataset/optical_flow/family_x2/into_future/left/')
+pfm_paths.append(DATA_DIR + 'disparity/family_x2/left/')
+pfm_paths.append(DATA_DIR + 'material_index/family_x2/left/')
+pfm_paths.append(DATA_DIR + 'object_index/family_x2/left/')
+pfm_paths.append(DATA_DIR + 'optical_flow/family_x2/into_future/left/')
 pgm_paths = []
-pgm_paths.append('/home/evalexii/local_dataset/motion_boundaries/family_x2/into_future/left/')
+pgm_paths.append(DATA_DIR + 'motion_boundaries/family_x2/into_future/left/')
 png_paths = []
-png_paths.append('/home/evalexii/local_dataset/frames_cleanpass/family_x2/left')
+png_paths.append(DATA_DIR + 'frames_cleanpass/family_x2/left')
 num_sources = len(pfm_paths) + len(pgm_paths) + len(png_paths)
 
 # Training parameters
-nt = 5  # number of time steps
+nt = 10  # number of time steps
 nb_epoch = 150  # 150
 batch_size = 1  # 4
-samples_per_epoch = 100  # 500
-N_seq_val = 20  # number of sequences to use for validation
-output_channels = [3, 6]  # [3, 48, 96, 192]
+sequences_per_epoch_train = 10  # 500
+sequences_per_epoch_val = 5  # 500
+assert sequences_per_epoch_train is None or type(sequences_per_epoch_train) == int # this will override the default of (dataset size / batch size)
+assert sequences_per_epoch_val is None or type(sequences_per_epoch_val) == int # this will override the default of (dataset size / batch size)
+# N_seq_val = 20  # number of sequences to use for validation
+num_P_CNN = 2
+num_R_CLSTM = 2
+output_channels = [3, 12]
 original_im_shape = (540, 960, 3)
 downscale_factor = 4
 im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3)
@@ -78,10 +84,10 @@ print(f"Train size: {train_size}")
 print(f"Validation size: {val_size}")
 print(f"Test size: {test_size}")
 
-train_dataset = dataset.take(train_size)
-test_dataset = dataset.skip(train_size)
-val_dataset = test_dataset.skip(val_size)
-test_dataset = test_dataset.take(test_size)
+train_dataset = dataset.take(train_size).repeat()
+temp_dataset = dataset.skip(train_size)
+val_dataset = temp_dataset.skip(val_size).repeat()
+test_dataset = temp_dataset.take(test_size).repeat()
 
 inputs = (
     keras.Input(shape=(nt, im_shape[0], im_shape[1], 1)),
@@ -91,8 +97,7 @@ inputs = (
     keras.Input(shape=(nt, im_shape[0], im_shape[1], 1)),
     keras.Input(shape=(nt, im_shape[0], im_shape[1], 3)),
 )
-PPN = ParaPredNet(batch_size=batch_size, nt=nt,
-                  im_height=im_shape[0], im_width=im_shape[1], output_channels=output_channels)
+PPN = ParaPredNet(batch_size=batch_size, nt=nt, im_height=im_shape[0], im_width=im_shape[1], num_P_CNN=num_P_CNN, num_R_CLSTM=num_R_CLSTM, output_channels=output_channels)
 resos = PPN.resolutions
 outputs = PPN(inputs)
 PPN = keras.Model(inputs=inputs, outputs=outputs)
@@ -125,7 +130,11 @@ if tensorboard:
     callbacks.append(TensorBoard(
         log_dir=LOG_DIR, histogram_freq=1, write_graph=True, write_images=False))
 
-history = PPN.fit(train_dataset, steps_per_epoch=samples_per_epoch / batch_size, epochs=nb_epoch, callbacks=callbacks,
-                  validation_data=val_dataset, validation_steps=val_size / batch_size)
+history = PPN.fit(train_dataset, 
+                  steps_per_epoch=train_size / batch_size if sequences_per_epoch_train is None else sequences_per_epoch_train, 
+                  epochs=nb_epoch, 
+                  callbacks=callbacks,
+                  validation_data=val_dataset, 
+                  validation_steps=val_size / batch_size if sequences_per_epoch_val is None else sequences_per_epoch_val)
 
 # train_size / batch_size

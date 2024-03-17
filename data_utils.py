@@ -119,6 +119,7 @@ class IntermediateEvaluations(Callback):
     def __init__(self, test_dataset, batch_size=4, nt=10, output_channels=[3, 48, 96, 192]):
         super(IntermediateEvaluations, self).__init__()
         self.test_dataset = test_dataset
+        self.dataset_iterator = iter(test_dataset)
         self.n_plot = batch_size  # 40
         self.batch_size = batch_size
         self.nt = nt
@@ -159,7 +160,7 @@ class IntermediateEvaluations(Callback):
         # if os.path.exists(self.weights_file):
         #     self.test_PPN.load_weights(self.weights_file)
 
-        X_test = next(iter(self.test_dataset.take(self.n_plot)))[0] # take just batch_x not batch_y
+        X_test = next(self.dataset_iterator)[0] # take just batch_x not batch_y
         # X_hat = tf.cast(self.test_PPN(X_test), dtype=tf.float32)
         self.model.layers[-1].output_mode = 'Prediction'
         X_hat = self.model(X_test)
@@ -178,7 +179,7 @@ class IntermediateEvaluations(Callback):
 
         # Plot some training predictions
         aspect_ratio = float(X_hat.shape[2]) / X_hat.shape[3]
-        plt.figure(figsize=(4*self.plot_nt, 8*aspect_ratio))
+        plt.figure(figsize=(8*self.plot_nt, 16*aspect_ratio))
         gs = gridspec.GridSpec(2, self.plot_nt)
         gs.update(wspace=0., hspace=0.)
         plot_save_dir = os.path.join(RESULTS_SAVE_DIR, 'training_plots/')
@@ -503,13 +504,13 @@ def create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, ou
         (tf.TensorSpec(shape=(1), dtype=tf.float32)))
     ))
 
-    # Ensure infinite dataset
-    dataset = dataset.repeat()
-
     # Batch and prefetch the dataset
     dataset = dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
     print(
         f"End tf.data.Dataset creation at {time.perf_counter() - start_time} seconds.")
+
+    # Ensure infinite dataset (call after splitting)
+    # dataset = dataset.repeat()
 
     return dataset, length
 
@@ -673,3 +674,17 @@ def test_dataset():
                 for k in range(nt):
                     axes[i, k].imshow(image[j, k])
             plt.savefig(f'./images/test_{b}_{j}.png')
+
+def config_gpus():
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        try:
+            # Currently, memory growth needs to be the same across GPUs
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+            print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+        except RuntimeError as e:
+            # Memory growth must be set before GPUs have been initialized
+            print(e)
+
