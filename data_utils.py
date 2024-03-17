@@ -15,7 +15,7 @@ import glob
 import sys
 import re
 from PPN import ParaPredNet
-from monkaa_settings import *
+# from monkaa_settings import *
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 from keras.layers import Input
@@ -27,6 +27,10 @@ import tensorflow as tf
 import keras
 import numpy as np
 import hickle as hkl
+from config import update_settings, get_settings
+
+DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = get_settings()['dirs']
+
 
 # Data generator that creates sequences for input into PredNet.
 class SequenceGenerator(Iterator):
@@ -140,11 +144,11 @@ class IntermediateEvaluations(Callback):
         #     self.test_file, self.test_sources, self.nt, sequence_start_mode='unique')
 
         if not os.path.exists(RESULTS_SAVE_DIR):
-            os.mkdir(RESULTS_SAVE_DIR)
+            os.makedirs(RESULTS_SAVE_DIR, exist_ok=True)
         self.test_weights_path = os.path.join(
             RESULTS_SAVE_DIR, 'tensorflow_weights/')
         if not os.path.exists(self.test_weights_path):
-            os.mkdir(self.test_weights_path)
+            os.makedirs(self.test_weights_path, exist_ok=True)
 
     def on_epoch_end(self, epoch, logs=None):
         if epoch % 1 == 0 or epoch == 1:
@@ -184,7 +188,7 @@ class IntermediateEvaluations(Callback):
         gs.update(wspace=0., hspace=0.)
         plot_save_dir = os.path.join(RESULTS_SAVE_DIR, 'training_plots/')
         if not os.path.exists(plot_save_dir):
-            os.mkdir(plot_save_dir)
+            os.makedirs(plot_save_dir, exist_ok=True)
         plot_idx = np.random.permutation(X_test.shape[0])[:self.n_plot]
         for i in plot_idx:
             for t in range(self.plot_nt):
@@ -382,7 +386,7 @@ def serialize_dataset(pfm_paths, pgm_paths, png_paths, start_time=time.perf_coun
     # print(f"Image normalization complete at {time.perf_counter() - start_time} seconds.")
 
     if not os.path.exists(DATA_DIR):
-        os.mkdir(DATA_DIR)
+        os.makedirs(DATA_DIR, exist_ok=True)
     # where weights are loaded prior to training
     dataset_file = os.path.join(DATA_DIR, 'monkaa_train.hkl')
 

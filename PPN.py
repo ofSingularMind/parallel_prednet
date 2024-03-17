@@ -1,4 +1,3 @@
-from kitti_settings import *
 from keras import layers
 from keras import backend as K
 import keras
@@ -112,13 +111,13 @@ class PredLayer(keras.layers.Layer):
 
     def initialize_states(self, batch_size):
         # Initialize internal layer states
-        self.states['R'] = tf.random.uniform(
+        self.states['R'] = tf.zeros(
             (batch_size, self.im_height, self.im_width, self.num_R_CLSTM*self.output_channels))
-        self.states['P'] = tf.random.uniform(
+        self.states['P'] = tf.zeros(
             (batch_size, self.im_height, self.im_width, self.output_channels))
-        self.states['T'] = tf.random.uniform(
+        self.states['T'] = tf.zeros(
             (batch_size, self.im_height, self.im_width, self.output_channels))
-        self.states['E'] = tf.random.uniform(
+        self.states['E'] = tf.zeros(
             (batch_size, self.im_height, self.im_width, 2*self.output_channels))
         self.states['TD_Inp'] = None
         self.states['L_Inp'] = None

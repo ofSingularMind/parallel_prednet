@@ -13,6 +13,7 @@ __pycache__/
 images/
 monkaa_data/
 monkaa_results/
+monkaa_results_archive/
 kitti_data/
 kitti_results/
 kitti_results_archive/
