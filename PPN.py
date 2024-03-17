@@ -56,7 +56,7 @@ class Representation(keras.layers.Layer):
     def __init__(self, output_channels):
         super().__init__()
         # Add ConvLSTM, being sure to pass previous states in OR use stateful=True
-        self.conv_lstm = layers.ConvLSTM2D(output_channels, (3, 3), padding='same', return_sequences=False, activation='relu', return_state=True)
+        self.conv_lstm = layers.ConvLSTM2D(output_channels, (3, 3), padding='same', return_sequences=False, activation='tanh', recurrent_activation='hard_sigmoid', return_state=True)
 
     def call(self, inputs, initial_state=None):
         output, h, c = self.conv_lstm(inputs, initial_state=initial_state)
