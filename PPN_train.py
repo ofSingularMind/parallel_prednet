@@ -18,6 +18,11 @@ def main(args):
     from PPN import ParaPredNet
     import matplotlib.pyplot as plt
 
+    # Set the seed using keras.utils.set_random_seed. This will set:
+    # 1) `numpy` seed
+    # 2) backend random seed
+    # 3) `python` random seed
+    keras.utils.set_random_seed(args['seed'])
 
     # use mixed precision for faster runtimes and lower memory usage
     # keras.mixed_precision.set_global_policy("mixed_float16")
@@ -43,15 +48,16 @@ def main(args):
     if os.path.exists(weights_file): os.remove(weights_file)  # Careful: this will delete the weights file
 
     # Training data
+    assert os.path.exists(DATA_DIR + 'disparity/' + args['data_subset'] + '/left/'), "Improper data_subset selected"
     pfm_paths = []
-    pfm_paths.append(DATA_DIR + 'disparity/family_x2/left/')
-    pfm_paths.append(DATA_DIR + 'material_index/family_x2/left/')
-    pfm_paths.append(DATA_DIR + 'object_index/family_x2/left/')
-    pfm_paths.append(DATA_DIR + 'optical_flow/family_x2/into_future/left/')
+    pfm_paths.append(DATA_DIR + 'disparity/' + args['data_subset'] + '/left/')
+    pfm_paths.append(DATA_DIR + 'material_index/' + args['data_subset'] + '/left/')
+    pfm_paths.append(DATA_DIR + 'object_index/' + args['data_subset'] + '/left/')
+    pfm_paths.append(DATA_DIR + 'optical_flow/' + args['data_subset'] + '/into_future/left/')
     pgm_paths = []
-    pgm_paths.append(DATA_DIR + 'motion_boundaries/family_x2/into_future/left/')
+    pgm_paths.append(DATA_DIR + 'motion_boundaries/' + args['data_subset'] + '/into_future/left/')
     png_paths = []
-    png_paths.append(DATA_DIR + 'frames_cleanpass/family_x2/left')
+    png_paths.append(DATA_DIR + 'frames_cleanpass/' + args['data_subset'] + '/left')
     num_sources = len(pfm_paths) + len(pgm_paths) + len(png_paths)
 
     # Training parameters
@@ -69,26 +75,24 @@ def main(args):
     original_im_shape = args["original_im_shape"]
     downscale_factor = args["downscale_factor"]
     im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3)
-
+    
+    train_split = .7
+    val_split = (1 - train_split) / 2
     #  Create and split dataset
-    dataset, length = create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode='Error',
+    datasets, length = create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode='Error',
                                                             im_height=im_shape[0], im_width=im_shape[1],
-                                                            batch_size=batch_size, nt=nt, reserialize=False, shuffle=True, resize=True)
+                                                            batch_size=batch_size, nt=nt, train_split=train_split, reserialize=False, shuffle=True, resize=True)
 
-    ts = args["train_proportion"]
-    vs = (1 - ts) / 2
-    train_size = int(ts * length)
-    val_size = int(vs * length)
-    test_size = int(vs * length)
+    train_size = int(train_split * length)
+    val_size = int(val_split * length)
+    test_size = int(val_split * length)
+    train_dataset, val_dataset, test_dataset = datasets
     print(f"Train size: {train_size}")
     print(f"Validation size: {val_size}")
     print(f"Test size: {test_size}")
+    print("All datasets created successfully")
 
-    train_dataset = dataset.take(train_size).repeat()
-    temp_dataset = dataset.skip(train_size)
-    val_dataset = temp_dataset.skip(val_size).repeat()
-    test_dataset = temp_dataset.take(test_size).repeat()
-
+    # These are Monkaa specific input shapes
     inputs = (
         keras.Input(shape=(nt, im_shape[0], im_shape[1], 1)),
         keras.Input(shape=(nt, im_shape[0], im_shape[1], 1)),
@@ -106,7 +110,7 @@ def main(args):
     print(PPN.summary())
 
     num_layers = len(output_channels)  # number of layers in the architecture
-    print(f"Top layer resolution: {resos[-1][0]} x {resos[-1][1]}")
+    print(f"{num_layers} PredNet layers with a top-layer resolution of: {resos[-1][0]} x {resos[-1][1]}")
 
     # load previously saved weights
     if os.path.exists(weights_checkpoint_file):
@@ -124,18 +128,18 @@ def main(args):
         callbacks.append(ModelCheckpoint(filepath=weights_file,
                         monitor='val_loss', save_best_only=True, save_weights_only=True))
     if plot_intermediate:
-        callbacks.append(IntermediateEvaluations(test_dataset, batch_size=batch_size,
+        callbacks.append(IntermediateEvaluations(test_dataset, test_size, batch_size=batch_size,
                         nt=nt, output_channels=output_channels))
     if tensorboard:
         callbacks.append(TensorBoard(
             log_dir=LOG_DIR, histogram_freq=1, write_graph=True, write_images=False))
 
     history = PPN.fit(train_dataset, 
-                    steps_per_epoch=train_size / batch_size if sequences_per_epoch_train is None else sequences_per_epoch_train, 
+                    steps_per_epoch=train_size // batch_size if sequences_per_epoch_train is None else sequences_per_epoch_train, 
                     epochs=nb_epoch, 
                     callbacks=callbacks,
                     validation_data=val_dataset, 
-                    validation_steps=val_size / batch_size if sequences_per_epoch_val is None else sequences_per_epoch_val)
+                    validation_steps=val_size // batch_size if sequences_per_epoch_val is None else sequences_per_epoch_val)
 
 
 if __name__ == "__main__":
@@ -147,20 +151,22 @@ if __name__ == "__main__":
 
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
     parser.add_argument("--nb_epoch", type=int, default=150, help="number of epochs")
-    parser.add_argument("--batch_size", type=int, default=1, help="batch size")
-    parser.add_argument("--sequences_per_epoch_train", type=int, default=10, help="number of sequences per epoch for training")
-    parser.add_argument("--sequences_per_epoch_val", type=int, default=5, help="number of sequences per epoch for validation")
+    parser.add_argument("--batch_size", type=int, default=3, help="batch size (4 is no good)")
+    parser.add_argument("--sequences_per_epoch_train", type=int, default=None, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_val", type=int, default=None, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
     parser.add_argument("--num_P_CNN", type=int, default=2, help="number of parallel CNNs")
     parser.add_argument("--num_R_CLSTM", type=int, default=2, help="number of recurrent CLSTMs")
-    parser.add_argument("--output_channels", nargs='+', type=int, default=[3, 12], help="output channels")
+    parser.add_argument("--output_channels", nargs='+', type=int, default=[3], help="output channels")
     parser.add_argument("--original_im_shape", nargs='+', type=int, default=(540, 960, 3), help="original image shape")
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor")
     parser.add_argument("--train_proportion", type=float, default=0.7, help="downscale factor")
     
-    parser.add_argument("--seed", type=int, default=np.random.default_rng().integers(0,9999), help="random seed")
+    # parser.add_argument("--seed", type=int, default=np.random.default_rng().integers(0,9999), help="random seed")
+    parser.add_argument("--seed", type=int, default=213, help="random seed")
 
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
     parser.add_argument("--dataset", type=str, default="monkaa", help="monkaa or kitti")
+    parser.add_argument("--data_subset", type=str, default="family_x2", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
 
     args = parser.parse_args().__dict__
 

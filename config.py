@@ -49,7 +49,7 @@ def update_settings(system, dataset):
     if (system, dataset) in settings_dict:
         settings.update(settings_dict[(system, dataset)])
     else:
-        raise ValueError("Invalid system. Choose 'laptop' or 'delftblue'.")
+        raise ValueError("Invalid system / dataset. Choose ('laptop' or 'delftblue') / ('kitti' or 'monkaa').")
 
 
 def get_settings():

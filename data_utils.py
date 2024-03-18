@@ -120,28 +120,16 @@ class SequenceGenerator(Iterator):
 
 
 class IntermediateEvaluations(Callback):
-    def __init__(self, test_dataset, batch_size=4, nt=10, output_channels=[3, 48, 96, 192]):
+    def __init__(self, test_dataset, length, batch_size=4, nt=10, output_channels=[3, 48, 96, 192]):
         super(IntermediateEvaluations, self).__init__()
         self.test_dataset = test_dataset
-        self.dataset_iterator = iter(test_dataset)
+        self.dataset_iterator = iter(self.test_dataset)
         self.n_plot = batch_size  # 40
         self.batch_size = batch_size
         self.nt = nt
         self.plot_nt = nt
         self.weights_file = os.path.join(
             WEIGHTS_DIR, 'tensorflow_weights/para_prednet_monkaa_weights.hdf5')
-        # self.test_file = os.path.join(DATA_DIR, 'X_test.hkl')
-        # self.test_sources = os.path.join(DATA_DIR, 'sources_test.hkl')
-
-        # self.test_PPN = ParaPredNet(
-        #     batch_size=self.batch_size, nt=self.nt, output_channels=output_channels)
-        # self.test_PPN.output_mode = 'Prediction'
-        # self.test_PPN.compile(optimizer='adam', loss='mean_squared_error')
-        # self.test_PPN.build(input_shape=(None, self.nt, 128, 160, 3))
-        # print("ParaPredNet compiled...")
-
-        # self.test_generator = SequenceGenerator(
-        #     self.test_file, self.test_sources, self.nt, sequence_start_mode='unique')
 
         if not os.path.exists(RESULTS_SAVE_DIR):
             os.makedirs(RESULTS_SAVE_DIR, exist_ok=True)
@@ -156,19 +144,25 @@ class IntermediateEvaluations(Callback):
 
     def plot_training_samples(self, epoch):
         '''
-        Evaluate trained PredNet on KITTI sequences.
+        Evaluate trained PredNet on KITTI or Monkaa sequences.
         Calculates mean-squared error and plots predictions.
         '''
-
-        # load latest weights and regenerate test model
-        # if os.path.exists(self.weights_file):
-        #     self.test_PPN.load_weights(self.weights_file)
-
+        start_time = time.perf_counter()
+        # print(f"\nStarting to plot training samples at {time.perf_counter() - start_time} seconds.")
         X_test = next(self.dataset_iterator)[0] # take just batch_x not batch_y
-        # X_hat = tf.cast(self.test_PPN(X_test), dtype=tf.float32)
+        # try:
+        #     X_test = next(self.dataset_iterator)[0] # take just batch_x not batch_y
+        # except StopIteration:
+        #     print("Stopped")
+        #     self.dataset_iterator = iter(self.test_dataset)
+        #     X_test = next(self.dataset_iterator)[0]
+        # X_hat = self.get_test_batch()
+        # print(f"X_test received at {time.perf_counter() - start_time} seconds.")
+        
         self.model.layers[-1].output_mode = 'Prediction'
         X_hat = self.model(X_test)
         self.model.layers[-1].output_mode = 'Error'
+        # print(f"X_hat received at {time.perf_counter() - start_time} seconds.")
         
         X_test = X_test[-1] # take only the PNG images for MSE calcs and plotting
         # Compare MSE of PredNet predictions vs. using last frame.  Write results to prediction_scores.txt
@@ -209,7 +203,7 @@ class IntermediateEvaluations(Callback):
             plt.savefig(plot_save_dir + 'e' + str(epoch) +
                         '_plot_' + str(i) + '.png')
             plt.clf()
-
+        print(f"Finished plotting training samples at {time.perf_counter() - start_time} seconds.")
 
 def writePFM(file, image, scale=1):
     file = open(file, 'wb')
@@ -455,7 +449,7 @@ def create_dataset_from_generator(pfm_paths, pgm_paths, png_paths, im_height=540
     return dataset, length
 
 
-def create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode='Error', im_height=540, im_width=960, batch_size=3, nt=10, reserialize=False, shuffle=True, resize=False):
+def create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode='Error', im_height=540, im_width=960, batch_size=4, nt=10, train_split=0.7, reserialize=False, shuffle=True, resize=False):
 
     start_time = time.perf_counter()
     if reserialize:
@@ -478,45 +472,60 @@ def create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, ou
     assert all([all_files[i].shape[0] == num_samples for i in range(
         num_total_paths)]), "All sources must have the same number of samples"
 
-    # Get the length of the dataset (number of unique sequences)
-    length = len(glob.glob(pfm_paths[0] + '/*.pfm')) + 1 - nt
+    # Get the length of the dataset (number of unique sequences, nus)
+    nus = num_samples + 1 - nt
+    length = nus
+    train_samples = int(train_split * nus)
+    val_samples = int((1 - train_split) / 2 * nus)
+    test_samples = int((1 - train_split) / 2 * nus)
+    all_details = [
+        (0, train_samples, train_samples), 
+        (train_samples, train_samples+val_samples, val_samples), 
+        (train_samples+val_samples, train_samples+val_samples+test_samples, test_samples)
+    ]
+    
+    def create_generator(details, shuffle):
+        def generator():
+            start, stop, num_samples = details
+            iterator = random.sample(range(start, stop), num_samples) if shuffle else range(num_samples + 1 - nt)
+            for it, i in enumerate(iterator):
+                # print(f"{it}, {i}")
+                nt_outs = []
+                for j in range(num_total_paths):
+                    if resize:
+                        nt_outs.append([tf.image.resize(all_files[j][i+k], (im_height, im_width)) for k in range(nt)])
+                    else:
+                        nt_outs.append([all_files[j][i+k] for k in range(nt)])
+                batch_x = tuple(nt_outs)
+                if output_mode == 'Error':
+                    batch_y = [0.0]
+                    yield (batch_x, batch_y)
+                elif output_mode == 'Prediction':
+                    yield (batch_x, batch_x)
+        return generator
+    
+    datasets = []
+    for details in all_details:
 
-    def generator():
-        # num unique sequences, nus
-        nus = num_samples + 1 - nt
-        for i in random.sample(range(nus), nus) if shuffle else range(num_samples + 1 - nt):  # per source
-            nt_outs = []
-            for j in range(num_total_paths):
-                if resize:
-                    nt_outs.append([tf.image.resize(all_files[j][i+k], (im_height, im_width)) for k in range(nt)])
-                else:
-                    nt_outs.append([all_files[j][i+k] for k in range(nt)])
-            batch_x = tuple(nt_outs)
-            if output_mode == 'Error':
-                batch_y = [0.0]
-                yield (batch_x, batch_y)
-            elif output_mode == 'Prediction':
-                yield (batch_x, batch_x)
+        gen = create_generator(details, shuffle)
 
-    dataset = tf.data.Dataset.from_generator(generator, output_signature=(
-        ((tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32),
-         tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32),
-         tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32),
-         tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32),
-         tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32),
-         tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32)),
-        (tf.TensorSpec(shape=(1), dtype=tf.float32)))
-    ))
+        dataset = tf.data.Dataset.from_generator(gen, output_signature=(
+            ((tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32),
+            tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32),
+            tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32),
+            tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32),
+            tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32),
+            tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32)),
+            (tf.TensorSpec(shape=(1), dtype=tf.float32)))
+        ))
+        # Batch and prefetch the dataset, and ensure infinite dataset
+        dataset = dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat()
+        datasets.append(dataset)
 
-    # Batch and prefetch the dataset
-    dataset = dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
-    print(
-        f"End tf.data.Dataset creation at {time.perf_counter() - start_time} seconds.")
+    print(f"{len(datasets)} datasets created.")
+    print(f"End tf.data.Dataset creation at {time.perf_counter() - start_time} seconds.")
 
-    # Ensure infinite dataset (call after splitting)
-    # dataset = dataset.repeat()
-
-    return dataset, length
+    return datasets, length
 
 
 def fix_my_hickle_files(data_files):
