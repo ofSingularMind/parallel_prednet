@@ -22,11 +22,11 @@ def main(args):
     # 1) `numpy` seed
     # 2) backend random seed
     # 3) `python` random seed
-    keras.utils.set_random_seed(args['seed'])
+    # keras.utils.set_random_seed(args['seed']) # need keras 3 i think
 
     # use mixed precision for faster runtimes and lower memory usage
     # keras.mixed_precision.set_global_policy("mixed_float16")
-    config_gpus()
+    # config_gpus()
 
     # if results directory already exists, then delete it
     if os.path.exists(RESULTS_SAVE_DIR):
@@ -151,7 +151,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
     parser.add_argument("--nb_epoch", type=int, default=150, help="number of epochs")
-    parser.add_argument("--batch_size", type=int, default=3, help="batch size (4 is no good)")
+    parser.add_argument("--batch_size", type=int, default=2, help="batch size (4 is no good, idk why)")
     parser.add_argument("--sequences_per_epoch_train", type=int, default=None, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=None, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
     parser.add_argument("--num_P_CNN", type=int, default=2, help="number of parallel CNNs")

@@ -489,7 +489,7 @@ def create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, ou
             start, stop, num_samples = details
             iterator = random.sample(range(start, stop), num_samples) if shuffle else range(num_samples + 1 - nt)
             for it, i in enumerate(iterator):
-                # print(f"{it}, {i}")
+                print(f"{it}, {i}")
                 nt_outs = []
                 for j in range(num_total_paths):
                     if resize:
