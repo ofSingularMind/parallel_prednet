@@ -203,7 +203,7 @@ class IntermediateEvaluations(Callback):
             plt.savefig(plot_save_dir + 'e' + str(epoch) +
                         '_plot_' + str(i) + '.png')
             plt.clf()
-        print(f"Finished plotting training samples at {time.perf_counter() - start_time} seconds.")
+        # print(f"Finished plotting training samples at {time.perf_counter() - start_time} seconds.")
 
 def writePFM(file, image, scale=1):
     file = open(file, 'wb')
