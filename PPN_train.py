@@ -45,7 +45,7 @@ def main(args):
     weights_file = os.path.join(
         WEIGHTS_DIR, 'para_prednet_monkaa_weights.hdf5')
     json_file = os.path.join(WEIGHTS_DIR, 'para_prednet_monkaa_model_ALEX.json')
-    if os.path.exists(weights_file): os.remove(weights_file)  # Careful: this will delete the weights file
+    # if os.path.exists(weights_file): os.remove(weights_file)  # Careful: this will delete the weights file
 
     # Training data
     assert os.path.exists(DATA_DIR + 'disparity/' + args['data_subset'] + '/left/'), "Improper data_subset selected"
@@ -132,7 +132,7 @@ def main(args):
 
 
     # start with lr of 0.001 and then drop to 0.0001 after 75 epochs
-    def lr_schedule(epoch): return 0.01 if epoch < 5 else 0.0001
+    def lr_schedule(epoch): return 0.01 if epoch < 10 else 0.005
 
 
     callbacks = [LearningRateScheduler(lr_schedule)]
@@ -165,12 +165,12 @@ if __name__ == "__main__":
 
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
     parser.add_argument("--nb_epoch", type=int, default=150, help="number of epochs")
-    parser.add_argument("--batch_size", type=int, default=2, help="batch size (4 is no good, idk why)")
+    parser.add_argument("--batch_size", type=int, default=1, help="batch size (4 is no good, idk why)")
     parser.add_argument("--sequences_per_epoch_train", type=int, default=None, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=None, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
-    parser.add_argument("--num_P_CNN", type=int, default=2, help="number of parallel CNNs")
-    parser.add_argument("--num_R_CLSTM", type=int, default=2, help="number of recurrent CLSTMs")
-    parser.add_argument("--output_channels", nargs='+', type=int, default=[3], help="output channels")
+    parser.add_argument("--num_P_CNN", type=int, default=1, help="number of parallel CNNs")
+    parser.add_argument("--num_R_CLSTM", type=int, default=1, help="number of recurrent CLSTMs")
+    parser.add_argument("--output_channels", nargs='+', type=int, default=[3, 12, 24, 48], help="output channels")
     parser.add_argument("--original_im_shape", nargs='+', type=int, default=(540, 960, 3), help="original image shape")
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor")
     parser.add_argument("--train_proportion", type=float, default=0.7, help="downscale factor")
