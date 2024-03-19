@@ -13,7 +13,7 @@ def main(args):
     import keras
     from keras import backend as K
     from keras import layers
-    from data_utils import IntermediateEvaluations, create_dataset_from_serialized_generator, config_gpus
+    from data_utils import SequenceGenerator, IntermediateEvaluations, create_dataset_from_serialized_generator, config_gpus
     from keras.callbacks import LearningRateScheduler, ModelCheckpoint, TensorBoard
     from PPN import ParaPredNet
     import matplotlib.pyplot as plt
@@ -75,22 +75,36 @@ def main(args):
     original_im_shape = args["original_im_shape"]
     downscale_factor = args["downscale_factor"]
     im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3)
-    
-    train_split = .7
-    val_split = (1 - train_split) / 2
-    #  Create and split dataset
-    datasets, length = create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode='Error',
-                                                            im_height=im_shape[0], im_width=im_shape[1],
-                                                            batch_size=batch_size, nt=nt, train_split=train_split, reserialize=False, shuffle=True, resize=True)
 
-    train_size = int(train_split * length)
-    val_size = int(val_split * length)
-    test_size = int(val_split * length)
-    train_dataset, val_dataset, test_dataset = datasets
-    print(f"Train size: {train_size}")
-    print(f"Validation size: {val_size}")
-    print(f"Test size: {test_size}")
-    print("All datasets created successfully")
+    
+    if args["dataset"] == "kitti":
+        # Data files
+        train_file = os.path.join(DATA_DIR, 'X_train.hkl')
+        train_sources = os.path.join(DATA_DIR, 'sources_train.hkl')
+        val_file = os.path.join(DATA_DIR, 'X_val.hkl')
+        val_sources = os.path.join(DATA_DIR, 'sources_val.hkl')
+
+        train_generator = SequenceGenerator(train_file, train_sources, nt, batch_size=batch_size, shuffle=True)
+        val_generator = SequenceGenerator(val_file, val_sources, nt, batch_size=batch_size, N_seq=val_size // batch_size if sequences_per_epoch_val is None else sequences_per_epoch_val)
+        print("All generators created successfully")
+        
+    elif args["dataset"] == "monkaa":
+    
+        train_split = .7
+        val_split = (1 - train_split) / 2
+        #  Create and split dataset
+        datasets, length = create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode='Error',
+                                                                im_height=im_shape[0], im_width=im_shape[1],
+                                                                batch_size=batch_size, nt=nt, train_split=train_split, reserialize=False, shuffle=True, resize=True)
+
+        train_size = int(train_split * length)
+        val_size = int(val_split * length)
+        test_size = int(val_split * length)
+        train_dataset, val_dataset, test_dataset = datasets
+        print(f"Train size: {train_size}")
+        print(f"Validation size: {val_size}")
+        print(f"Test size: {test_size}")
+        print("All datasets created successfully")
 
     # These are Monkaa specific input shapes
     inputs = (
