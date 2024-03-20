@@ -54,16 +54,17 @@ def main(args):
     nt = args["nt"]  # number of time steps
     nb_epoch = args["nb_epoch"]  # 150
     batch_size = args["batch_size"]  # 4
-    sequences_per_epoch_train = args["sequences_per_epoch_train"]  # 500
-    sequences_per_epoch_val = args["sequences_per_epoch_val"]  # 500
+    sequences_per_epoch_train = args["sequences_per_epoch_train"] # 500
+    sequences_per_epoch_val = args["sequences_per_epoch_val"] # 500
     # this will override the default of (dataset size / batch size)
     assert sequences_per_epoch_train is None or type(sequences_per_epoch_train) == int
     # this will override the default of (dataset size / batch size)
     assert sequences_per_epoch_val is None or type(sequences_per_epoch_val) == int
-    # N_seq_val = 20  # number of sequences to use for validation
     num_P_CNN = args["num_P_CNN"]
     num_R_CLSTM = args["num_R_CLSTM"]
     output_channels = args["output_channels"]
+
+    # Define image shape
     if args["dataset"] == "kitti":
         original_im_shape = (128, 160, 3)
         im_shape = original_im_shape
@@ -72,6 +73,7 @@ def main(args):
         downscale_factor = args["downscale_factor"]
         im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3)
 
+    # Create datasets
     if args["dataset"] == "kitti":
         # Data files
         train_file = os.path.join(DATA_DIR, "X_train.hkl")
@@ -82,11 +84,11 @@ def main(args):
         test_sources = os.path.join(DATA_DIR, "sources_test.hkl")
 
         train_dataset = SequenceGenerator(train_file, train_sources, nt, batch_size=batch_size, shuffle=True)
-        val_dataset = SequenceGenerator(val_file, val_sources, nt,batch_size=batch_size, N_seq=len(val_sources) // 3 * batch_size if sequences_per_epoch_val is None else sequences_per_epoch_val)
-        test_dataset = SequenceGenerator(train_file, train_sources, nt, batch_size=batch_size, shuffle=True)
-        train_size = len(train_sources)
-        val_size = len(val_sources)
-        test_size = len(test_sources)
+        val_dataset = SequenceGenerator(val_file, val_sources, nt, batch_size=batch_size, shuffle=False)
+        test_dataset = SequenceGenerator(test_file, test_sources, nt, batch_size=batch_size, shuffle=False)
+        train_size = train_dataset.N_sequences
+        val_size = val_dataset.N_sequences
+        test_size = test_dataset.N_sequences
         # print("All generators created successfully")
 
     elif args["dataset"] == "monkaa":
@@ -114,6 +116,7 @@ def main(args):
         val_size = int(val_split * length)
         test_size = int(val_split * length)
 
+    print(f"Working on dataset: {args['dataset']}")
     print(f"Train size: {train_size}")
     print(f"Validation size: {val_size}")
     print(f"Test size: {test_size}")
@@ -146,7 +149,9 @@ def main(args):
     PPN.build(input_shape=(None, nt) + im_shape)
     print(PPN.summary())
     num_layers = len(output_channels)  # number of layers in the architecture
-    print(f"{num_layers} PredNet layers with a top-layer resolution of: {resos[-1][0]} x {resos[-1][1]}")
+    print(f"{num_layers} PredNet layers with a resolutions:")
+    for i in reversed(range(num_layers)):
+        print(f"Layer {i+1}:  {resos[i][0]} x {resos[i][1]}")
 
     # load previously saved weights
     if os.path.exists(weights_checkpoint_file):
