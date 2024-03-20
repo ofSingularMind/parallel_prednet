@@ -20,13 +20,10 @@ class Target(keras.layers.Layer):
         # Add Conv
         self.conv = layers.Conv2D(self.output_channels, (3, 3), padding="same", activation="relu", name=f"Target_Conv_Layer{layer_num}")
         # Add Pool
-        # self.pool = None
         self.pool = layers.MaxPooling2D((2, 2), padding="valid", name=f"Target_Pool_Layer{layer_num}")
 
     def call(self, inputs):
-        x = self.conv1(inputs)
-        x = self.conv2(x)
-        x = self.conv3(x)
+        x = self.conv(inputs)
         return self.pool(x)
 
 
@@ -217,7 +214,8 @@ class ParaPredNet(keras.Model):
         # inputs will be a tuple of batches of sequences of video frames
         # [-1] represents the PNG image source
         if self.dataset == "kitti":
-            inputs = inputs[-1]
+            # inputs = inputs[-1]
+            pass
         elif self.dataset == "monkaa":
             inputs = inputs[-1]
 
