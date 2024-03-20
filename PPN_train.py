@@ -54,7 +54,6 @@ def main(args):
         json_file = os.path.join(WEIGHTS_DIR, f"para_prednet_{dataset}_model_ALEX.json")
 
     get_weights_files(args["dataset"])
-    # if os.path.exists(weights_file): os.remove(weights_file)  # Careful: this will delete the weights file
 
     # Training parameters
     nt = args["nt"]  # number of time steps
@@ -212,7 +211,12 @@ def main(args):
 
     # load previously saved weights
     if os.path.exists(weights_checkpoint_file):
-        PPN.load_weights(weights_checkpoint_file)
+        try:
+            PPN.load_weights(weights_checkpoint_file)
+        except:
+            # model architecture has changed, so weights cannot be loaded
+            os.remove(weights_file)  # Careful: this will delete the weights file
+
 
     # start with lr of 0.001 and then drop to 0.0001 after 75 epochs
     def lr_schedule(epoch):
@@ -324,7 +328,7 @@ if __name__ == "__main__":
         "--output_channels",
         nargs="+",
         type=int,
-        default=[3, 12, 24, 48],
+        default=[3, 48, 96, 192],
         help="output channels",
     )
     parser.add_argument(
@@ -340,7 +344,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--system", type=str, default="laptop", help="laptop or delftblue"
     )
-    parser.add_argument("--dataset", type=str, default="monkaa", help="kitti or monkaa")
+    parser.add_argument("--dataset", type=str, default="kitti", help="kitti or monkaa")
     parser.add_argument(
         "--data_subset",
         type=str,
