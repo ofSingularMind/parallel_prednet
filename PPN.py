@@ -212,7 +212,8 @@ class ParaPredNet(keras.Model):
         # inputs will be a tuple of batches of sequences of video frames
         # [-1] represents the PNG image source
         if self.dataset == "kitti":
-            inputs = inputs[-1]
+            # inputs = inputs[-1]
+            pass
         elif self.dataset == "monkaa":
             inputs = inputs[-1]
 
