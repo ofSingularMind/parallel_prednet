@@ -2,9 +2,9 @@ import os
 import warnings
 
 # Suppress warnings
-warnings.filterwarnings('ignore')
+warnings.filterwarnings("ignore")
 # or '2' to filter out INFO messages too
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 import subprocess
 from six.moves import cPickle as pickle
@@ -15,6 +15,7 @@ import glob
 import sys
 import re
 from PPN import ParaPredNet
+
 # from monkaa_settings import *
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
@@ -29,15 +30,24 @@ import numpy as np
 import hickle as hkl
 from config import update_settings, get_settings
 
-DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = get_settings()['dirs']
+DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = get_settings()["dirs"]
 
 
 # Data generator that creates sequences for input into PredNet.
 class SequenceGenerator(Iterator):
-    def __init__(self, data_file, source_file, nt,
-                 batch_size=8, shuffle=False, seed=None,
-                 output_mode='error', sequence_start_mode='all', N_seq=None,
-                 data_format=K.image_data_format()):
+    def __init__(
+        self,
+        data_file,
+        source_file,
+        nt,
+        batch_size=8,
+        shuffle=False,
+        seed=None,
+        output_mode="error",
+        sequence_start_mode="all",
+        N_seq=None,
+        data_format=K.image_data_format(),
+    ):
         # X will be like (n_images, nb_cols, nb_rows, nb_channels)
         self.X = hkl.load(data_file)
         # source for each image so when creating sequences can assure that consecutive frames are from same video
@@ -46,25 +56,39 @@ class SequenceGenerator(Iterator):
         self.batch_size = batch_size
         self.data_format = data_format
         assert sequence_start_mode in {
-            'all', 'unique'}, 'sequence_start_mode must be in {all, unique}'
+            "all",
+            "unique",
+        }, "sequence_start_mode must be in {all, unique}"
         self.sequence_start_mode = sequence_start_mode
         assert output_mode in {
-            'error', 'prediction'}, 'output_mode must be in {error, prediction}'
+            "error",
+            "prediction",
+        }, "output_mode must be in {error, prediction}"
         self.output_mode = output_mode
 
-        if self.data_format == 'channels_first':
+        if self.data_format == "channels_first":
             self.X = np.transpose(self.X, (0, 3, 1, 2))
         self.im_shape = self.X[0].shape
 
-        if self.sequence_start_mode == 'all':  # allow for any possible sequence, starting from any frame
-            self.possible_starts = np.array([i for i in range(
-                self.X.shape[0] - self.nt) if self.sources[i] == self.sources[i + self.nt - 1]])
+        if (
+            self.sequence_start_mode == "all"
+        ):  # allow for any possible sequence, starting from any frame
+            self.possible_starts = np.array(
+                [
+                    i
+                    for i in range(self.X.shape[0] - self.nt)
+                    if self.sources[i] == self.sources[i + self.nt - 1]
+                ]
+            )
         # create sequences where each unique frame is in at most one sequence
-        elif self.sequence_start_mode == 'unique':
+        elif self.sequence_start_mode == "unique":
             curr_location = 0
             possible_starts = []
             while curr_location < self.X.shape[0] - self.nt + 1:
-                if self.sources[curr_location] == self.sources[curr_location + self.nt - 1]:
+                if (
+                    self.sources[curr_location]
+                    == self.sources[curr_location + self.nt - 1]
+                ):
                     possible_starts.append(curr_location)
                     curr_location += self.nt
                 else:
@@ -78,7 +102,8 @@ class SequenceGenerator(Iterator):
             self.possible_starts = self.possible_starts[:N_seq]
         self.N_sequences = len(self.possible_starts)
         super(SequenceGenerator, self).__init__(
-            len(self.possible_starts), batch_size, shuffle, seed)
+            len(self.possible_starts), batch_size, shuffle, seed
+        )
 
     def __getitem__(self, null):
         return self.next()
@@ -86,16 +111,17 @@ class SequenceGenerator(Iterator):
     def next(self):
         with self.lock:
             current_index = (self.batch_index * self.batch_size) % self.n
-            index_array, current_batch_size = next(
-                self.index_generator), self.batch_size
-        batch_x = np.zeros((current_batch_size, self.nt) +
-                           self.im_shape, np.float32)
+            index_array, current_batch_size = (
+                next(self.index_generator),
+                self.batch_size,
+            )
+        batch_x = np.zeros((current_batch_size, self.nt) + self.im_shape, np.float32)
         for i, idx in enumerate(index_array):
             idx = self.possible_starts[idx]
-            batch_x[i] = self.preprocess(self.X[idx:idx+self.nt])
-        if self.output_mode == 'error':  # model outputs errors, so y should be zeros
+            batch_x[i] = self.preprocess(self.X[idx : idx + self.nt])
+        if self.output_mode == "error":  # model outputs errors, so y should be zeros
             batch_y = np.zeros(current_batch_size, np.float32)
-        elif self.output_mode == 'prediction':  # output actual pixels
+        elif self.output_mode == "prediction":  # output actual pixels
             batch_y = batch_x
         return batch_x, batch_y
 
@@ -104,23 +130,31 @@ class SequenceGenerator(Iterator):
 
     def create_n(self, n=1):
         assert n <= len(
-            self.possible_starts), "Can't create more sequences than there are possible starts"
+            self.possible_starts
+        ), "Can't create more sequences than there are possible starts"
         X_all = np.zeros((n, self.nt) + self.im_shape, np.float32)
         idxes = np.random.choice(len(self.possible_starts), n, replace=False)
         for i, idx in enumerate(np.array(self.possible_starts)[idxes].tolist()):
-            X_all[i] = self.preprocess(self.X[idx:idx+self.nt])
+            X_all[i] = self.preprocess(self.X[idx : idx + self.nt])
         return X_all
 
     def create_all(self):
-        X_all = np.zeros((self.N_sequences, self.nt) +
-                         self.im_shape, np.float32)
+        X_all = np.zeros((self.N_sequences, self.nt) + self.im_shape, np.float32)
         for i, idx in enumerate(self.possible_starts):
-            X_all[i] = self.preprocess(self.X[idx:idx+self.nt])
+            X_all[i] = self.preprocess(self.X[idx : idx + self.nt])
         return X_all
 
 
 class IntermediateEvaluations(Callback):
-    def __init__(self, test_dataset, length, batch_size=4, nt=10, output_channels=[3, 48, 96, 192]):
+    def __init__(
+        self,
+        test_dataset,
+        length,
+        batch_size=4,
+        nt=10,
+        output_channels=[3, 48, 96, 192],
+        dataset="kitti",
+    ):
         super(IntermediateEvaluations, self).__init__()
         self.test_dataset = test_dataset
         self.dataset_iterator = iter(self.test_dataset)
@@ -128,13 +162,15 @@ class IntermediateEvaluations(Callback):
         self.batch_size = batch_size
         self.nt = nt
         self.plot_nt = nt
+        self.output_channels = output_channels
+        self.dataset = dataset
         self.weights_file = os.path.join(
-            WEIGHTS_DIR, 'tensorflow_weights/para_prednet_monkaa_weights.hdf5')
+            WEIGHTS_DIR, "tensorflow_weights/para_prednet_monkaa_weights.hdf5"
+        )
 
         if not os.path.exists(RESULTS_SAVE_DIR):
             os.makedirs(RESULTS_SAVE_DIR, exist_ok=True)
-        self.test_weights_path = os.path.join(
-            RESULTS_SAVE_DIR, 'tensorflow_weights/')
+        self.test_weights_path = os.path.join(RESULTS_SAVE_DIR, "tensorflow_weights/")
         if not os.path.exists(self.test_weights_path):
             os.makedirs(self.test_weights_path, exist_ok=True)
 
@@ -143,13 +179,13 @@ class IntermediateEvaluations(Callback):
             self.plot_training_samples(epoch)
 
     def plot_training_samples(self, epoch):
-        '''
+        """
         Evaluate trained PredNet on KITTI or Monkaa sequences.
         Calculates mean-squared error and plots predictions.
-        '''
+        """
         start_time = time.perf_counter()
         # print(f"\nStarting to plot training samples at {time.perf_counter() - start_time} seconds.")
-        X_test = next(self.dataset_iterator)[0] # take just batch_x not batch_y
+        X_test = next(self.dataset_iterator)[0]  # take just batch_x not batch_y
         # try:
         #     X_test = next(self.dataset_iterator)[0] # take just batch_x not batch_y
         # except StopIteration:
@@ -158,18 +194,19 @@ class IntermediateEvaluations(Callback):
         #     X_test = next(self.dataset_iterator)[0]
         # X_hat = self.get_test_batch()
         # print(f"X_test received at {time.perf_counter() - start_time} seconds.")
-        
-        self.model.layers[-1].output_mode = 'Prediction'
+
+        self.model.layers[-1].output_mode = "Prediction"
         X_hat = self.model(X_test)
-        self.model.layers[-1].output_mode = 'Error'
+        self.model.layers[-1].output_mode = "Error"
         # print(f"X_hat received at {time.perf_counter() - start_time} seconds.")
-        
-        X_test = X_test[-1] # take only the PNG images for MSE calcs and plotting
+
+        if self.dataset == "monkaa":
+            X_test = X_test[-1]  # take only the PNG images for MSE calcs and plotting
         # Compare MSE of PredNet predictions vs. using last frame.  Write results to prediction_scores.txt
         # look at all timesteps except the first
-        mse_model = np.mean((X_test[:, 1:] - X_hat[:, 1:])**2)
-        mse_prev = np.mean((X_test[:, :-1] - X_test[:, 1:])**2)
-        f = open(RESULTS_SAVE_DIR + 'training_scores.txt', 'a+')
+        mse_model = np.mean((X_test[:, 1:] - X_hat[:, 1:]) ** 2)
+        mse_prev = np.mean((X_test[:, :-1] - X_test[:, 1:]) ** 2)
+        f = open(RESULTS_SAVE_DIR + "training_scores.txt", "a+")
         f.write("======================= %i : Epoch\n" % epoch)
         f.write("%f : Model MSE\n" % mse_model)
         f.write("%f : Previous Frame MSE\n" % mse_prev)
@@ -177,41 +214,57 @@ class IntermediateEvaluations(Callback):
 
         # Plot some training predictions
         aspect_ratio = float(X_hat.shape[2]) / X_hat.shape[3]
-        plt.figure(figsize=(8*self.plot_nt, 16*aspect_ratio))
+        plt.figure(figsize=(8 * self.plot_nt, 16 * aspect_ratio))
         gs = gridspec.GridSpec(2, self.plot_nt)
-        gs.update(wspace=0., hspace=0.)
-        plot_save_dir = os.path.join(RESULTS_SAVE_DIR, 'training_plots/')
+        gs.update(wspace=0.0, hspace=0.0)
+        plot_save_dir = os.path.join(RESULTS_SAVE_DIR, "training_plots/")
         if not os.path.exists(plot_save_dir):
             os.makedirs(plot_save_dir, exist_ok=True)
-        plot_idx = np.random.permutation(X_test.shape[0])[:self.n_plot]
+        plot_idx = np.random.permutation(X_test.shape[0])[: self.n_plot]
         for i in plot_idx:
             for t in range(self.plot_nt):
                 plt.subplot(gs[t])
-                plt.imshow(X_hat[i, t], interpolation='none')
-                plt.tick_params(axis='both', which='both', bottom='off', top='off',
-                                left='off', right='off', labelbottom='off', labelleft='off')
+                plt.imshow(X_hat[i, t], interpolation="none")
+                plt.tick_params(
+                    axis="both",
+                    which="both",
+                    bottom="off",
+                    top="off",
+                    left="off",
+                    right="off",
+                    labelbottom="off",
+                    labelleft="off",
+                )
                 if t == 0:
-                    plt.ylabel('Predicted', fontsize=10)
+                    plt.ylabel("Predicted", fontsize=10)
 
                 plt.subplot(gs[t + self.plot_nt])
-                plt.imshow(X_test[i, t], interpolation='none')
-                plt.tick_params(axis='both', which='both', bottom='off', top='off',
-                                left='off', right='off', labelbottom='off', labelleft='off')
+                plt.imshow(X_test[i, t], interpolation="none")
+                plt.tick_params(
+                    axis="both",
+                    which="both",
+                    bottom="off",
+                    top="off",
+                    left="off",
+                    right="off",
+                    labelbottom="off",
+                    labelleft="off",
+                )
                 if t == 0:
-                    plt.ylabel('Actual', fontsize=10)
+                    plt.ylabel("Actual", fontsize=10)
 
-            plt.savefig(plot_save_dir + 'e' + str(epoch) +
-                        '_plot_' + str(i) + '.png')
+            plt.savefig(plot_save_dir + "e" + str(epoch) + "_plot_" + str(i) + ".png")
             plt.clf()
         # print(f"Finished plotting training samples at {time.perf_counter() - start_time} seconds.")
 
+
 def writePFM(file, image, scale=1):
-    file = open(file, 'wb')
+    file = open(file, "wb")
 
     color = None
 
-    if image.dtype.name != 'float32':
-        raise Exception('Image dtype must be float32.')
+    if image.dtype.name != "float32":
+        raise Exception("Image dtype must be float32.")
 
     image = np.flipud(image)
 
@@ -221,18 +274,17 @@ def writePFM(file, image, scale=1):
     elif len(image.shape) == 2 or len(image.shape) == 3 and image.shape[2] == 1:
         color = False
     else:
-        raise Exception(
-            'Image must have H x W x 3, H x W x 1 or H x W dimensions.')
+        raise Exception("Image must have H x W x 3, H x W x 1 or H x W dimensions.")
 
-    file.write('PF\n' if color else 'Pf\n')
-    file.write('%d %d\n' % (image.shape[1], image.shape[0]))
+    file.write("PF\n" if color else "Pf\n")
+    file.write("%d %d\n" % (image.shape[1], image.shape[0]))
 
     endian = image.dtype.byteorder
 
-    if endian == '<' or endian == '=' and sys.byteorder == 'little':
+    if endian == "<" or endian == "=" and sys.byteorder == "little":
         scale = -scale
 
-    file.write('%f\n' % scale)
+    file.write("%f\n" % scale)
 
     image.tofile(file)
 
@@ -241,18 +293,18 @@ def dir_PFM_to_PNG(dir):
     for obj in os.listdir(dir):
         print(f"Processing {obj}. Isdir == {os.path.isdir(dir + obj)}")
         if os.path.isdir(dir + obj):
-            dir_PFM_to_PNG(dir + obj + '/')
+            dir_PFM_to_PNG(dir + obj + "/")
         elif obj.endswith(".pfm"):
             data, scale = readPFM(dir + obj)
             print(f"Converting {obj} to {obj[:-4]}.png")
             if (np.max(data) > 1) or (np.min(data) < 0):
                 data = (data - np.min(data)) / (np.max(data) - np.min(data))
-            plt.imsave(dir + obj[:-4] + '.png', data)
+            plt.imsave(dir + obj[:-4] + ".png", data)
             print(f"Processed {obj} to {obj[:-4]}.png")
 
 
 def readPFM(file):
-    file = open(file, 'rb')
+    file = open(file, "rb")
 
     color = None
     width = None
@@ -261,27 +313,27 @@ def readPFM(file):
     endian = None
 
     header = file.readline().rstrip()
-    if header == b'PF':
+    if header == b"PF":
         color = True
-    elif header == b'Pf':
+    elif header == b"Pf":
         color = False
     else:
-        raise Exception('Not a PFM file.')
+        raise Exception("Not a PFM file.")
 
-    dim_match = re.match(b'^(\d+)\s(\d+)\s$', file.readline())
+    dim_match = re.match(b"^(\d+)\s(\d+)\s$", file.readline())
     if dim_match:
         width, height = map(int, dim_match.groups())
     else:
-        raise Exception('Malformed PFM header.')
+        raise Exception("Malformed PFM header.")
 
     scale = float(file.readline().rstrip())
     if scale < 0:  # little-endian
-        endian = '<'
+        endian = "<"
         scale = -scale
     else:
-        endian = '>'  # big-endian
+        endian = ">"  # big-endian
 
-    data = np.fromfile(file, endian + 'f')
+    data = np.fromfile(file, endian + "f")
     shape = (height, width, 3) if color else (height, width)
 
     data = np.reshape(data, shape)
@@ -294,18 +346,17 @@ def sort_files_by_name(files):
 
 
 def serialize_dataset(pfm_paths, pgm_paths, png_paths, start_time=time.perf_counter()):
-
     print(f"Start to serialize at {time.perf_counter() - start_time} seconds.")
     pfm_sources = []
     pgm_sources = []
     png_sources = []
 
     for pfm_path in pfm_paths:
-        pfm_sources += [sort_files_by_name(glob.glob(pfm_path + '/*.pfm'))]
+        pfm_sources += [sort_files_by_name(glob.glob(pfm_path + "/*.pfm"))]
     for pgm_path in pgm_paths:
-        pgm_sources += [sort_files_by_name(glob.glob(pgm_path + '/*.pgm'))]
+        pgm_sources += [sort_files_by_name(glob.glob(pgm_path + "/*.pgm"))]
     for png_path in png_paths:
-        png_sources += [sort_files_by_name(glob.glob(png_path + '/*.png'))]
+        png_sources += [sort_files_by_name(glob.glob(png_path + "/*.png"))]
 
     all_files = np.array(list(zip(*pfm_sources, *pgm_sources, *png_sources)))
 
@@ -319,8 +370,7 @@ def serialize_dataset(pfm_paths, pgm_paths, png_paths, start_time=time.perf_coun
     # data = np.zeros_like(all_files, dtype=np.float32)
 
     temp = length
-    print(
-        f"Start to load images at {time.perf_counter() - start_time} seconds.")
+    print(f"Start to load images at {time.perf_counter() - start_time} seconds.")
 
     for j in range(len(pfm_paths)):
         l = []
@@ -335,7 +385,8 @@ def serialize_dataset(pfm_paths, pgm_paths, png_paths, start_time=time.perf_coun
             # last = time.perf_counter()
         dataset[j] = np.array(l)
         print(
-            f"PFM source {j+1} of {len(pfm_paths)} done at {time.perf_counter() - start_time} seconds.")
+            f"PFM source {j+1} of {len(pfm_paths)} done at {time.perf_counter() - start_time} seconds."
+        )
 
     for j in range(len(pgm_paths)):
         l = []
@@ -350,13 +401,17 @@ def serialize_dataset(pfm_paths, pgm_paths, png_paths, start_time=time.perf_coun
             # last = time.perf_counter()
         dataset[j + len(pfm_paths)] = np.array(l)
         print(
-            f"PGM source {j+1} of {len(pgm_paths)} done at {time.perf_counter() - start_time} seconds.")
+            f"PGM source {j+1} of {len(pgm_paths)} done at {time.perf_counter() - start_time} seconds."
+        )
 
     for j in range(len(png_paths)):
         l = []
         # last = time.perf_counter()
         for i in range(temp):
-            im = np.array(Image.open(all_files[i, j + len(pfm_paths) + len(pgm_paths)])) / 255.0
+            im = (
+                np.array(Image.open(all_files[i, j + len(pfm_paths) + len(pgm_paths)]))
+                / 255.0
+            )
             if len(im.shape) == 2:
                 # expand to include channel dimension
                 im = np.expand_dims(im, axis=2)
@@ -365,7 +420,8 @@ def serialize_dataset(pfm_paths, pgm_paths, png_paths, start_time=time.perf_coun
             # last = time.perf_counter()
         dataset[j + len(pfm_paths) + len(pgm_paths)] = np.array(l)
         print(
-            f"PNG source {j+1} of {len(png_paths)} done at {time.perf_counter() - start_time} seconds.")
+            f"PNG source {j+1} of {len(png_paths)} done at {time.perf_counter() - start_time} seconds."
+        )
 
     # # normalize all image data to float between 0..1
     # for source in dataset:
@@ -382,84 +438,121 @@ def serialize_dataset(pfm_paths, pgm_paths, png_paths, start_time=time.perf_coun
     if not os.path.exists(DATA_DIR):
         os.makedirs(DATA_DIR, exist_ok=True)
     # where weights are loaded prior to training
-    dataset_file = os.path.join(DATA_DIR, 'monkaa_train.hkl')
+    dataset_file = os.path.join(DATA_DIR, "monkaa_train.hkl")
 
-    hkl.dump(dataset, dataset_file, mode='w')
+    hkl.dump(dataset, dataset_file, mode="w")
     print(f"HKL dump done at {time.perf_counter() - start_time} seconds.")
     print(
-        f"Dataset serialization complete at {time.perf_counter() - start_time} seconds.")
+        f"Dataset serialization complete at {time.perf_counter() - start_time} seconds."
+    )
 
 
-def create_dataset_from_generator(pfm_paths, pgm_paths, png_paths, im_height=540, im_width=960, batch_size=1, nt=10, shuffle=True):
-
+def create_dataset_from_generator(
+    pfm_paths,
+    pgm_paths,
+    png_paths,
+    im_height=540,
+    im_width=960,
+    batch_size=1,
+    nt=10,
+    shuffle=True,
+):
     num_pfm_paths = len(pfm_paths)
     num_pgm_paths = len(pgm_paths)
     num_png_paths = len(png_paths)
     total_paths = num_pfm_paths + num_pgm_paths + num_png_paths
 
     def generator():
-
         pfm_sources = []
         pgm_sources = []
         png_sources = []
 
         for pfm_path in pfm_paths:
-            pfm_sources += [sort_files_by_name(glob.glob(pfm_path + '/*.pfm'))]
+            pfm_sources += [sort_files_by_name(glob.glob(pfm_path + "/*.pfm"))]
         for pgm_path in pgm_paths:
-            pgm_sources += [sort_files_by_name(glob.glob(pgm_path + '/*.pgm'))]
+            pgm_sources += [sort_files_by_name(glob.glob(pgm_path + "/*.pgm"))]
         for png_path in png_paths:
-            png_sources += [sort_files_by_name(glob.glob(png_path + '/*.png'))]
+            png_sources += [sort_files_by_name(glob.glob(png_path + "/*.png"))]
 
-        all_files = np.array(
-            list(zip(*pfm_sources, *pgm_sources, *png_sources)))
+        all_files = np.array(list(zip(*pfm_sources, *pgm_sources, *png_sources)))
 
-        assert nt <= all_files.shape[0], "nt must be less than or equal to the number of files in the dataset"
+        assert (
+            nt <= all_files.shape[0]
+        ), "nt must be less than or equal to the number of files in the dataset"
 
-        for i in range(all_files.shape[0]+1-nt):
+        for i in range(all_files.shape[0] + 1 - nt):
             nt_outs = []
             for j in range(num_pfm_paths):
-                nt_outs.append([readPFM(all_files[i+k, j]) for k in range(nt)])
+                nt_outs.append([readPFM(all_files[i + k, j]) for k in range(nt)])
             for j in range(num_pgm_paths):
-                nt_outs.append([np.array(Image.open(
-                    all_files[i+k, j + num_pfm_paths])) / 255.0 for k in range(nt)])
+                nt_outs.append(
+                    [
+                        np.array(Image.open(all_files[i + k, j + num_pfm_paths]))
+                        / 255.0
+                        for k in range(nt)
+                    ]
+                )
             for j in range(num_png_paths):
-                nt_outs.append([np.array(Image.open(
-                    all_files[i+k, j + num_pfm_paths + num_pgm_paths])) / 255.0 for k in range(nt)])
+                nt_outs.append(
+                    [
+                        np.array(
+                            Image.open(
+                                all_files[i + k, j + num_pfm_paths + num_pgm_paths]
+                            )
+                        )
+                        / 255.0
+                        for k in range(nt)
+                    ]
+                )
 
             yield tuple(nt_outs)
 
-    dataset = tf.data.Dataset.from_generator(generator, output_signature=(
-        (tf.TensorSpec(shape=(nt, im_height, im_width), dtype=tf.float32)),
-        (tf.TensorSpec(shape=(nt, im_height, im_width), dtype=tf.float32)),
-        (tf.TensorSpec(shape=(nt, im_height, im_width), dtype=tf.float32)),
-        (tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32)),
-        (tf.TensorSpec(shape=(nt, im_height, im_width), dtype=tf.float32)),
-        (tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32))
-    ))
+    dataset = tf.data.Dataset.from_generator(
+        generator,
+        output_signature=(
+            (tf.TensorSpec(shape=(nt, im_height, im_width), dtype=tf.float32)),
+            (tf.TensorSpec(shape=(nt, im_height, im_width), dtype=tf.float32)),
+            (tf.TensorSpec(shape=(nt, im_height, im_width), dtype=tf.float32)),
+            (tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32)),
+            (tf.TensorSpec(shape=(nt, im_height, im_width), dtype=tf.float32)),
+            (tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32)),
+        ),
+    )
 
     # Get the length of the dataset
-    length = len(glob.glob(pfm_paths[0] + '/*.pfm'))
+    length = len(glob.glob(pfm_paths[0] + "/*.pfm"))
 
     # Shuffle, batch and prefetch the dataset
     if shuffle:
-        dataset = dataset.shuffle(
-            buffer_size=length, reshuffle_each_iteration=True)
+        dataset = dataset.shuffle(buffer_size=length, reshuffle_each_iteration=True)
     dataset = dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
 
     return dataset, length
 
 
-def create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode='Error', im_height=540, im_width=960, batch_size=4, nt=10, train_split=0.7, reserialize=False, shuffle=True, resize=False):
-
+def create_dataset_from_serialized_generator(
+    pfm_paths,
+    pgm_paths,
+    png_paths,
+    output_mode="Error",
+    im_height=540,
+    im_width=960,
+    batch_size=4,
+    nt=10,
+    train_split=0.7,
+    reserialize=False,
+    shuffle=True,
+    resize=False,
+):
     start_time = time.perf_counter()
     if reserialize:
-        serialize_dataset(pfm_paths, pgm_paths, png_paths,
-                          start_time=start_time)
+        serialize_dataset(pfm_paths, pgm_paths, png_paths, start_time=start_time)
         print("Reserialized dataset.")
     else:
         print("Using previously serialized dataset.")
     print(
-        f"Begin tf.data.Dataset creation at {time.perf_counter() - start_time} seconds.")
+        f"Begin tf.data.Dataset creation at {time.perf_counter() - start_time} seconds."
+    )
 
     num_pfm_paths = len(pfm_paths)
     num_pgm_paths = len(pgm_paths)
@@ -467,10 +560,11 @@ def create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, ou
     num_total_paths = num_pfm_paths + num_pgm_paths + num_png_paths
 
     # list of numpy arrays, one for each source
-    all_files = hkl.load(os.path.join(DATA_DIR, 'monkaa_train.hkl'))
+    all_files = hkl.load(os.path.join(DATA_DIR, "monkaa_train.hkl"))
     num_samples = all_files[0].shape[0]
-    assert all([all_files[i].shape[0] == num_samples for i in range(
-        num_total_paths)]), "All sources must have the same number of samples"
+    assert all(
+        [all_files[i].shape[0] == num_samples for i in range(num_total_paths)]
+    ), "All sources must have the same number of samples"
 
     # Get the length of the dataset (number of unique sequences, nus)
     nus = num_samples + 1 - nt
@@ -479,51 +573,89 @@ def create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, ou
     val_samples = int((1 - train_split) / 2 * nus)
     test_samples = int((1 - train_split) / 2 * nus)
     all_details = [
-        (0, train_samples, train_samples), 
-        (train_samples, train_samples+val_samples, val_samples), 
-        (train_samples+val_samples, train_samples+val_samples+test_samples, test_samples)
+        (0, train_samples, train_samples),
+        (train_samples, train_samples + val_samples, val_samples),
+        (
+            train_samples + val_samples,
+            train_samples + val_samples + test_samples,
+            test_samples,
+        ),
     ]
-    
+
     def create_generator(details, shuffle):
         def generator():
             start, stop, num_samples = details
-            iterator = random.sample(range(start, stop), num_samples) if shuffle else range(num_samples + 1 - nt)
+            iterator = (
+                random.sample(range(start, stop), num_samples)
+                if shuffle
+                else range(num_samples + 1 - nt)
+            )
             for it, i in enumerate(iterator):
                 # print(f"{it}, {i}")
                 nt_outs = []
                 for j in range(num_total_paths):
                     if resize:
-                        nt_outs.append([tf.image.resize(all_files[j][i+k], (im_height, im_width)) for k in range(nt)])
+                        nt_outs.append(
+                            [
+                                tf.image.resize(
+                                    all_files[j][i + k], (im_height, im_width)
+                                )
+                                for k in range(nt)
+                            ]
+                        )
                     else:
-                        nt_outs.append([all_files[j][i+k] for k in range(nt)])
+                        nt_outs.append([all_files[j][i + k] for k in range(nt)])
                 batch_x = tuple(nt_outs)
-                if output_mode == 'Error':
+                if output_mode == "Error":
                     batch_y = [0.0]
                     yield (batch_x, batch_y)
-                elif output_mode == 'Prediction':
+                elif output_mode == "Prediction":
                     yield (batch_x, batch_x)
+
         return generator
-    
+
     datasets = []
     for details in all_details:
-
         gen = create_generator(details, shuffle)
 
-        dataset = tf.data.Dataset.from_generator(gen, output_signature=(
-            ((tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32),
-            tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32),
-            tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32),
-            tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32),
-            tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32),
-            tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32)),
-            (tf.TensorSpec(shape=(1), dtype=tf.float32)))
-        ))
+        dataset = tf.data.Dataset.from_generator(
+            gen,
+            output_signature=(
+                (
+                    (
+                        tf.TensorSpec(
+                            shape=(nt, im_height, im_width, 1), dtype=tf.float32
+                        ),
+                        tf.TensorSpec(
+                            shape=(nt, im_height, im_width, 1), dtype=tf.float32
+                        ),
+                        tf.TensorSpec(
+                            shape=(nt, im_height, im_width, 1), dtype=tf.float32
+                        ),
+                        tf.TensorSpec(
+                            shape=(nt, im_height, im_width, 3), dtype=tf.float32
+                        ),
+                        tf.TensorSpec(
+                            shape=(nt, im_height, im_width, 1), dtype=tf.float32
+                        ),
+                        tf.TensorSpec(
+                            shape=(nt, im_height, im_width, 3), dtype=tf.float32
+                        ),
+                    ),
+                    (tf.TensorSpec(shape=(1), dtype=tf.float32)),
+                )
+            ),
+        )
         # Batch and prefetch the dataset, and ensure infinite dataset
-        dataset = dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat()
+        dataset = (
+            dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat()
+        )
         datasets.append(dataset)
 
     print(f"{len(datasets)} datasets created.")
-    print(f"End tf.data.Dataset creation at {time.perf_counter() - start_time} seconds.")
+    print(
+        f"End tf.data.Dataset creation at {time.perf_counter() - start_time} seconds."
+    )
 
     return datasets, length
 
@@ -532,12 +664,12 @@ def fix_my_hickle_files(data_files):
     for data_file, file_name in zip(data_files, file_names):
         data = hkl.load(data_file)
         print("gets here")
-        pickle.dump(data, open(file_name, 'w'))
+        pickle.dump(data, open(file_name, "w"))
 
 
 def rehickling(data_files, file_names):
     for data_file, file_name in zip(data_files, file_names):
-        with open(file_name, 'rb') as file:
+        with open(file_name, "rb") as file:
             data = pickle.load(file)
             print("gets here")
             hkl.dump(data, data_file)
@@ -545,7 +677,7 @@ def rehickling(data_files, file_names):
 
 def hickle_swap(data_files):
     for data_file in data_files:
-        with open(data_file, 'r') as file:
+        with open(data_file, "r") as file:
             print("opens file")
             data = hkl.load(file)
             print("loads file")
@@ -572,8 +704,7 @@ def hickle_swap(data_files):
             else:
                 print("Error uninstalling old package.")
 
-            install_result = subprocess.call(
-                ["pip", "install", "hickle==2.1.0"])
+            install_result = subprocess.call(["pip", "install", "hickle==2.1.0"])
             if install_result == 0:
                 print("New package installed successfully.")
             else:
@@ -582,7 +713,7 @@ def hickle_swap(data_files):
 
 def test_hickle(data_files):
     for data_file in data_files:
-        with open(data_file, 'r') as file:
+        with open(data_file, "r") as file:
             print("opens file")
             data = hkl.load(file)
             print("loads file")
@@ -606,11 +737,13 @@ def grab_data_and_save(data_files):
 
 def grab_single_data_and_save(data_file):
     data = np.load(
-        "/home/evalexii/Documents/Thesis/code/prednet/add.npy", allow_pickle=True)
+        "/home/evalexii/Documents/Thesis/code/prednet/add.npy", allow_pickle=True
+    )
     hkl.dump(data, data_file)
     print("dumps to file")
     while input("Hold: ") != "q":
         pass
+
 
 # # Data files
 # train_file = os.path.join(DATA_DIR, 'X_train.hkl')
@@ -630,21 +763,22 @@ def grab_single_data_and_save(data_file):
 # grab_data_and_save(files)
 # grab_single_data_and_save(train_file)
 
+
 def test_dataset():
     # Training data
     pfm_paths = []
-    pfm_paths.append('/home/evalexii/local_dataset/disparity/family_x2/left/')
+    pfm_paths.append("/home/evalexii/local_dataset/disparity/family_x2/left/")
+    pfm_paths.append("/home/evalexii/local_dataset/material_index/family_x2/left/")
+    pfm_paths.append("/home/evalexii/local_dataset/object_index/family_x2/left/")
     pfm_paths.append(
-        '/home/evalexii/local_dataset/material_index/family_x2/left/')
-    pfm_paths.append('/home/evalexii/local_dataset/object_index/family_x2/left/')
-    pfm_paths.append(
-        '/home/evalexii/local_dataset/optical_flow/family_x2/into_future/left/')
+        "/home/evalexii/local_dataset/optical_flow/family_x2/into_future/left/"
+    )
     pgm_paths = []
     pgm_paths.append(
-        '/home/evalexii/local_dataset/motion_boundaries/family_x2/into_future/left/')
+        "/home/evalexii/local_dataset/motion_boundaries/family_x2/into_future/left/"
+    )
     png_paths = []
-    png_paths.append(
-        '/home/evalexii/local_dataset/frames_cleanpass/family_x2/left')
+    png_paths.append("/home/evalexii/local_dataset/frames_cleanpass/family_x2/left")
     num_sources = len(pfm_paths) + len(pgm_paths) + len(png_paths)
 
     # Training parameters
@@ -656,12 +790,26 @@ def test_dataset():
     output_channels = [3, 12, 24, 48]  # [3, 48, 96, 192]
     original_im_shape = (540, 960, 3)
     downscale_factor = 2
-    im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3)
+    im_shape = (
+        original_im_shape[0] // downscale_factor,
+        original_im_shape[1] // downscale_factor,
+        3,
+    )
 
     #  Create and split dataset
-    dataset, length = create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode='Error',
-                                                            im_height=im_shape[0], im_width=im_shape[1],
-                                                            batch_size=batch_size, nt=nt, reserialize=False, shuffle=True, resize=True)
+    dataset, length = create_dataset_from_serialized_generator(
+        pfm_paths,
+        pgm_paths,
+        png_paths,
+        output_mode="Error",
+        im_height=im_shape[0],
+        im_width=im_shape[1],
+        batch_size=batch_size,
+        nt=nt,
+        reserialize=False,
+        shuffle=True,
+        resize=True,
+    )
 
     ts = 0.7
     vs = (1 - ts) / 2
@@ -686,18 +834,18 @@ def test_dataset():
                 print(image.shape)
                 for k in range(nt):
                     axes[i, k].imshow(image[j, k])
-            plt.savefig(f'./images/test_{b}_{j}.png')
+            plt.savefig(f"./images/test_{b}_{j}.png")
+
 
 def config_gpus():
-    gpus = tf.config.experimental.list_physical_devices('GPU')
+    gpus = tf.config.experimental.list_physical_devices("GPU")
     if gpus:
         try:
             # Currently, memory growth needs to be the same across GPUs
             for gpu in gpus:
                 tf.config.experimental.set_memory_growth(gpu, True)
-            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+            logical_gpus = tf.config.experimental.list_logical_devices("GPU")
             print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
         except RuntimeError as e:
             # Memory growth must be set before GPUs have been initialized
             print(e)
-
