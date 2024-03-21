@@ -117,6 +117,7 @@ class PredLayer(keras.layers.Layer):
         self.states["E_current"] = tf.zeros((batch_size, self.im_height, self.im_width, 2 * self.output_channels))
         self.states["E_delta"] = tf.zeros((batch_size, self.im_height, self.im_width, 2 * self.output_channels))
         self.states["E_last"] = tf.zeros((batch_size, self.im_height, self.im_width, 2 * self.output_channels))
+        self.states["E_raw_last"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
         self.states["TD_inp"] = None
         self.states["L_inp"] = None
         self.states["lstm"] = None
@@ -127,6 +128,10 @@ class PredLayer(keras.layers.Layer):
         self.states["P"] = None
         self.states["T"] = None
         self.states["E"] = None
+        self.states["E_current"] = None
+        self.states["E_delta"] = None
+        self.states["E_last"] = None
+        self.states["E_raw_last"] = None
         self.states["TD_inp"] = None
         self.states["L_inp"] = None
         self.states["lstm"] = None
@@ -152,17 +157,24 @@ class PredLayer(keras.layers.Layer):
 
             # FORM PREDICTION
             self.states["P"] = K.minimum(self.prediction(self.states["R"]), self.pixel_max)
+            # self.states["P_delta"] = self.states["P"] - self.states["P_last"]
+            # self.states["P_last"] = self.states["P"]
 
         elif direction == "bottom_up":
             # RETRIEVE TARGET (bottom-up input) ~ (batch_size, im_height, im_width, output_channels)
             target = inputs[0]
             self.states["T"] = target if self.bottom_layer else self.target(target)
+            # self.states["T_delta"] = self.states["T"] - self.states["T_last"]
+            # self.states["T_last"] = self.states["T"]
 
             # COMPUTE ERROR
             self.states['E_current'] = self.error(self.states['P'], self.states['T'])
             self.states['E_delta'] = self.states['E_current'] - self.states['E_last']
             self.states['E_last'] = self.states['E_current']
             self.states['E'] = keras.layers.Concatenate(axis=-1)([self.states['E_current'], self.states['E_delta']])
+            self.states['E_raw'] = self.states['T'] - self.states['P']
+            self.states['E_raw_delta'] = self.states['E_raw'] - self.states['E_raw_last']
+            self.states['E_raw_last'] = self.states['E_raw']
 
             return self.states['E_current']
 
@@ -256,6 +268,7 @@ class ParaPredNet(keras.Model):
                     layer_error = self.layer_weights[l] * K.mean(K.batch_flatten(error), axis=-1, keepdims=True)  # (batch_size, 1)
                     all_error = layer_error if l == 0 else tf.add(all_error, layer_error)  # (batch_size, 1)
 
+
             # save outputs over time
             if self.output_mode == "Error":
                 if t == 0:
@@ -266,12 +279,23 @@ class ParaPredNet(keras.Model):
                 if t == 0:
                     all_predictions = tf.expand_dims(self.predlayers[0].states["P"], axis=1)
                 else:
-                    all_predictions = tf.concat([all_predictions, tf.expand_dims(self.predlayers[0].states["P"], axis=1), ], axis=1)
+                    all_predictions = tf.concat([all_predictions, tf.expand_dims(self.predlayers[0].states["P"], axis=1)], axis=1)
+            elif self.output_mode == "Error_Images_and_Prediction":
+                if t == 0:
+                    all_error_images = tf.expand_dims(self.predlayers[0].states["E_raw"], axis=1)
+                    all_error_delta_images = tf.expand_dims(self.predlayers[0].states["E_raw_delta"], axis=1)
+                    all_predictions = tf.expand_dims(self.predlayers[0].states["P"], axis=1)
+                else:
+                    all_error_images = tf.concat([all_error_images, tf.expand_dims(self.predlayers[0].states["E_raw"], axis=1)], axis=1)
+                    all_error_delta_images = tf.concat([all_error_delta_images, tf.expand_dims(self.predlayers[0].states["E_raw_delta"], axis=1)], axis=1)
+                    all_predictions = tf.concat([all_predictions, tf.expand_dims(self.predlayers[0].states["P"], axis=1)], axis=1)
 
         if self.output_mode == "Error":
             output = all_errors_over_time * 100
         elif self.output_mode == "Prediction":
             output = all_predictions
+        elif self.output_mode == "Error_Images_and_Prediction":
+            output = [all_error_images, all_error_delta_images, all_predictions]
 
         # Clear states from computation graph
         for layer in self.predlayers:

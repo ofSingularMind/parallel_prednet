@@ -180,19 +180,20 @@ if __name__ == "__main__":
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
     parser.add_argument("--nb_epoch", type=int, default=150, help="number of epochs")
     parser.add_argument("--batch_size", type=int, default=1, help="batch size (4 is no good, idk why)")
-    parser.add_argument("--sequences_per_epoch_train", type=int, default=None, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
-    parser.add_argument("--sequences_per_epoch_val", type=int, default=None, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_train", type=int, default=5, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_val", type=int, default=5, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
     parser.add_argument("--num_P_CNN", type=int, default=1, help="number of parallel CNNs")
     parser.add_argument("--num_R_CLSTM", type=int, default=1, help="number of recurrent CLSTMs")
     parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels",)
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor")
     parser.add_argument("--train_proportion", type=float, default=0.7, help="downscale factor")
+    parser.add_argument("--augment_error_delta", type=bool, default=False, help="whether to augment error with error delta")
 
     # parser.add_argument("--seed", type=int, default=np.random.default_rng().integers(0,9999), help="random seed")
     parser.add_argument("--seed", type=int, default=213, help="random seed")
 
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
-    parser.add_argument("--dataset", type=str, default="kitti", help="kitti or monkaa")
+    parser.add_argument("--dataset", type=str, default="monkaa", help="kitti or monkaa")
     parser.add_argument("--data_subset", type=str, default="family_x2", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
 
     args = parser.parse_args().__dict__
