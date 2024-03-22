@@ -19,13 +19,13 @@ def main(args):
     # PICK MODEL
     if args["model_choice"] == "baseline":
         # Predict next frame
-        from models.PPN_Baseline import ParaPredNet
+        from PPN_models.PPN_Baseline import ParaPredNet
     elif args["model_choice"] == "cl_delta":
         # Predict next frame and change from current frame
-        from models.PPN_CompLearning_Delta_Predictions import ParaPredNet
+        from PPN_models.PPN_CompLearning_Delta_Predictions import ParaPredNet
     elif args["model_choice"] == "cl_recon":
         # Predict current and next frame
-        from models.PPN_CompLearning_Recon_Predictions import ParaPredNet
+        from PPN_models.PPN_CompLearning_Recon_Predictions import ParaPredNet
     else:
         raise ValueError("Invalid model choice")
 

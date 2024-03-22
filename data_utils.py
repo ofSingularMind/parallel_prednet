@@ -14,7 +14,7 @@ from PIL import Image
 import glob
 import sys
 import re
-from models.PPN_Baseline import ParaPredNet
+from PPN_models.PPN_Baseline import ParaPredNet
 
 # from monkaa_settings import *
 import matplotlib.gridspec as gridspec
