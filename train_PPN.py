@@ -14,8 +14,21 @@ def main(args):
     from keras import layers
     from data_utils import SequenceGenerator, IntermediateEvaluations, create_dataset_from_serialized_generator, config_gpus 
     from keras.callbacks import LearningRateScheduler, ModelCheckpoint, TensorBoard
-    from PPN import ParaPredNet
     import matplotlib.pyplot as plt
+
+    # PICK MODEL
+    if args["model_choice"] == "baseline":
+        # Predict next frame
+        from models.PPN_Baseline import ParaPredNet
+    elif args["model_choice"] == "cl_delta":
+        # Predict next frame and change from current frame
+        from models.PPN_CompLearning_Delta_Predictions import ParaPredNet
+    elif args["model_choice"] == "cl_recon":
+        # Predict current and next frame
+        from models.PPN_CompLearning_Recon_Predictions import ParaPredNet
+    else:
+        raise ValueError("Invalid model choice")
+
 
     # Set the seed using keras.utils.set_random_seed. This will set:
     # 1) `numpy` seed
@@ -54,11 +67,10 @@ def main(args):
     nt = args["nt"]  # number of time steps
     nb_epoch = args["nb_epoch"]  # 150
     batch_size = args["batch_size"]  # 4
-    sequences_per_epoch_train = args["sequences_per_epoch_train"] # 500
-    sequences_per_epoch_val = args["sequences_per_epoch_val"] # 500
-    # this will override the default of (dataset size / batch size)
+    # the following two will override the defaults of (dataset size / batch size)
+    sequences_per_epoch_train = args["sequences_per_epoch_train"]  # 500
+    sequences_per_epoch_val = args["sequences_per_epoch_val"]  # 500
     assert sequences_per_epoch_train is None or type(sequences_per_epoch_train) == int
-    # this will override the default of (dataset size / batch size)
     assert sequences_per_epoch_val is None or type(sequences_per_epoch_val) == int
     num_P_CNN = args["num_P_CNN"]
     num_R_CLSTM = args["num_R_CLSTM"]
@@ -84,8 +96,8 @@ def main(args):
         test_sources = os.path.join(DATA_DIR, "sources_test.hkl")
 
         train_dataset = SequenceGenerator(train_file, train_sources, nt, batch_size=batch_size, shuffle=True)
-        val_dataset = SequenceGenerator(val_file, val_sources, nt, batch_size=batch_size, shuffle=False)
-        test_dataset = SequenceGenerator(test_file, test_sources, nt, batch_size=batch_size, shuffle=False)
+        val_dataset = SequenceGenerator(val_file, val_sources, nt, batch_size=batch_size, shuffle=True)
+        test_dataset = SequenceGenerator(test_file, test_sources, nt, batch_size=batch_size, shuffle=True)
         train_size = train_dataset.N_sequences
         val_size = val_dataset.N_sequences
         test_size = test_dataset.N_sequences
@@ -139,7 +151,7 @@ def main(args):
             keras.Input(shape=(nt, im_shape[0], im_shape[1], 1)),
             keras.Input(shape=(nt, im_shape[0], im_shape[1], 3)),
         )
-        PPN = ParaPredNet(batch_size=batch_size, nt=nt, im_height=im_shape[0], im_width=im_shape[1], num_P_CNN=num_P_CNN, num_R_CLSTM=num_R_CLSTM, output_channels=output_channels, dataset=args["dataset"])
+        PPN = ParaPredNet(batch_size=batch_size, nt=nt, im_height=im_shape[0], im_width=im_shape[1], num_P_CNN=num_P_CNN, num_R_CLSTM=num_R_CLSTM, output_channels=output_channels, dataset=args["dataset"])  # [3, 48, 96, 192]
         outputs = PPN(inputs)
         PPN = keras.Model(inputs=inputs, outputs=outputs)
     
@@ -167,7 +179,7 @@ def main(args):
         if not os.path.exists(WEIGHTS_DIR): os.makedirs(WEIGHTS_DIR, exist_ok=True)
         callbacks.append(ModelCheckpoint(filepath=weights_file, monitor="val_loss", save_best_only=True, save_weights_only=True))
     if plot_intermediate:
-            callbacks.append(IntermediateEvaluations(test_dataset, test_size, batch_size=batch_size, nt=nt, output_channels=output_channels, dataset=args["dataset"]))
+            callbacks.append(IntermediateEvaluations(test_dataset, test_size, batch_size=batch_size, nt=nt, output_channels=output_channels, dataset=args["dataset"], model_choice=args["model_choice"]))
     if tensorboard:
         callbacks.append(TensorBoard(log_dir=LOG_DIR, histogram_freq=1, write_graph=True, write_images=False))
 
@@ -185,19 +197,20 @@ if __name__ == "__main__":
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
     parser.add_argument("--nb_epoch", type=int, default=150, help="number of epochs")
     parser.add_argument("--batch_size", type=int, default=1, help="batch size (4 is no good, idk why)")
-    parser.add_argument("--sequences_per_epoch_train", type=int, default=None, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
-    parser.add_argument("--sequences_per_epoch_val", type=int, default=None, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_train", type=int, default=5, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_val", type=int, default=5, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
     parser.add_argument("--num_P_CNN", type=int, default=1, help="number of parallel CNNs")
     parser.add_argument("--num_R_CLSTM", type=int, default=1, help="number of recurrent CLSTMs")
-    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels",)
+    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 12], help="output channels",)
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor")
-    parser.add_argument("--train_proportion", type=float, default=0.7, help="downscale factor")
+    parser.add_argument("--train_proportion", type=float, default=0.7, help="proportion of data for training (only for monkaa)")
+    parser.add_argument("--model_choice", type=str, default="cl_delta", help="Choose which model. Options: baseline, cl_delta, cl_recon")
 
     # parser.add_argument("--seed", type=int, default=np.random.default_rng().integers(0,9999), help="random seed")
     parser.add_argument("--seed", type=int, default=213, help="random seed")
 
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
-    parser.add_argument("--dataset", type=str, default="kitti", help="kitti or monkaa")
+    parser.add_argument("--dataset", type=str, default="monkaa", help="kitti or monkaa")
     parser.add_argument("--data_subset", type=str, default="family_x2", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
 
     args = parser.parse_args().__dict__
