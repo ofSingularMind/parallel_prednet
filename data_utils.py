@@ -14,7 +14,7 @@ from PIL import Image
 import glob
 import sys
 import re
-from PPN import ParaPredNet
+from models.PPN_Baseline import ParaPredNet
 
 # from monkaa_settings import *
 import matplotlib.gridspec as gridspec
@@ -36,7 +36,7 @@ DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = get_settings()["dirs"]
 
 # Data generator that creates sequences for input into PredNet.
 class SequenceGenerator(Iterator):
-    def __init__(self, data_file, source_file, nt, batch_size=8, shuffle=False, seed=None, output_mode="error", sequence_start_mode="all", N_seq=None, data_format=K.image_data_format(), ):
+    def __init__(self, data_file, source_file, nt, batch_size=8, shuffle=False, seed=None, output_mode="error", sequence_start_mode="all", N_seq=None, data_format=K.image_data_format()):
         # X will be like (n_images, nb_cols, nb_rows, nb_channels)
         self.X = hkl.load(data_file)
         # source for each image so when creating sequences can assure that consecutive frames are from same video
@@ -112,7 +112,7 @@ class SequenceGenerator(Iterator):
 
 
 class IntermediateEvaluations(Callback):
-    def __init__(self, test_dataset, length, batch_size=4, nt=10, output_channels=[3, 48, 96, 192], dataset="kitti", ):
+    def __init__(self, test_dataset, length, batch_size=4, nt=10, output_channels=[3, 48, 96, 192], dataset="kitti", model_choice="baseline"):
         super(IntermediateEvaluations, self).__init__()
         self.test_dataset = test_dataset
         self.dataset_iterator = iter(self.test_dataset)
@@ -122,6 +122,7 @@ class IntermediateEvaluations(Callback):
         self.plot_nt = nt
         self.output_channels = output_channels
         self.dataset = dataset
+        self.model_choice = model_choice
         self.weights_file = os.path.join(WEIGHTS_DIR, "tensorflow_weights/para_prednet_monkaa_weights.hdf5")
         self.rg_colormap = LinearSegmentedColormap.from_list('custom_cmap', [(0, 'red'), (0.5, 'black'), (1, 'green')])
 
@@ -140,27 +141,24 @@ class IntermediateEvaluations(Callback):
         Evaluate trained PredNet on KITTI or Monkaa sequences.
         Calculates mean-squared error and plots predictions.
         """
-        start_time = time.perf_counter()
-        # print(f"\nStarting to plot training samples at {time.perf_counter() - start_time} seconds.")
+        # Retrieve target sequence
         X_test = next(self.dataset_iterator)[0]  # take just batch_x not batch_y
-        # try:
-        #     X_test = next(self.dataset_iterator)[0] # take just batch_x not batch_y
-        # except StopIteration:
-        #     print("Stopped")
-        #     self.dataset_iterator = iter(self.test_dataset)
-        #     X_test = next(self.dataset_iterator)[0]
-        # X_hat = self.get_test_batch()
-        # print(f"X_test received at {time.perf_counter() - start_time} seconds.")
 
+        # Calculate predicted sequence
         self.model.layers[-1].output_mode = "Error_Images_and_Prediction"
-        error_images, error_delta_images, X_hat = self.model.layers[-1](X_test)
+        if self.model_choice == "baseline":
+            error_images, X_hat = self.model.layers[-1](X_test)
+        elif self.model_choice == "cl_delta":
+            error_images, X_hat, X_delta_hat = self.model.layers[-1](X_test)
+            X_delta_hat_gray = np.mean(X_delta_hat, axis=-1)
+        elif self.model_choice == "cl_recon":
+            error_images, X_hat, X_recon_hat = self.model.layers[-1](X_test)
         error_images_gray = np.mean(error_images, axis=-1)
-        error_delta_images_gray = np.mean(error_delta_images, axis=-1)
         self.model.layers[-1].output_mode = "Error"
-        # print(f"X_hat received at {time.perf_counter() - start_time} seconds.")
 
         if self.dataset == "monkaa":
             X_test = X_test[-1]  # take only the PNG images for MSE calcs and plotting
+        
         # Compare MSE of PredNet predictions vs. using last frame.  Write results to prediction_scores.txt
         # look at all timesteps except the first
         mse_model = np.mean((X_test[:, 1:] - X_hat[:, 1:]) ** 2)
@@ -173,14 +171,15 @@ class IntermediateEvaluations(Callback):
 
         # Plot some training predictions
         aspect_ratio = float(X_hat.shape[2]) / X_hat.shape[3]
-        plt.figure(figsize=(16 * self.plot_nt, 16 * aspect_ratio))
-        gs = gridspec.GridSpec(4, self.plot_nt)
+        plt.figure(figsize=(2 * self.plot_nt, 10 * aspect_ratio))
+        gs = gridspec.GridSpec(3, self.plot_nt) if self.model_choice=="baseline" else gridspec.GridSpec(5, self.plot_nt)
         gs.update(wspace=0.0, hspace=0.0)
         plot_save_dir = os.path.join(RESULTS_SAVE_DIR, "training_plots/")
         if not os.path.exists(plot_save_dir):
             os.makedirs(plot_save_dir, exist_ok=True)
         plot_idx = np.random.permutation(X_test.shape[0])[: self.n_plot]
         for i in plot_idx:
+            X_test_last = tf.zeros_like(X_test[i, -1])
             for t in range(self.plot_nt):
                 plt.subplot(gs[t])
                 plt.imshow(X_hat[i, t], interpolation="none")
@@ -194,21 +193,45 @@ class IntermediateEvaluations(Callback):
                 if t == 0:
                     plt.ylabel("Actual", fontsize=10)
 
-                plt.subplot(gs[t + 2*self.plot_nt])
+                plt.subplot(gs[t + 2 * self.plot_nt])
                 plt.imshow(error_images_gray[i, t], cmap=self.rg_colormap)
                 plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
                 if t == 0:
                     plt.ylabel("Error", fontsize=10)
+                
+                if self.model_choice == "cl_delta":
+                    plt.subplot(gs[t + 3 * self.plot_nt])
+                    plt.imshow(X_delta_hat_gray[i, t], cmap=self.rg_colormap)
+                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                    if t == 0:
+                        plt.ylabel("Predicted Delta", fontsize=10)
 
-                plt.subplot(gs[t + 3*self.plot_nt])
-                plt.imshow(error_delta_images_gray[i, t], cmap=self.rg_colormap)
-                plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                if t == 0:
-                    plt.ylabel("Error Delta", fontsize=10)
+                    plt.subplot(gs[t + 4 * self.plot_nt])
+                    if t > 0:
+                        plt.imshow(np.mean((X_test[i, t] - X_test_last), axis=-1), cmap=self.rg_colormap)
+                    else:
+                        plt.imshow(np.mean((X_test[i, t] - X_test[i, t]), axis=-1), cmap=self.rg_colormap)
+                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                    if t == 0:
+                        plt.ylabel("Actual Delta", fontsize=10)
+                    X_test_last = X_test[i, t]
+                
+                elif self.model_choice == "cl_recon":
+                    plt.subplot(gs[t + 3 * self.plot_nt])
+                    plt.imshow(X_recon_hat[i, t], interpolation="none")
+                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                    if t == 0:
+                        plt.ylabel("Predicted Recon", fontsize=10) 
+
+                    plt.subplot(gs[t + 4 * self.plot_nt])
+                    plt.imshow(X_test_last, interpolation="none")
+                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                    if t == 0:
+                        plt.ylabel("Actual Recon", fontsize=10) 
+                    X_test_last = X_test[i, t]
 
             plt.savefig(plot_save_dir + "e" + str(epoch) + "_plot_" + str(i) + ".png")
             plt.clf()
-        # print(f"Finished plotting training samples at {time.perf_counter() - start_time} seconds.")
 
 
 def writePFM(file, image, scale=1):
