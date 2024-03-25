@@ -113,7 +113,7 @@ class PredLayer(keras.layers.Layer):
         self.states["R"] = tf.zeros((batch_size, self.im_height, self.im_width, self.num_R_CLSTM * self.output_channels))
         self.states["P"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
         self.states["T"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
-        self.states["E"] = tf.zeros((batch_size, self.im_height, self.im_width, 2 * self.output_channels))
+        self.states["E"] = tf.zeros((batch_size, self.im_height, self.im_width, 2 * self.output_channels)) # double for the pos/neg concatenated error
         
         self.states["TD_inp"] = None
         self.states["L_inp"] = None
@@ -138,11 +138,11 @@ class PredLayer(keras.layers.Layer):
         if direction == "top_down":
             # UPDATE REPRESENTATION
             if self.top_layer:
-                R_inp = keras.layers.Concatenate(axis=-1)([self.states["E"], self.states["R"]])
+                R_inp = keras.layers.Concatenate()([self.states["E"], self.states["R"]])
             else:
                 self.states["TD_inp"] = self.upsample(inputs[1])
                 self.states["TD_inp"] = keras.layers.ZeroPadding2D(paddings)(self.states["TD_inp"])
-                R_inp = keras.layers.Concatenate(axis=-1)([self.states["E"], self.states["R"], self.states["TD_inp"]])
+                R_inp = keras.layers.Concatenate()([self.states["E"], self.states["R"], self.states["TD_inp"]])
 
             if self.states["lstm"] is None:
                 self.states["R"], self.states["lstm"] = self.representation(R_inp)
@@ -151,7 +151,7 @@ class PredLayer(keras.layers.Layer):
                 self.states["lstm"] = new_lstm_states
 
             # FORM PREDICTION(S)
-            self.states["P"] = K.minimum(self.prediction(self.states["R"]), self.pixel_max)
+            self.states["P"] = K.minimum(self.prediction(self.states["R"]), self.pixel_max) if self.bottom_layer else self.prediction(self.states["R"])
 
         elif direction == "bottom_up":
             # RETRIEVE TARGET(S) (bottom-up input) ~ (batch_size, im_height, im_width, output_channels)
