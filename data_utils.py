@@ -30,6 +30,7 @@ import keras
 import numpy as np
 import hickle as hkl
 from config import update_settings, get_settings
+import flow_vis
 
 DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = get_settings()["dirs"]
 
@@ -144,7 +145,7 @@ class IntermediateEvaluations(Callback):
         # Retrieve target sequence
         X_test = next(self.dataset_iterator)[0]  # take just batch_x not batch_y
 
-        # Calculate predicted sequence
+        # Calculate predicted sequence(s)
         self.model.layers[-1].output_mode = "Error_Images_and_Prediction"
         if self.model_choice == "baseline":
             error_images, X_hat = self.model.layers[-1](X_test)
@@ -153,11 +154,40 @@ class IntermediateEvaluations(Callback):
             X_delta_hat_gray = np.mean(X_delta_hat, axis=-1)
         elif self.model_choice == "cl_recon":
             error_images, X_hat, X_recon_hat = self.model.layers[-1](X_test)
+        elif self.model_choice == "multi_channel":
+            error_images, X_hat = self.model.layers[-1](X_test)
+            X_hat = X_hat.numpy()
+            X_hat[..., 0] = np.interp(X_hat[..., 0], (X_hat[..., 0].min(), X_hat[..., 0].max()), (0, 1))
+            X_hat_mat = X_hat[..., 1].astype(np.int32)
+            X_hat_obj = X_hat[..., 2].astype(np.int32)
+            X_hat_opt = np.zeros_like(X_hat[..., 3:6], dtype=np.int32)
+            for b in range(self.batch_size):
+                for t in range(self.nt):
+                    X_hat_opt[b, t, ..., 0:3] = flow_vis.flow_to_color(X_hat[b, t, ..., 3:5], convert_to_bgr=False).astype(np.int32)
+            X_hat_mot = X_hat[..., 6]
+
         error_images_gray = np.mean(error_images, axis=-1)
         self.model.layers[-1].output_mode = "Error"
 
-        if self.dataset == "monkaa":
+        if self.dataset == "monkaa" and self.model_choice != "multi_channel":
             X_test = X_test[-1]  # take only the PNG images for MSE calcs and plotting
+        elif self.model_choice == "multi_channel":
+            X_test = tf.concat(X_test, axis=-1)
+            X_test = X_test.numpy()
+            X_test[..., 0] = np.interp(X_test[..., 0], (X_test[..., 0].min(), X_test[..., 0].max()), (0, 1))
+            X_test_mat = X_test[..., 1].astype(np.int32)
+            X_test_obj = X_test[..., 2].astype(np.int32)
+            X_test_opt = np.zeros_like(X_test[..., 3:6], dtype=np.int32)
+            for b in range(self.batch_size):
+                for t in range(self.nt):
+                    X_test_opt[b, t, ..., 0:3] = flow_vis.flow_to_color(X_test[b, t, ..., 3:5], convert_to_bgr=False).astype(np.int32)
+            X_test_mot = X_test[..., 6]
+        
+        # for c in range(X_test.shape[-1]):
+        #     # print min/max values for each channel for both X_test and X_hat
+        #     print(f"X_test channel {c} min: {X_test[..., c].min()}, max: {X_test[..., c].max()}, dtype: {X_test[..., c].dtype}")
+        #     print(f"X_hat channel {c} min: {X_hat[..., c].min()}, max: {X_hat[..., c].max()}, dtype: {X_hat[..., c].dtype}")
+
         
         # Compare MSE of PredNet predictions vs. using last frame.  Write results to prediction_scores.txt
         # look at all timesteps except the first
@@ -171,8 +201,15 @@ class IntermediateEvaluations(Callback):
 
         # Plot some training predictions
         aspect_ratio = float(X_hat.shape[2]) / X_hat.shape[3]
-        plt.figure(figsize=(2 * self.plot_nt, 10 * aspect_ratio))
-        gs = gridspec.GridSpec(3, self.plot_nt) if self.model_choice=="baseline" else gridspec.GridSpec(5, self.plot_nt)
+        if self.model_choice=="baseline":
+            gs = gridspec.GridSpec(3, self.plot_nt)
+            plt.figure(figsize=(2 * self.plot_nt, 5 * aspect_ratio), layout="constrained")
+        elif self.model_choice=="cl_delta" or self.model_choice=="cl_recon":
+            gs = gridspec.GridSpec(5, self.plot_nt)
+            plt.figure(figsize=(2 * self.plot_nt, 10 * aspect_ratio), layout="constrained")
+        elif self.model_choice=="multi_channel":
+            gs = gridspec.GridSpec(13, self.plot_nt)
+            plt.figure(figsize=(2 * self.plot_nt, 30 * aspect_ratio), layout="constrained")
         gs.update(wspace=0.0, hspace=0.0)
         plot_save_dir = os.path.join(RESULTS_SAVE_DIR, "training_plots/")
         if not os.path.exists(plot_save_dir):
@@ -182,13 +219,13 @@ class IntermediateEvaluations(Callback):
             X_test_last = tf.zeros_like(X_test[i, -1])
             for t in range(self.plot_nt):
                 plt.subplot(gs[t])
-                plt.imshow(X_hat[i, t], interpolation="none")
+                plt.imshow(X_hat[i, t, ..., -3:], interpolation="none")
                 plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
                 if t == 0:
                     plt.ylabel("Predicted", fontsize=10)
 
                 plt.subplot(gs[t + self.plot_nt])
-                plt.imshow(X_test[i, t], interpolation="none")
+                plt.imshow(X_test[i, t, ..., -3:], interpolation="none")
                 plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
                 if t == 0:
                     plt.ylabel("Actual", fontsize=10)
@@ -229,6 +266,73 @@ class IntermediateEvaluations(Callback):
                     if t == 0:
                         plt.ylabel("Actual Recon", fontsize=10) 
                     X_test_last = X_test[i, t]
+
+                elif self.model_choice == "multi_channel":
+                    # DISPARITY
+                    plt.subplot(gs[t + 3 * self.plot_nt])
+                    plt.imshow(X_hat[i, t, ..., 0], interpolation="none")
+                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                    if t == 0:
+                        plt.ylabel("Predicted Disp", fontsize=10)
+
+                    plt.subplot(gs[t + 4 * self.plot_nt])
+                    plt.imshow(X_test[i, t, ..., 0], interpolation="none")
+                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                    if t == 0:
+                        plt.ylabel("Actual Disp", fontsize=10)
+                    
+                    # MATERIAL SEGMENTATION
+                    plt.subplot(gs[t + 5 * self.plot_nt])
+                    plt.imshow(X_hat_mat[i, t, ...], interpolation="none")
+                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                    if t == 0:
+                        plt.ylabel("Predicted Mat", fontsize=10)
+
+                    plt.subplot(gs[t + 6 * self.plot_nt])
+                    plt.imshow(X_test_mat[i, t, ...], interpolation="none")
+                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                    if t == 0:
+                        plt.ylabel("Actual Mat", fontsize=10)
+                    
+                    # OBJECT SEGMENTATION
+                    plt.subplot(gs[t + 7 * self.plot_nt])
+                    plt.imshow(X_hat_obj[i, t, ...], interpolation="none")
+                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                    if t == 0:
+                        plt.ylabel("Predicted Obj", fontsize=10)
+
+                    plt.subplot(gs[t + 8 * self.plot_nt])
+                    plt.imshow(X_test_obj[i, t, ...], interpolation="none")
+                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                    if t == 0:
+                        plt.ylabel("Actual Obj", fontsize=10)
+                    
+                    # OPTICAL FLOW
+                    plt.subplot(gs[t + 9 * self.plot_nt])
+                    plt.imshow(X_hat_opt[i, t], interpolation="none")
+                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                    if t == 0:
+                        plt.ylabel("Predicted Opt", fontsize=10)
+
+                    plt.subplot(gs[t + 10 * self.plot_nt])
+                    plt.imshow(X_test_opt[i, t], interpolation="none")
+                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                    if t == 0:
+                        plt.ylabel("Actual Opt", fontsize=10)
+                    
+                    # MOTION BOUNDARIES
+                    plt.subplot(gs[t + 11 * self.plot_nt])
+                    plt.imshow(X_hat_mot[i, t], interpolation="none", cmap="gray")
+                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                    if t == 0:
+                        plt.ylabel("Predicted Mot", fontsize=10)
+
+                    plt.subplot(gs[t + 12 * self.plot_nt])
+                    plt.imshow(X_test_mot[i, t], interpolation="none", cmap="gray")
+                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                    if t == 0:
+                        plt.ylabel("Actual Mot", fontsize=10)
+                    
 
             plt.savefig(plot_save_dir + "e" + str(epoch) + "_plot_" + str(i) + ".png")
             plt.clf()

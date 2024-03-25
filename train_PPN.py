@@ -18,7 +18,7 @@ def main(args):
 
     # PICK MODEL
     if args["model_choice"] == "baseline":
-        # Predict next frame
+        # Predict next frame along RGB channels only
         from PPN_models.PPN_Baseline import ParaPredNet
     elif args["model_choice"] == "cl_delta":
         # Predict next frame and change from current frame
@@ -26,6 +26,13 @@ def main(args):
     elif args["model_choice"] == "cl_recon":
         # Predict current and next frame
         from PPN_models.PPN_CompLearning_Recon_Predictions import ParaPredNet
+    elif args["model_choice"] == "multi_channel":
+        # Predict next frame along Disparity, Material Index, Object Index, 
+        # Optical Flow, Motion Boundaries, and RGB channels all stacked together
+        assert args["dataset"] == "monkaa", "Multi-channel model only works with Monkaa dataset"
+        from PPN_models.PPN_Multi_Channel import ParaPredNet
+        bottom_layer_output_channels = 10
+        args["output_channels"][0] = bottom_layer_output_channels
     else:
         raise ValueError("Invalid model choice")
 
@@ -107,21 +114,21 @@ def main(args):
         # Training data
         assert os.path.exists(DATA_DIR + "disparity/" + args["data_subset"] + "/left/"), "Improper data_subset selected"
         pfm_paths = []
-        pfm_paths.append(DATA_DIR + "disparity/" + args["data_subset"] + "/left/")
-        pfm_paths.append(DATA_DIR + "material_index/" + args["data_subset"] + "/left/")
-        pfm_paths.append(DATA_DIR + "object_index/" + args["data_subset"] + "/left/")
-        pfm_paths.append(DATA_DIR + "optical_flow/" + args["data_subset"] + "/into_future/left/")
+        pfm_paths.append(DATA_DIR + "disparity/" + args["data_subset"] + "/left/") # 1 channel
+        pfm_paths.append(DATA_DIR + "material_index/" + args["data_subset"] + "/left/") # 1 channel
+        pfm_paths.append(DATA_DIR + "object_index/" + args["data_subset"] + "/left/") # 1 channel
+        pfm_paths.append(DATA_DIR + "optical_flow/" + args["data_subset"] + "/into_future/left/") # 3 channels
         pgm_paths = []
-        pgm_paths.append(DATA_DIR + "motion_boundaries/" + args["data_subset"] + "/into_future/left/")
+        pgm_paths.append(DATA_DIR + "motion_boundaries/" + args["data_subset"] + "/into_future/left/") # 1 channel
         png_paths = []
-        png_paths.append(DATA_DIR + "frames_cleanpass/" + args["data_subset"] + "/left")
+        png_paths.append(DATA_DIR + "frames_cleanpass/" + args["data_subset"] + "/left") # 3 channels (RGB)
         num_sources = len(pfm_paths) + len(pgm_paths) + len(png_paths)
 
         train_split = 0.7
         val_split = (1 - train_split) / 2
         #  Create and split dataset
         datasets, length = create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode="Error", im_height=im_shape[0], im_width=im_shape[1],
-                                                                    batch_size=batch_size, nt=nt, train_split=train_split, reserialize=False, shuffle=True, resize=True)
+                                                                    batch_size=batch_size, nt=nt, train_split=train_split, reserialize=args["reserialize_dataset"], shuffle=True, resize=True)
         train_dataset, val_dataset, test_dataset = datasets
 
         train_size = int(train_split * length)
@@ -136,7 +143,7 @@ def main(args):
 
     # Create ParaPredNet
     if args["dataset"] == "kitti":
-        # These are Monkaa specific input shapes
+        # These are Kitti specific input shapes
         inputs = (keras.Input(shape=(nt, im_shape[0], im_shape[1], 3)))
         PPN = ParaPredNet(batch_size=batch_size, nt=nt, im_height=im_shape[0], im_width=im_shape[1], num_P_CNN=num_P_CNN, num_R_CLSTM=num_R_CLSTM, output_channels=output_channels, dataset=args["dataset"])  # [3, 48, 96, 192]
         outputs = PPN(inputs)
@@ -161,18 +168,22 @@ def main(args):
     PPN.build(input_shape=(None, nt) + im_shape)
     print(PPN.summary())
     num_layers = len(output_channels)  # number of layers in the architecture
-    print(f"{num_layers} PredNet layers with a resolutions:")
+    print(f"{num_layers} PredNet layers with resolutions:")
     for i in reversed(range(num_layers)):
         print(f"Layer {i+1}:  {resos[i][0]} x {resos[i][1]}")
 
     # load previously saved weights
     if os.path.exists(weights_checkpoint_file):
-        try: PPN.load_weights(weights_checkpoint_file)
-        except: os.remove(weights_file) # model architecture has changed, so weights cannot be loaded
-
+        try: 
+            PPN.load_weights(weights_checkpoint_file)
+            print("Weights loaded successfully - continuing training from last epoch")
+        except: 
+            os.remove(weights_file) # model architecture has changed, so weights cannot be loaded
+            print("Weights don't fit - restarting training from scratch")
+    else: print("No weights found - starting training from scratch")
 
     # start with lr of 0.001 and then drop to 0.0001 after 75 epochs
-    def lr_schedule(epoch): return 0.01 if epoch < 10 else 0.005
+    def lr_schedule(epoch): return 0.1 if epoch < 10 else 0.05
 
     callbacks = [LearningRateScheduler(lr_schedule)]
     if save_model:
@@ -194,23 +205,26 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="PPN")  # Training parameters
 
+    # Tuning args
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
     parser.add_argument("--nb_epoch", type=int, default=150, help="number of epochs")
     parser.add_argument("--batch_size", type=int, default=1, help="batch size (4 is no good, idk why)")
-    parser.add_argument("--sequences_per_epoch_train", type=int, default=5, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_train", type=int, default=50, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=5, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
     parser.add_argument("--num_P_CNN", type=int, default=1, help="number of parallel CNNs")
     parser.add_argument("--num_R_CLSTM", type=int, default=1, help="number of recurrent CLSTMs")
-    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 12], help="output channels",)
+    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels")
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor")
     parser.add_argument("--train_proportion", type=float, default=0.7, help="proportion of data for training (only for monkaa)")
-    parser.add_argument("--model_choice", type=str, default="cl_delta", help="Choose which model. Options: baseline, cl_delta, cl_recon")
 
     # parser.add_argument("--seed", type=int, default=np.random.default_rng().integers(0,9999), help="random seed")
-    parser.add_argument("--seed", type=int, default=213, help="random seed")
+    # parser.add_argument("--seed", type=int, default=213, help="random seed")
 
+    # Structure args
+    parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
-    parser.add_argument("--dataset", type=str, default="monkaa", help="kitti or monkaa")
+    parser.add_argument("--dataset", type=str, default="kitti", help="kitti or monkaa")
+    parser.add_argument("--reserialize_dataset", type=bool, default=False, help="reserialize dataset")
     parser.add_argument("--data_subset", type=str, default="family_x2", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
 
     args = parser.parse_args().__dict__

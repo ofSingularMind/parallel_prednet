@@ -17,7 +17,7 @@ monkaa_results_archive/
 kitti_data/
 kitti_results/
 kitti_results_archive/
-model_data_keras*/
+model_weights*/
 *.hdf5
 
 # Distribution / packaging
