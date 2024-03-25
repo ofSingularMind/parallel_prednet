@@ -63,11 +63,11 @@ class Representation(keras.layers.Layer):
         # Add ConvLSTM, being sure to pass previous states in OR use stateful=True
         self.num_R_CLSTM = num_R_CLSTM
         self.conv_lstm_layers = []
-        for _ in range(num_R_CLSTM):
-            conv_i = layers.Conv2D(output_channels, (3, 3), padding="same", activation="hard_sigmoid", name=f"Representation_Conv_i_Layer{layer_num}")
-            conv_f = layers.Conv2D(output_channels, (3, 3), padding="same", activation="hard_sigmoid", name=f"Representation_Conv_f_Layer{layer_num}")
-            conv_o = layers.Conv2D(output_channels, (3, 3), padding="same", activation="hard_sigmoid", name=f"Representation_Conv_o_Layer{layer_num}")
-            conv_c = layers.Conv2D(output_channels, (3, 3), padding="same", activation="tanh", name=f"Representation_Conv_c_Layer{layer_num}")
+        for i in range(num_R_CLSTM):
+            conv_i = layers.Conv2D(output_channels, (3, 3), padding="same", activation="hard_sigmoid", name=f"Representation_Conv_i_{i}_Layer{layer_num}")
+            conv_f = layers.Conv2D(output_channels, (3, 3), padding="same", activation="hard_sigmoid", name=f"Representation_Conv_f_{i}_Layer{layer_num}")
+            conv_o = layers.Conv2D(output_channels, (3, 3), padding="same", activation="hard_sigmoid", name=f"Representation_Conv_o_{i}_Layer{layer_num}")
+            conv_c = layers.Conv2D(output_channels, (3, 3), padding="same", activation="tanh", name=f"Representation_Conv_c_{i}_Layer{layer_num}")
             convs = {"conv_i": conv_i, "conv_f": conv_f, "conv_o": conv_o, "conv_c": conv_c}
             self.conv_lstm_layers.append(convs)
 
@@ -172,8 +172,8 @@ class PredLayer(keras.layers.Layer):
                 self.states["lstm"] = new_lstm_states
 
             # FORM PREDICTION(S)
-            self.states["P"] = K.minimum(self.prediction(self.states["R"]), self.pixel_max)
-            self.states["P_recon"] = K.minimum(self.prediction_recon(self.states["R"]), self.pixel_max)
+            self.states["P"] = K.minimum(self.prediction(self.states["R"]), self.pixel_max) if self.bottom_layer else self.prediction(self.states["R"])
+            self.states["P_recon"] = K.minimum(self.prediction_recon(self.states["R"]), self.pixel_max) if self.bottom_layer else self.prediction_recon(self.states["R"])
 
         elif direction == "bottom_up":
             # RETRIEVE TARGET(S) (bottom-up input) ~ (batch_size, im_height, im_width, output_channels)

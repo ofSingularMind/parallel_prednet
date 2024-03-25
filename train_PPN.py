@@ -183,7 +183,7 @@ def main(args):
     else: print("No weights found - starting training from scratch")
 
     # start with lr of 0.001 and then drop to 0.0001 after 75 epochs
-    def lr_schedule(epoch): return 0.01 if epoch < 10 else 0.005
+    def lr_schedule(epoch): return 0.0005 if epoch < 10 else 0.0001
 
     callbacks = [LearningRateScheduler(lr_schedule)]
     if save_model:
@@ -210,15 +210,15 @@ if __name__ == "__main__":
     parser.add_argument("--nb_epoch", type=int, default=150, help="number of epochs")
     parser.add_argument("--batch_size", type=int, default=1, help="batch size (4 is no good, idk why)")
     parser.add_argument("--sequences_per_epoch_train", type=int, default=50, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
-    parser.add_argument("--sequences_per_epoch_val", type=int, default=25, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_val", type=int, default=10, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
     parser.add_argument("--num_P_CNN", type=int, default=1, help="number of parallel CNNs")
     parser.add_argument("--num_R_CLSTM", type=int, default=1, help="number of recurrent CLSTMs")
-    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 12, 24], help="output channels")
+    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels")
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor")
     parser.add_argument("--train_proportion", type=float, default=0.7, help="proportion of data for training (only for monkaa)")
 
     # parser.add_argument("--seed", type=int, default=np.random.default_rng().integers(0,9999), help="random seed")
-    parser.add_argument("--seed", type=int, default=213, help="random seed")
+    parser.add_argument("--seed", type=int, default=666, help="random seed")
 
     # Structure args
     parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")

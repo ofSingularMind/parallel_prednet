@@ -126,6 +126,22 @@ class IntermediateEvaluations(Callback):
         self.model_choice = model_choice
         self.weights_file = os.path.join(WEIGHTS_DIR, "tensorflow_weights/para_prednet_monkaa_weights.hdf5")
         self.rg_colormap = LinearSegmentedColormap.from_list('custom_cmap', [(0, 'red'), (0.5, 'black'), (1, 'green')])
+        # Retrieve target sequence (use the same sequence(s) always)
+        self.X_test = next(self.dataset_iterator)[0]  # take just batch_x not batch_y
+
+        if self.dataset == "monkaa" and self.model_choice != "multi_channel":
+            self.X_test = self.X_test[-1]  # take only the PNG images for MSE calcs and plotting
+        elif self.model_choice == "multi_channel":
+            self.X_test = tf.concat(self.X_test, axis=-1)
+            self.X_test = self.X_test.numpy()
+            self.X_test[..., 0] = np.interp(self.X_test[..., 0], (self.X_test[..., 0].min(), self.X_test[..., 0].max()), (0, 1))
+            self.X_test_mat = self.X_test[..., 1].astype(np.int32)
+            self.X_test_obj = self.X_test[..., 2].astype(np.int32)
+            self.X_test_opt = np.zeros_like(self.X_test[..., 3:6], dtype=np.int32)
+            for b in range(self.batch_size):
+                for t in range(self.nt):
+                    self.X_test_opt[b, t, ..., 0:3] = flow_vis.flow_to_color(self.X_test[b, t, ..., 3:5], convert_to_bgr=False).astype(np.int32)
+            self.X_test_mot = self.X_test[..., 6]
 
         if not os.path.exists(RESULTS_SAVE_DIR):
             os.makedirs(RESULTS_SAVE_DIR, exist_ok=True)
@@ -142,20 +158,18 @@ class IntermediateEvaluations(Callback):
         Evaluate trained PredNet on KITTI or Monkaa sequences.
         Calculates mean-squared error and plots predictions.
         """
-        # Retrieve target sequence
-        X_test = next(self.dataset_iterator)[0]  # take just batch_x not batch_y
 
         # Calculate predicted sequence(s)
         self.model.layers[-1].output_mode = "Error_Images_and_Prediction"
         if self.model_choice == "baseline":
-            error_images, X_hat = self.model.layers[-1](X_test)
+            error_images, X_hat = self.model.layers[-1](self.X_test)
         elif self.model_choice == "cl_delta":
-            error_images, X_hat, X_delta_hat = self.model.layers[-1](X_test)
+            error_images, X_hat, X_delta_hat = self.model.layers[-1](self.X_test)
             X_delta_hat_gray = np.mean(X_delta_hat, axis=-1)
         elif self.model_choice == "cl_recon":
-            error_images, X_hat, X_recon_hat = self.model.layers[-1](X_test)
+            error_images, X_hat, X_recon_hat = self.model.layers[-1](self.X_test)
         elif self.model_choice == "multi_channel":
-            error_images, X_hat = self.model.layers[-1](X_test)
+            error_images, X_hat = self.model.layers[-1](self.X_test)
             X_hat = X_hat.numpy()
             X_hat[..., 0] = np.interp(X_hat[..., 0], (X_hat[..., 0].min(), X_hat[..., 0].max()), (0, 1))
             X_hat_mat = X_hat[..., 1].astype(np.int32)
@@ -168,20 +182,6 @@ class IntermediateEvaluations(Callback):
 
         error_images_gray = np.mean(error_images, axis=-1)
         self.model.layers[-1].output_mode = "Error"
-
-        if self.dataset == "monkaa" and self.model_choice != "multi_channel":
-            X_test = X_test[-1]  # take only the PNG images for MSE calcs and plotting
-        elif self.model_choice == "multi_channel":
-            X_test = tf.concat(X_test, axis=-1)
-            X_test = X_test.numpy()
-            X_test[..., 0] = np.interp(X_test[..., 0], (X_test[..., 0].min(), X_test[..., 0].max()), (0, 1))
-            X_test_mat = X_test[..., 1].astype(np.int32)
-            X_test_obj = X_test[..., 2].astype(np.int32)
-            X_test_opt = np.zeros_like(X_test[..., 3:6], dtype=np.int32)
-            for b in range(self.batch_size):
-                for t in range(self.nt):
-                    X_test_opt[b, t, ..., 0:3] = flow_vis.flow_to_color(X_test[b, t, ..., 3:5], convert_to_bgr=False).astype(np.int32)
-            X_test_mot = X_test[..., 6]
         
         # for c in range(X_test.shape[-1]):
         #     # print min/max values for each channel for both X_test and X_hat
@@ -191,8 +191,8 @@ class IntermediateEvaluations(Callback):
         
         # Compare MSE of PredNet predictions vs. using last frame.  Write results to prediction_scores.txt
         # look at all timesteps except the first
-        mse_model = np.mean((X_test[:, 1:] - X_hat[:, 1:]) ** 2)
-        mse_prev = np.mean((X_test[:, :-1] - X_test[:, 1:]) ** 2)
+        mse_model = np.mean((self.X_test[:, 1:] - X_hat[:, 1:]) ** 2)
+        mse_prev = np.mean((self.X_test[:, :-1] - self.X_test[:, 1:]) ** 2)
         f = open(RESULTS_SAVE_DIR + "training_scores.txt", "a+")
         f.write("======================= %i : Epoch\n" % epoch)
         f.write("%f : Model MSE\n" % mse_model)
@@ -214,9 +214,9 @@ class IntermediateEvaluations(Callback):
         plot_save_dir = os.path.join(RESULTS_SAVE_DIR, "training_plots/")
         if not os.path.exists(plot_save_dir):
             os.makedirs(plot_save_dir, exist_ok=True)
-        plot_idx = np.random.permutation(X_test.shape[0])[: self.n_plot]
+        plot_idx = np.random.permutation(self.X_test.shape[0])[: self.n_plot]
         for i in plot_idx:
-            X_test_last = tf.zeros_like(X_test[i, -1])
+            X_test_last = tf.zeros_like(self.X_test[i, -1])
             for t in range(self.plot_nt):
                 plt.subplot(gs[t])
                 plt.imshow(X_hat[i, t, ..., -3:], interpolation="none")
@@ -225,7 +225,7 @@ class IntermediateEvaluations(Callback):
                     plt.ylabel("Predicted", fontsize=10)
 
                 plt.subplot(gs[t + self.plot_nt])
-                plt.imshow(X_test[i, t, ..., -3:], interpolation="none")
+                plt.imshow(self.X_test[i, t, ..., -3:], interpolation="none")
                 plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
                 if t == 0:
                     plt.ylabel("Actual", fontsize=10)
@@ -245,13 +245,13 @@ class IntermediateEvaluations(Callback):
 
                     plt.subplot(gs[t + 4 * self.plot_nt])
                     if t > 0:
-                        plt.imshow(np.mean((X_test[i, t] - X_test_last), axis=-1), cmap=self.rg_colormap)
+                        plt.imshow(np.mean((self.X_test[i, t] - X_test_last), axis=-1), cmap=self.rg_colormap)
                     else:
-                        plt.imshow(np.mean((X_test[i, t] - X_test[i, t]), axis=-1), cmap=self.rg_colormap)
+                        plt.imshow(np.mean((self.X_test[i, t] - self.X_test[i, t]), axis=-1), cmap=self.rg_colormap)
                     plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
                     if t == 0:
                         plt.ylabel("Actual Delta", fontsize=10)
-                    X_test_last = X_test[i, t]
+                    X_test_last = self.X_test[i, t]
                 
                 elif self.model_choice == "cl_recon":
                     plt.subplot(gs[t + 3 * self.plot_nt])
@@ -265,7 +265,7 @@ class IntermediateEvaluations(Callback):
                     plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
                     if t == 0:
                         plt.ylabel("Actual Recon", fontsize=10) 
-                    X_test_last = X_test[i, t]
+                    X_test_last = self.X_test[i, t]
 
                 elif self.model_choice == "multi_channel":
                     # DISPARITY
@@ -276,7 +276,7 @@ class IntermediateEvaluations(Callback):
                         plt.ylabel("Predicted Disp", fontsize=10)
 
                     plt.subplot(gs[t + 4 * self.plot_nt])
-                    plt.imshow(X_test[i, t, ..., 0], interpolation="none")
+                    plt.imshow(self.X_test[i, t, ..., 0], interpolation="none")
                     plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
                     if t == 0:
                         plt.ylabel("Actual Disp", fontsize=10)
@@ -289,7 +289,7 @@ class IntermediateEvaluations(Callback):
                         plt.ylabel("Predicted Mat", fontsize=10)
 
                     plt.subplot(gs[t + 6 * self.plot_nt])
-                    plt.imshow(X_test_mat[i, t, ...], interpolation="none")
+                    plt.imshow(self.X_test_mat[i, t, ...], interpolation="none")
                     plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
                     if t == 0:
                         plt.ylabel("Actual Mat", fontsize=10)
@@ -302,7 +302,7 @@ class IntermediateEvaluations(Callback):
                         plt.ylabel("Predicted Obj", fontsize=10)
 
                     plt.subplot(gs[t + 8 * self.plot_nt])
-                    plt.imshow(X_test_obj[i, t, ...], interpolation="none")
+                    plt.imshow(self.X_test_obj[i, t, ...], interpolation="none")
                     plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
                     if t == 0:
                         plt.ylabel("Actual Obj", fontsize=10)
@@ -315,7 +315,7 @@ class IntermediateEvaluations(Callback):
                         plt.ylabel("Predicted Opt", fontsize=10)
 
                     plt.subplot(gs[t + 10 * self.plot_nt])
-                    plt.imshow(X_test_opt[i, t], interpolation="none")
+                    plt.imshow(self.X_test_opt[i, t], interpolation="none")
                     plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
                     if t == 0:
                         plt.ylabel("Actual Opt", fontsize=10)
@@ -328,7 +328,7 @@ class IntermediateEvaluations(Callback):
                         plt.ylabel("Predicted Mot", fontsize=10)
 
                     plt.subplot(gs[t + 12 * self.plot_nt])
-                    plt.imshow(X_test_mot[i, t], interpolation="none", cmap="gray")
+                    plt.imshow(self.X_test_mot[i, t], interpolation="none", cmap="gray")
                     plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
                     if t == 0:
                         plt.ylabel("Actual Mot", fontsize=10)
