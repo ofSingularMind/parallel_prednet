@@ -183,7 +183,7 @@ def main(args):
     else: print("No weights found - starting training from scratch")
 
     # start with lr of 0.001 and then drop to 0.0001 after 75 epochs
-    def lr_schedule(epoch): return 0.005 if epoch < 50 else 0.0001
+    def lr_schedule(epoch): return 0.001 if epoch < 50 else 0.0001
 
     callbacks = [LearningRateScheduler(lr_schedule)]
     if save_model:
@@ -208,11 +208,11 @@ if __name__ == "__main__":
     # Tuning args
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
     parser.add_argument("--nb_epoch", type=int, default=150, help="number of epochs")
-    parser.add_argument("--batch_size", type=int, default=1, help="batch size (4 is no good, idk why)")
-    parser.add_argument("--sequences_per_epoch_train", type=int, default=500, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
-    parser.add_argument("--sequences_per_epoch_val", type=int, default=100, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
-    parser.add_argument("--num_P_CNN", type=int, default=1, help="number of parallel CNNs")
-    parser.add_argument("--num_R_CLSTM", type=int, default=1, help="number of recurrent CLSTMs")
+    parser.add_argument("--batch_size", type=int, default=4, help="batch size")
+    parser.add_argument("--sequences_per_epoch_train", type=int, default=100, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_val", type=int, default=None, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
+    parser.add_argument("--num_P_CNN", type=int, default=1, help="number of serial Prediction convolutions")
+    parser.add_argument("--num_R_CLSTM", type=int, default=1, help="number of hierarchical Representation CLSTMs")
     parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels")
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor")
     parser.add_argument("--train_proportion", type=float, default=0.7, help="proportion of data for training (only for monkaa)")

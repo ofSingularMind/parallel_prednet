@@ -1,14 +1,22 @@
-# This file allows you to configure your python environment quickly for prednet.
-# Please refer to the conda documentation for more info:
-# https://conda.io/docs/user-guide/tasks/manage-environments.html
-
-name: PPN
-
+name: PPN2
+channels:
+  - conda-forge
+  - defaults
 dependencies:
-  - python=3.11
+
+  - python=3.11.8=h955ad1f_0
+  - python_abi=3.11=2_cp311
+  - six=1.16.0=pyh6c4a22f_0
 
   - pip:
-    - keras
-    - tensorflow
-    - hickle==2.1.0
-    - matplotlib
+
+      - flow_vis==0.1
+      - h5py==3.10.0
+      - hickle==5.0.2
+      - imageio==2.34.0
+      - keras==2.15.0
+      - matplotlib==3.8.3
+      - numpy==1.26.4
+      - pillow==10.2.0
+      - pip==24.0
+prefix: /home/evalexii/miniconda3/envs/PPN2
