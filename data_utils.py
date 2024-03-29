@@ -129,7 +129,9 @@ class IntermediateEvaluations(Callback):
         # Retrieve target sequence (use the same sequence(s) always)
         self.X_test_inputs = [next(self.dataset_iterator) for _ in range(10)][-1][0]  # take just batch_x not batch_y
 
-        if self.dataset == "monkaa" and self.model_choice != "multi_channel":
+        if self.dataset == "kitti":
+            self.X_test = self.X_test_inputs
+        elif self.dataset == "monkaa" and self.model_choice != "multi_channel":
             self.X_test = self.X_test_inputs[-1]  # take only the PNG images for MSE calcs and plotting
         elif self.model_choice == "multi_channel":
             # self.X_test_inputs = 
