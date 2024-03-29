@@ -168,8 +168,7 @@ class PredLayer(keras.layers.Layer):
             if self.states["lstm"] is None:
                 self.states["R"], self.states["lstm"] = self.representation(R_inp)
             else:
-                self.states["R"], new_lstm_states = self.representation(R_inp, initial_states=self.states["lstm"])
-                self.states["lstm"] = new_lstm_states
+                self.states["R"], self.states["lstm"] = self.representation(R_inp, initial_states=self.states["lstm"])
 
             # FORM PREDICTION(S)
             self.states["P"] = K.minimum(self.prediction(self.states["R"]), self.pixel_max) if self.bottom_layer else self.prediction(self.states["R"])
@@ -200,15 +199,15 @@ class PredLayer(keras.layers.Layer):
 
 
 class ParaPredNet(keras.Model):
-    def __init__(self, batch_size=4, nt=10, im_height=540, im_width=960, num_P_CNN=3, num_R_CLSTM=3, output_channels=[3, 48, 96, 192], output_mode="Error", dataset="kitti", *args, **kwargs):
+    def __init__(self, training_args, im_height=540, im_width=960, *args, **kwargs):
         super(ParaPredNet, self).__init__(*args, **kwargs)
-        self.batch_size = batch_size
-        self.nt = nt
+        self.batch_size = training_args['batch_size']
+        self.nt = training_args['nt']
         self.im_height = im_height
         self.im_width = im_width
-        self.num_P_CNN = num_P_CNN
-        self.num_R_CLSTM = num_R_CLSTM
-        self.layer_output_channels = output_channels
+        self.num_P_CNN = training_args['num_P_CNN']
+        self.num_R_CLSTM = training_args['num_R_CLSTM']
+        self.layer_output_channels = training_args['output_channels']
         self.num_layers = len(self.layer_output_channels)
         self.resolutions = self.calculate_resolutions(self.im_height, self.im_width, self.num_layers)
         self.paddings = self.calculate_padding(self.im_height, self.im_width, self.num_layers)
@@ -223,8 +222,9 @@ class ParaPredNet(keras.Model):
         # equally weight all timesteps except the first
         self.time_loss_weights = 1.0 / (self.nt - 1) * np.ones((self.nt, 1))
         self.time_loss_weights[0] = 0
-        self.output_mode = output_mode
-        self.dataset = dataset
+        self.output_mode = training_args['output_mode']
+        self.dataset = training_args['dataset']
+        self.num_passes = training_args['num_passes']
         self.predlayers = []
         for l, c in enumerate(self.layer_output_channels):
             self.predlayers.append(PredLayer(self.resolutions[l, 0], self.resolutions[l, 1], self.num_P_CNN, self.num_R_CLSTM, c, l, bottom_layer=(l == 0), top_layer=(l == self.num_layers - 1), name=f"PredLayer{l}"))
@@ -254,18 +254,19 @@ class ParaPredNet(keras.Model):
 
         # Iterate through the time-steps manually
         for t in range(self.nt):
-            """Perform top-down pass, starting from the top layer"""
-            for l, layer in reversed(list(enumerate(self.predlayers))):
-                # Top layer
-                if l == self.num_layers - 1:
-                    BU_inp = None
-                    TD_inp = None
-                    layer([BU_inp, TD_inp], direction="top_down", paddings=self.paddings[l])
-                # Bottom and Middle layers
-                else:
-                    BU_inp = None
-                    TD_inp = self.predlayers[l + 1].states["R"]
-                    layer([BU_inp, TD_inp], direction="top_down", paddings=self.paddings[l])
+            for _ in range(self.num_passes):
+                """Perform top-down pass, starting from the top layer"""
+                for l, layer in reversed(list(enumerate(self.predlayers))):
+                    # Top layer
+                    if l == self.num_layers - 1:
+                        BU_inp = None
+                        TD_inp = None
+                        layer([BU_inp, TD_inp], direction="top_down", paddings=self.paddings[l])
+                    # Bottom and Middle layers
+                    else:
+                        BU_inp = None
+                        TD_inp = self.predlayers[l + 1].states["R"]
+                        layer([BU_inp, TD_inp], direction="top_down", paddings=self.paddings[l])
 
             """ Perform bottom-up pass, starting from the bottom layer """
             for l, layer in list(enumerate(self.predlayers)):

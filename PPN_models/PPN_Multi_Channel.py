@@ -34,7 +34,10 @@ class Prediction(keras.layers.Layer):
         self.num_P_CNN = num_P_CNN
         self.conv_layers = []
         for i in range(num_P_CNN):
-            self.conv_layers.append(layers.Conv2D(self.output_channels, (3, 3), padding="same", activation=activation, name=f"Prediction_Conv{i}_Layer{layer_num}"))
+            if i < num_P_CNN - 1:
+                self.conv_layers.append(layers.Conv2D(self.output_channels, (3, 3), padding="same", activation=None, name=f"Prediction_Conv{i}_Layer{layer_num}"))
+            else:
+                self.conv_layers.append(layers.Conv2D(self.output_channels, (3, 3), padding="same", activation=activation, name=f"Prediction_Conv{i}_Layer{layer_num}"))
 
     def call(self, inputs):
         out = inputs
@@ -102,12 +105,13 @@ class PredLayer(keras.layers.Layer):
         # R = Representation, P = Prediction, T = Target, E = Error, and P == A_hat and T == A
         self.states = {"R": None, "P": None, "T": None, "E": None, "TD_inp": None, "L_inp": None}
         self.representation = Representation(output_channels, num_R_CLSTM, layer_num=self.layer_num, name=f"Representation_Layer{self.layer_num}")
-        self.prediction_disp = Prediction(1, num_P_CNN, layer_num=self.layer_num, activation='relu', name=f"Prediction_Layer{self.layer_num}")
-        self.prediction_mat = Prediction(49, num_P_CNN, layer_num=self.layer_num, name=f"Prediction_Layer{self.layer_num}")
-        self.prediction_obj = Prediction(285, num_P_CNN, layer_num=self.layer_num, name=f"Prediction_Layer{self.layer_num}")
-        self.prediction_opt = Prediction(3, num_P_CNN, layer_num=self.layer_num, name=f"Prediction_Layer{self.layer_num}")
-        self.prediction_mot = Prediction(1, num_P_CNN, layer_num=self.layer_num, name=f"Prediction_Layer{self.layer_num}")
-        self.prediction_rgb = Prediction(3, num_P_CNN, layer_num=self.layer_num, name=f"Prediction_Layer{self.layer_num}")
+        self.prediction_disp = Prediction(1, num_P_CNN, layer_num=self.layer_num, activation='relu', name=f"DISP_Prediction_Layer{self.layer_num}")
+        # self.prediction_mat = Prediction(49, num_P_CNN, layer_num=self.layer_num, activation='softmax', name=f"MAT_Prediction_Layer{self.layer_num}")
+        # self.prediction_obj = Prediction(285, num_P_CNN, layer_num=self.layer_num, activation='softmax', name=f"OBJ_Prediction_Layer{self.layer_num}")
+        self.prediction_opt = Prediction(3, num_P_CNN, layer_num=self.layer_num, activation=None, name=f"OF_Prediction_Layer{self.layer_num}")
+        # self.prediction_mot = Prediction(1, num_P_CNN, layer_num=self.layer_num, activation='relu', name=f"MOT_Prediction_Layer{self.layer_num}")
+        self.prediction_rgb = Prediction(3, num_P_CNN, layer_num=self.layer_num, activation='relu', name=f"RGB_Prediction_Layer{self.layer_num}")
+        self.prediction = Prediction(output_channels, num_P_CNN, layer_num=self.layer_num, activation='relu', name=f"Prediction_Layer{self.layer_num}")
         if not self.bottom_layer:
             self.target = Target(output_channels, layer_num=self.layer_num, name=f"Target_Layer{self.layer_num}")
         self.error = Error(layer_num=self.layer_num, name=f"Error_Layer{self.layer_num}")
@@ -152,21 +156,25 @@ class PredLayer(keras.layers.Layer):
             if self.states["lstm"] is None:
                 self.states["R"], self.states["lstm"] = self.representation(R_inp)
             else:
-                self.states["R"], new_lstm_states = self.representation(R_inp, initial_states=self.states["lstm"])
-                self.states["lstm"] = new_lstm_states
+                self.states["R"], self.states["lstm"] = self.representation(R_inp, initial_states=self.states["lstm"])
 
             # FORM PREDICTION(S)
-            self.states["P"] = self.prediction(self.states["R"])
             if self.bottom_layer:
-                temp_disp = tf.expand_dims(tf.maximum(self.states["P"][..., 0], 0.0), axis=-1) # clip disparity values to > 0
-                temp_mat_obj = tf.clip_by_value(self.states["P"][..., 1:3], 0.0, 500.0) # clip material and object segmentation values to > 0
-                temp_opt = tf.clip_by_value(self.states["P"][..., 3:6], -1000.0, 1000.0) # leave optical flow values as is
-                temp_mot = tf.expand_dims(tf.minimum(self.states["P"][..., 6], self.pixel_max), axis=-1) # clip mot values to 1.0
-                temp_RGB = tf.minimum(self.states["P"][..., -3:], self.pixel_max) # clip RGB values to 1
-                self.states["P"] = keras.layers.Concatenate(axis=-1)([temp_disp, temp_mat_obj, temp_opt, temp_mot, temp_RGB])
+                self.states["P_rgb"] = tf.clip_by_value(self.prediction_rgb(self.states["R"]), 0.0, self.pixel_max) # clip RGB values to 1
+                self.states["P_disp"] = tf.clip_by_value(self.prediction_disp(self.states["R"]), 0.0, self.pixel_max) # clip disparity values to > 0
+                self.states["P_opt"] = tf.clip_by_value(self.prediction_opt(self.states["R"]), -500.0, 500) # clip disparity values to > 0
+                # self.states["P_disp"] = self.prediction_disp(self.states["R"])
+                # self.states["P_rgb"] = self.prediction_rgb(self.states["R"])
+                self.states["P"] = keras.layers.Concatenate(axis=-1)([self.states["P_disp"], self.states["P_opt"], self.states["P_rgb"]])
+            else:
+                self.states["P"] = self.prediction(self.states["R"])
+                    
+                # temp_mat_obj = tf.clip_by_value(self.states["P"][..., 1:3], 0.0, 500.0) # clip material and object segmentation values to > 0
+                # temp_opt = tf.clip_by_value(self.states["P"][..., 3:6], -1000.0, 1000.0) # leave optical flow values as is
+                # temp_mot = tf.clip_by_value(self.states["P"][..., 6], -self.pixel_max, self.pixel_max) # clip mot values to -1.0 to 1.0
 
         elif direction == "bottom_up":
-            # RETRIEVE TARGET(S) (bottom-up input) ~ (batch_size, im_height, im_width, output_channels)
+            # RETRIEVE TARGET(S) (bottom-up input) ~ (batch_size, im_height, im_width, sum of multi-modal channels OR output_channels)
             target = inputs[0]
             self.states["T"] = target if self.bottom_layer else self.target(target)
 
@@ -174,24 +182,31 @@ class PredLayer(keras.layers.Layer):
             self.states['E'] = self.error(self.states['P'], self.states['T'])
 
             # COMPUTE RAW ERROR FOR PLOTTING
-            self.states['E_raw'] = self.states['T'][..., -3:] - self.states['P'][..., -3:]
+            if self.bottom_layer:
+                self.states['E_raw'] = self.states['T'][..., -3:] - self.states['P'][..., -3:]
 
-            return self.states['E']
+                assert self.states['E'].shape[-1] == 14
+                disp_opt = self.states['E'][..., :8] * 1
+                ret = tf.concat([disp_opt, self.states['E'][..., 8:]], axis=-1) # downweight the disparity and optical flow predictions
+                return ret
+            
+            else:
+                return self.states['E']
 
         else:
             raise ValueError("Invalid direction. Must be 'top_down' or 'bottom_up'.")
 
 
 class ParaPredNet(keras.Model):
-    def __init__(self, batch_size=4, nt=10, im_height=540, im_width=960, num_P_CNN=3, num_R_CLSTM=3, output_channels=[3, 48, 96, 192], output_mode="Error", dataset="kitti", *args, **kwargs):
+    def __init__(self, training_args, im_height=540, im_width=960, *args, **kwargs):
         super(ParaPredNet, self).__init__(*args, **kwargs)
-        self.batch_size = batch_size
-        self.nt = nt
+        self.batch_size = training_args['batch_size']
+        self.nt = training_args['nt']
         self.im_height = im_height
         self.im_width = im_width
-        self.num_P_CNN = num_P_CNN
-        self.num_R_CLSTM = num_R_CLSTM
-        self.layer_output_channels = output_channels
+        self.num_P_CNN = training_args['num_P_CNN']
+        self.num_R_CLSTM = training_args['num_R_CLSTM']
+        self.layer_output_channels = training_args['output_channels']
         self.num_layers = len(self.layer_output_channels)
         self.resolutions = self.calculate_resolutions(self.im_height, self.im_width, self.num_layers)
         self.paddings = self.calculate_padding(self.im_height, self.im_width, self.num_layers)
@@ -200,14 +215,15 @@ class ParaPredNet(keras.Model):
             if i == 0:
                 self.layer_input_channels[i] = self.layer_output_channels[i]
             else:
-                self.layer_input_channels[i] = 4 * self.layer_output_channels[i - 1]
+                self.layer_input_channels[i] = 2 * self.layer_output_channels[i - 1]
         # weighting for each layer's contribution to the loss
         self.layer_weights = [1] + [0.1] * (self.num_layers - 1)
         # equally weight all timesteps except the first
         self.time_loss_weights = 1.0 / (self.nt - 1) * np.ones((self.nt, 1))
         self.time_loss_weights[0] = 0
-        self.output_mode = output_mode
-        self.dataset = dataset
+        self.output_mode = training_args['output_mode']
+        self.dataset = training_args['dataset']
+        self.num_passes = training_args['num_passes']
         self.predlayers = []
         for l, c in enumerate(self.layer_output_channels):
             self.predlayers.append(PredLayer(self.resolutions[l, 0], self.resolutions[l, 1], self.num_P_CNN, self.num_R_CLSTM, c, l, bottom_layer=(l == 0), top_layer=(l == self.num_layers - 1), name=f"PredLayer{l}"))
@@ -229,26 +245,28 @@ class ParaPredNet(keras.Model):
             # inputs = inputs[-1]
             pass
         elif self.dataset == "monkaa":
-            inputs = keras.layers.Concatenate(axis=-1)(inputs)
-
+            inputs = keras.layers.Concatenate(axis=-1)([inputs[0], inputs[3], inputs[5]]) # (batch_size, nt, im_height, im_width, sum of multi-modal channels)
+            assert inputs.shape[-1] == 7 #TODO
+        
         # Initialize layer states
         for layer in self.predlayers:
             layer.initialize_states(self.batch_size)
 
         # Iterate through the time-steps manually
         for t in range(self.nt):
-            """Perform top-down pass, starting from the top layer"""
-            for l, layer in reversed(list(enumerate(self.predlayers))):
-                # Top layer
-                if l == self.num_layers - 1:
-                    BU_inp = None
-                    TD_inp = None
-                    layer([BU_inp, TD_inp], direction="top_down", paddings=self.paddings[l])
-                # Bottom and Middle layers
-                else:
-                    BU_inp = None
-                    TD_inp = self.predlayers[l + 1].states["R"]
-                    layer([BU_inp, TD_inp], direction="top_down", paddings=self.paddings[l])
+            for _ in range(self.num_passes):
+                """Perform top-down pass, starting from the top layer"""
+                for l, layer in reversed(list(enumerate(self.predlayers))):
+                    # Top layer
+                    if l == self.num_layers - 1:
+                        BU_inp = None
+                        TD_inp = None
+                        layer([BU_inp, TD_inp], direction="top_down", paddings=self.paddings[l])
+                    # Bottom and Middle layers
+                    else:
+                        BU_inp = None
+                        TD_inp = self.predlayers[l + 1].states["R"]
+                        layer([BU_inp, TD_inp], direction="top_down", paddings=self.paddings[l])
 
             """ Perform bottom-up pass, starting from the bottom layer """
             for l, layer in list(enumerate(self.predlayers)):
@@ -289,7 +307,7 @@ class ParaPredNet(keras.Model):
                     all_predictions = tf.concat([all_predictions, tf.expand_dims(self.predlayers[0].states["P"], axis=1)], axis=1)
 
         if self.output_mode == "Error":
-            output = all_errors_over_time
+            output = all_errors_over_time * 100
         elif self.output_mode == "Prediction":
             output = all_predictions
         elif self.output_mode == "Error_Images_and_Prediction":

@@ -31,7 +31,7 @@ def main(args):
         # Optical Flow, Motion Boundaries, and RGB channels all stacked together
         assert args["dataset"] == "monkaa", "Multi-channel model only works with Monkaa dataset"
         from PPN_models.PPN_Multi_Channel import ParaPredNet
-        bottom_layer_output_channels = 10
+        bottom_layer_output_channels = 7 # 1 Disparity, 3 Optical Flow, 3 RGB
         args["output_channels"][0] = bottom_layer_output_channels
     else:
         raise ValueError("Invalid model choice")
@@ -145,7 +145,7 @@ def main(args):
     if args["dataset"] == "kitti":
         # These are Kitti specific input shapes
         inputs = (keras.Input(shape=(nt, im_shape[0], im_shape[1], 3)))
-        PPN = ParaPredNet(batch_size=batch_size, nt=nt, im_height=im_shape[0], im_width=im_shape[1], num_P_CNN=num_P_CNN, num_R_CLSTM=num_R_CLSTM, output_channels=output_channels, dataset=args["dataset"])  # [3, 48, 96, 192]
+        PPN = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])  # [3, 48, 96, 192]
         outputs = PPN(inputs)
         PPN = keras.Model(inputs=inputs, outputs=outputs)
 
@@ -158,7 +158,7 @@ def main(args):
             keras.Input(shape=(nt, im_shape[0], im_shape[1], 1)),
             keras.Input(shape=(nt, im_shape[0], im_shape[1], 3)),
         )
-        PPN = ParaPredNet(batch_size=batch_size, nt=nt, im_height=im_shape[0], im_width=im_shape[1], num_P_CNN=num_P_CNN, num_R_CLSTM=num_R_CLSTM, output_channels=output_channels, dataset=args["dataset"])  # [3, 48, 96, 192]
+        PPN = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])  # [3, 48, 96, 192]
         outputs = PPN(inputs)
         PPN = keras.Model(inputs=inputs, outputs=outputs)
     
@@ -183,7 +183,7 @@ def main(args):
     else: print("No weights found - starting training from scratch")
 
     # start with lr of 0.001 and then drop to 0.0001 after 75 epochs
-    def lr_schedule(epoch): return 0.001 if epoch < 50 else 0.0001
+    def lr_schedule(epoch): return 0.002 if epoch < 50 else 0.0002
 
     callbacks = [LearningRateScheduler(lr_schedule)]
     if save_model:
@@ -207,12 +207,13 @@ if __name__ == "__main__":
 
     # Tuning args
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
-    parser.add_argument("--nb_epoch", type=int, default=150, help="number of epochs")
-    parser.add_argument("--batch_size", type=int, default=4, help="batch size")
+    parser.add_argument("--nb_epoch", type=int, default=250, help="number of epochs")
+    parser.add_argument("--batch_size", type=int, default=1, help="batch size")
     parser.add_argument("--sequences_per_epoch_train", type=int, default=100, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=None, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
     parser.add_argument("--num_P_CNN", type=int, default=1, help="number of serial Prediction convolutions")
     parser.add_argument("--num_R_CLSTM", type=int, default=1, help="number of hierarchical Representation CLSTMs")
+    parser.add_argument("--num_passes", type=int, default=2, help="number of prediction-update cycles per time-step")
     parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels")
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor")
     parser.add_argument("--train_proportion", type=float, default=0.7, help="proportion of data for training (only for monkaa)")
@@ -221,11 +222,12 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=666, help="random seed")
 
     # Structure args
-    parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")
+    parser.add_argument("--model_choice", type=str, default="multi_channel", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
-    parser.add_argument("--dataset", type=str, default="kitti", help="kitti or monkaa")
+    parser.add_argument("--dataset", type=str, default="monkaa", help="kitti or monkaa")
     parser.add_argument("--reserialize_dataset", type=bool, default=False, help="reserialize dataset")
     parser.add_argument("--data_subset", type=str, default="family_x2", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
+    parser.add_argument("--output_mode", type=str, default="Error", help="Error, Predictions, or Error_Images_and_Prediction (only trains on Error)")
 
     args = parser.parse_args().__dict__
 

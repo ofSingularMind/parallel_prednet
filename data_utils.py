@@ -127,21 +127,22 @@ class IntermediateEvaluations(Callback):
         self.weights_file = os.path.join(WEIGHTS_DIR, "tensorflow_weights/para_prednet_monkaa_weights.hdf5")
         self.rg_colormap = LinearSegmentedColormap.from_list('custom_cmap', [(0, 'red'), (0.5, 'black'), (1, 'green')])
         # Retrieve target sequence (use the same sequence(s) always)
-        self.X_test = next(self.dataset_iterator)[0]  # take just batch_x not batch_y
+        self.X_test_inputs = [next(self.dataset_iterator) for _ in range(10)][-1][0]  # take just batch_x not batch_y
 
         if self.dataset == "monkaa" and self.model_choice != "multi_channel":
-            self.X_test = self.X_test[-1]  # take only the PNG images for MSE calcs and plotting
+            self.X_test = self.X_test_inputs[-1]  # take only the PNG images for MSE calcs and plotting
         elif self.model_choice == "multi_channel":
-            self.X_test = tf.concat(self.X_test, axis=-1)
+            # self.X_test_inputs = 
+            self.X_test = tf.concat([self.X_test_inputs[0], self.X_test_inputs[3], self.X_test_inputs[5]], axis=-1)
             self.X_test = self.X_test.numpy()
             self.X_test[..., 0] = np.interp(self.X_test[..., 0], (self.X_test[..., 0].min(), self.X_test[..., 0].max()), (0, 1))
-            self.X_test_mat = self.X_test[..., 1].astype(np.int32)
-            self.X_test_obj = self.X_test[..., 2].astype(np.int32)
-            self.X_test_opt = np.zeros_like(self.X_test[..., 3:6], dtype=np.int32)
+            # self.X_test_mat = self.X_test[..., 1].astype(np.int32)
+            # self.X_test_obj = self.X_test[..., 2].astype(np.int32)
+            # self.X_test_opt = np.zeros_like(self.X_test[..., 3:6], dtype=np.int32)
             for b in range(self.batch_size):
                 for t in range(self.nt):
-                    self.X_test_opt[b, t, ..., 0:3] = flow_vis.flow_to_color(self.X_test[b, t, ..., 3:5], convert_to_bgr=False).astype(np.int32)
-            self.X_test_mot = self.X_test[..., 6]
+                    self.X_test[b, t, ..., 1:4] = flow_vis.flow_to_color(self.X_test[b, t, ..., 1:3], convert_to_bgr=False).astype(np.float32) // 255.0
+            # self.X_test_mot = self.X_test[..., 6]
 
         if not os.path.exists(RESULTS_SAVE_DIR):
             os.makedirs(RESULTS_SAVE_DIR, exist_ok=True)
@@ -160,25 +161,27 @@ class IntermediateEvaluations(Callback):
         """
 
         # Calculate predicted sequence(s)
+        #   self.model.layers[-1] is the PredNet layer
         self.model.layers[-1].output_mode = "Error_Images_and_Prediction"
         if self.model_choice == "baseline":
-            error_images, X_hat = self.model.layers[-1](self.X_test)
+            error_images, X_hat = self.model.layers[-1](self.X_test_inputs)
         elif self.model_choice == "cl_delta":
-            error_images, X_hat, X_delta_hat = self.model.layers[-1](self.X_test)
+            error_images, X_hat, X_delta_hat = self.model.layers[-1](self.X_test_inputs)
             X_delta_hat_gray = np.mean(X_delta_hat, axis=-1)
         elif self.model_choice == "cl_recon":
-            error_images, X_hat, X_recon_hat = self.model.layers[-1](self.X_test)
+            error_images, X_hat, X_recon_hat = self.model.layers[-1](self.X_test_inputs)
         elif self.model_choice == "multi_channel":
-            error_images, X_hat = self.model.layers[-1](self.X_test)
+            error_images, X_hat = self.model.layers[-1](self.X_test_inputs)
             X_hat = X_hat.numpy()
             X_hat[..., 0] = np.interp(X_hat[..., 0], (X_hat[..., 0].min(), X_hat[..., 0].max()), (0, 1))
-            X_hat_mat = X_hat[..., 1].astype(np.int32)
-            X_hat_obj = X_hat[..., 2].astype(np.int32)
-            X_hat_opt = np.zeros_like(X_hat[..., 3:6], dtype=np.int32)
+            X_hat[..., -3:] = np.interp(X_hat[..., -3:], (X_hat[..., -3:].min(), X_hat[..., -3:].max()), (0, 1))
+            # X_hat_mat = X_hat[..., 1].astype(np.int32)
+            # X_hat_obj = X_hat[..., 2].astype(np.int32)
+            # X_hat_opt = np.zeros_like(X_hat[..., 1:4], dtype=np.int32)
             for b in range(self.batch_size):
                 for t in range(self.nt):
-                    X_hat_opt[b, t, ..., 0:3] = flow_vis.flow_to_color(X_hat[b, t, ..., 3:5], convert_to_bgr=False).astype(np.int32)
-            X_hat_mot = X_hat[..., 6]
+                    X_hat[b, t, ..., 1:4] = flow_vis.flow_to_color(X_hat[b, t, ..., 1:3], convert_to_bgr=False).astype(np.float32) // 255.0
+            # X_hat_mot = X_hat[..., 6]
 
         error_images_gray = np.mean(error_images, axis=-1)
         self.model.layers[-1].output_mode = "Error"
@@ -191,8 +194,8 @@ class IntermediateEvaluations(Callback):
         
         # Compare MSE of PredNet predictions vs. using last frame.  Write results to prediction_scores.txt
         # look at all timesteps except the first
-        mse_model = np.mean((self.X_test[:, 1:] - X_hat[:, 1:]) ** 2)
-        mse_prev = np.mean((self.X_test[:, :-1] - self.X_test[:, 1:]) ** 2)
+        mse_model = np.mean((self.X_test[:, 1:, ..., -3:] - X_hat[:, 1:, ..., -3:]) ** 2)
+        mse_prev = np.mean((self.X_test[:, :-1, ..., -3:] - self.X_test[:, 1:, ..., -3:]) ** 2)
         f = open(RESULTS_SAVE_DIR + "training_scores.txt", "a+")
         f.write("======================= %i : Epoch\n" % epoch)
         f.write("%f : Model MSE\n" % mse_model)
@@ -208,8 +211,8 @@ class IntermediateEvaluations(Callback):
             gs = gridspec.GridSpec(5, self.plot_nt)
             plt.figure(figsize=(2 * self.plot_nt, 10 * aspect_ratio), layout="constrained")
         elif self.model_choice=="multi_channel":
-            gs = gridspec.GridSpec(13, self.plot_nt)
-            plt.figure(figsize=(2 * self.plot_nt, 30 * aspect_ratio), layout="constrained")
+            gs = gridspec.GridSpec(7, self.plot_nt) # 13 for all modalities
+            plt.figure(figsize=(2 * self.plot_nt, 15 * aspect_ratio), layout="constrained")
         gs.update(wspace=0.0, hspace=0.0)
         plot_save_dir = os.path.join(RESULTS_SAVE_DIR, "training_plots/")
         if not os.path.exists(plot_save_dir):
@@ -236,6 +239,7 @@ class IntermediateEvaluations(Callback):
                 if t == 0:
                     plt.ylabel("Error", fontsize=10)
                 
+                # Composite Learning Delta Images
                 if self.model_choice == "cl_delta":
                     plt.subplot(gs[t + 3 * self.plot_nt])
                     plt.imshow(X_delta_hat_gray[i, t], cmap=self.rg_colormap)
@@ -253,6 +257,7 @@ class IntermediateEvaluations(Callback):
                         plt.ylabel("Actual Delta", fontsize=10)
                     X_test_last = self.X_test[i, t]
                 
+                # Composite Learning Reconstructed Images
                 elif self.model_choice == "cl_recon":
                     plt.subplot(gs[t + 3 * self.plot_nt])
                     plt.imshow(X_recon_hat[i, t], interpolation="none")
@@ -267,6 +272,7 @@ class IntermediateEvaluations(Callback):
                         plt.ylabel("Actual Recon", fontsize=10) 
                     X_test_last = self.X_test[i, t]
 
+                # Multi Channel Images
                 elif self.model_choice == "multi_channel":
                     # DISPARITY
                     plt.subplot(gs[t + 3 * self.plot_nt])
@@ -281,57 +287,57 @@ class IntermediateEvaluations(Callback):
                     if t == 0:
                         plt.ylabel("Actual Disp", fontsize=10)
                     
-                    # MATERIAL SEGMENTATION
-                    plt.subplot(gs[t + 5 * self.plot_nt])
-                    plt.imshow(X_hat_mat[i, t, ...], interpolation="none")
-                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                    if t == 0:
-                        plt.ylabel("Predicted Mat", fontsize=10)
+                    # # MATERIAL SEGMENTATION
+                    # plt.subplot(gs[t + 5 * self.plot_nt])
+                    # plt.imshow(X_hat_mat[i, t, ...], interpolation="none")
+                    # plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                    # if t == 0:
+                    #     plt.ylabel("Predicted Mat", fontsize=10)
 
-                    plt.subplot(gs[t + 6 * self.plot_nt])
-                    plt.imshow(self.X_test_mat[i, t, ...], interpolation="none")
-                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                    if t == 0:
-                        plt.ylabel("Actual Mat", fontsize=10)
+                    # plt.subplot(gs[t + 6 * self.plot_nt])
+                    # plt.imshow(self.X_test_mat[i, t, ...], interpolation="none")
+                    # plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                    # if t == 0:
+                    #     plt.ylabel("Actual Mat", fontsize=10)
                     
-                    # OBJECT SEGMENTATION
-                    plt.subplot(gs[t + 7 * self.plot_nt])
-                    plt.imshow(X_hat_obj[i, t, ...], interpolation="none")
-                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                    if t == 0:
-                        plt.ylabel("Predicted Obj", fontsize=10)
+                    # # OBJECT SEGMENTATION
+                    # plt.subplot(gs[t + 7 * self.plot_nt])
+                    # plt.imshow(X_hat_obj[i, t, ...], interpolation="none")
+                    # plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                    # if t == 0:
+                    #     plt.ylabel("Predicted Obj", fontsize=10)
 
-                    plt.subplot(gs[t + 8 * self.plot_nt])
-                    plt.imshow(self.X_test_obj[i, t, ...], interpolation="none")
-                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                    if t == 0:
-                        plt.ylabel("Actual Obj", fontsize=10)
+                    # plt.subplot(gs[t + 8 * self.plot_nt])
+                    # plt.imshow(self.X_test_obj[i, t, ...], interpolation="none")
+                    # plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                    # if t == 0:
+                    #     plt.ylabel("Actual Obj", fontsize=10)
                     
                     # OPTICAL FLOW
-                    plt.subplot(gs[t + 9 * self.plot_nt])
-                    plt.imshow(X_hat_opt[i, t], interpolation="none")
+                    plt.subplot(gs[t + 5 * self.plot_nt])
+                    plt.imshow(X_hat[i, t, ..., 1:4], interpolation="none")
                     plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
                     if t == 0:
                         plt.ylabel("Predicted Opt", fontsize=10)
 
-                    plt.subplot(gs[t + 10 * self.plot_nt])
-                    plt.imshow(self.X_test_opt[i, t], interpolation="none")
+                    plt.subplot(gs[t + 6 * self.plot_nt])
+                    plt.imshow(self.X_test[i, t, ..., 1:4], interpolation="none")
                     plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
                     if t == 0:
                         plt.ylabel("Actual Opt", fontsize=10)
                     
-                    # MOTION BOUNDARIES
-                    plt.subplot(gs[t + 11 * self.plot_nt])
-                    plt.imshow(X_hat_mot[i, t], interpolation="none", cmap="gray")
-                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                    if t == 0:
-                        plt.ylabel("Predicted Mot", fontsize=10)
+                    # # MOTION BOUNDARIES
+                    # plt.subplot(gs[t + 11 * self.plot_nt])
+                    # plt.imshow(X_hat_mot[i, t], interpolation="none", cmap="gray")
+                    # plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                    # if t == 0:
+                    #     plt.ylabel("Predicted Mot", fontsize=10)
 
-                    plt.subplot(gs[t + 12 * self.plot_nt])
-                    plt.imshow(self.X_test_mot[i, t], interpolation="none", cmap="gray")
-                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                    if t == 0:
-                        plt.ylabel("Actual Mot", fontsize=10)
+                    # plt.subplot(gs[t + 12 * self.plot_nt])
+                    # plt.imshow(self.X_test_mot[i, t], interpolation="none", cmap="gray")
+                    # plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                    # if t == 0:
+                    #     plt.ylabel("Actual Mot", fontsize=10)
                     
 
             plt.savefig(plot_save_dir + "e" + str(epoch) + "_plot_" + str(i) + ".png")
@@ -457,6 +463,8 @@ def serialize_dataset(pfm_paths, pgm_paths, png_paths, start_time=time.perf_coun
         # last = time.perf_counter()
         for i in range(temp):
             im = readPFM(all_files[i, j])
+            if j == 0:
+                im = np.interp(im, (im.min(), im.max()), (0, 1))
             if len(im.shape) == 2:
                 # expand to include channel dimension
                 im = np.expand_dims(im, axis=2)
@@ -470,7 +478,7 @@ def serialize_dataset(pfm_paths, pgm_paths, png_paths, start_time=time.perf_coun
         l = []
         # last = time.perf_counter()
         for i in range(temp):
-            im = np.array(Image.open(all_files[i, j + len(pfm_paths)])) / 255.0
+            im = np.array(Image.open(all_files[i, j + len(pfm_paths)]), dtype=np.float32) / 255.0
             if len(im.shape) == 2:
                 # expand to include channel dimension
                 im = np.expand_dims(im, axis=2)
@@ -484,7 +492,7 @@ def serialize_dataset(pfm_paths, pgm_paths, png_paths, start_time=time.perf_coun
         l = []
         # last = time.perf_counter()
         for i in range(temp):
-            im = (np.array(Image.open(all_files[i, j + len(pfm_paths) + len(pgm_paths)]))
+            im = (np.array(Image.open(all_files[i, j + len(pfm_paths) + len(pgm_paths)]), dtype=np.float32)
                 / 255.0)
             if len(im.shape) == 2:
                 # expand to include channel dimension
@@ -628,6 +636,17 @@ def create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, ou
     print(f"End tf.data.Dataset creation at {time.perf_counter() - start_time} seconds.")
 
     return datasets, length
+
+
+def analyze_dataset(path):
+    dataset = hkl.load(path)
+    for i, source in enumerate(dataset):
+        print(f"Source {i} has shape {source.shape} and dtype {source.dtype}")
+        print(f"Min: {np.min(source)}, Max: {np.max(source)}")
+        # print(f"Mean: {np.mean(source)}, Std: {np.std(source)}")
+        # print(f"Unique values: {np.unique(source)}")
+        # print(f"Unique values count: {np.unique(source, return_counts=True)}")
+        print("\n")
 
 
 def fix_my_hickle_files(data_files):

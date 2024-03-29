@@ -28,13 +28,16 @@ class Target(keras.layers.Layer):
 
 
 class Prediction(keras.layers.Layer):
-    def __init__(self, output_channels, num_P_CNN, layer_num, *args, **kwargs):
+    def __init__(self, output_channels, num_P_CNN, layer_num, activation=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.output_channels = output_channels
         self.num_P_CNN = num_P_CNN
         self.conv_layers = []
         for i in range(num_P_CNN):
-            self.conv_layers.append(layers.Conv2D(self.output_channels, (3, 3), padding="same", activation="relu", name=f"Prediction_Conv{i}_Layer{layer_num}"))
+            if i < num_P_CNN - 1:
+                self.conv_layers.append(layers.Conv2D(self.output_channels, (3, 3), padding="same", activation=None, name=f"Prediction_Conv{i}_Layer{layer_num}"))
+            else:
+                self.conv_layers.append(layers.Conv2D(self.output_channels, (3, 3), padding="same", activation=activation, name=f"Prediction_Conv{i}_Layer{layer_num}"))
 
     def call(self, inputs):
         out = inputs
@@ -63,11 +66,11 @@ class Representation(keras.layers.Layer):
         # Add ConvLSTM, being sure to pass previous states in OR use stateful=True
         self.num_R_CLSTM = num_R_CLSTM
         self.conv_lstm_layers = []
-        for i in range(num_R_CLSTM):
-            conv_i = layers.Conv2D(output_channels, (3, 3), padding="same", activation="hard_sigmoid", name=f"Representation_Conv_i_{i}_Layer{layer_num}")
-            conv_f = layers.Conv2D(output_channels, (3, 3), padding="same", activation="hard_sigmoid", name=f"Representation_Conv_f_{i}_Layer{layer_num}")
-            conv_o = layers.Conv2D(output_channels, (3, 3), padding="same", activation="hard_sigmoid", name=f"Representation_Conv_o_{i}_Layer{layer_num}")
-            conv_c = layers.Conv2D(output_channels, (3, 3), padding="same", activation="tanh", name=f"Representation_Conv_c_{i}_Layer{layer_num}")
+        for _ in range(num_R_CLSTM):
+            conv_i = layers.Conv2D(output_channels, (3, 3), padding="same", activation="hard_sigmoid", name=f"Representation_Conv_i_Layer{layer_num}")
+            conv_f = layers.Conv2D(output_channels, (3, 3), padding="same", activation="hard_sigmoid", name=f"Representation_Conv_f_Layer{layer_num}")
+            conv_o = layers.Conv2D(output_channels, (3, 3), padding="same", activation="hard_sigmoid", name=f"Representation_Conv_o_Layer{layer_num}")
+            conv_c = layers.Conv2D(output_channels, (3, 3), padding="same", activation="tanh", name=f"Representation_Conv_c_Layer{layer_num}")
             convs = {"conv_i": conv_i, "conv_f": conv_f, "conv_o": conv_o, "conv_c": conv_c}
             self.conv_lstm_layers.append(convs)
 
@@ -102,8 +105,13 @@ class PredLayer(keras.layers.Layer):
         # R = Representation, P = Prediction, T = Target, E = Error, and P == A_hat and T == A
         self.states = {"R": None, "P": None, "T": None, "E": None, "TD_inp": None, "L_inp": None}
         self.representation = Representation(output_channels, num_R_CLSTM, layer_num=self.layer_num, name=f"Representation_Layer{self.layer_num}")
-        self.prediction = Prediction(output_channels, num_P_CNN, layer_num=self.layer_num, name=f"Prediction_Layer{self.layer_num}")
-        self.prediction_recon = Prediction(output_channels, num_P_CNN, layer_num=self.layer_num, name=f"Prediction_Recon_Layer{self.layer_num}")
+        self.prediction_disp = Prediction(1, num_P_CNN, layer_num=self.layer_num, activation='relu', name=f"DISP_Prediction_Layer{self.layer_num}")
+        self.prediction_mat = Prediction(49, num_P_CNN, layer_num=self.layer_num, activation='softmax', name=f"MAT_Prediction_Layer{self.layer_num}")
+        self.prediction_obj = Prediction(285, num_P_CNN, layer_num=self.layer_num, activation='softmax', name=f"OBJ_Prediction_Layer{self.layer_num}")
+        # self.prediction_opt = Prediction(3, num_P_CNN, layer_num=self.layer_num, activation=None, name=f"OF_Prediction_Layer{self.layer_num}")
+        # self.prediction_mot = Prediction(1, num_P_CNN, layer_num=self.layer_num, activation='relu', name=f"MOT_Prediction_Layer{self.layer_num}")
+        self.prediction_rgb = Prediction(3, num_P_CNN, layer_num=self.layer_num, activation='relu', name=f"RGB_Prediction_Layer{self.layer_num}")
+        self.prediction = Prediction(output_channels, num_P_CNN, layer_num=self.layer_num, activation='relu', name=f"Prediction_Layer{self.layer_num}")
         if not self.bottom_layer:
             self.target = Target(output_channels, layer_num=self.layer_num, name=f"Target_Layer{self.layer_num}")
         self.error = Error(layer_num=self.layer_num, name=f"Error_Layer{self.layer_num}")
@@ -112,20 +120,9 @@ class PredLayer(keras.layers.Layer):
     def initialize_states(self, batch_size):
         # Initialize internal layer states
         self.states["R"] = tf.zeros((batch_size, self.im_height, self.im_width, self.num_R_CLSTM * self.output_channels))
-        
         self.states["P"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
-        self.states["P_recon"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
-        
         self.states["T"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
-        self.states["T_recon"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
-        self.states["T_last"] = None
-        
         self.states["E"] = tf.zeros((batch_size, self.im_height, self.im_width, 2 * self.output_channels))
-        self.states["E_recon"] = tf.zeros((batch_size, self.im_height, self.im_width, 2 * self.output_channels))
-        self.states["combined_E"] = tf.zeros((batch_size, self.im_height, self.im_width, 4 * self.output_channels))
-        
-        self.states["E_raw"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
-        self.states["E_raw_last"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
         
         self.states["TD_inp"] = None
         self.states["L_inp"] = None
@@ -134,24 +131,15 @@ class PredLayer(keras.layers.Layer):
     def clear_states(self):
         # Clear internal layer states
         self.states["R"] = None
-        
         self.states["P"] = None
-        self.states["P_recon"] = None
-        
         self.states["T"] = None
-        self.states["T_recon"] = None
-        self.states["T_last"] = None
-        
         self.states["E"] = None
-        self.states["E_recon"] = None
-        self.states["combined_E"] = None
-        
-        self.states["E_raw"] = None
-        self.states["E_raw_last"] = None
         
         self.states["TD_inp"] = None
         self.states["L_inp"] = None
         self.states["lstm"] = None
+
+        self.states["E_raw"] = None
 
     def call(self, inputs=None, direction="top_down", paddings=None):
         # PredLayer should update internal states when called with new TD and BU inputs, inputs[0] = BU, inputs[1] = TD
@@ -171,31 +159,32 @@ class PredLayer(keras.layers.Layer):
                 self.states["R"], self.states["lstm"] = self.representation(R_inp, initial_states=self.states["lstm"])
 
             # FORM PREDICTION(S)
-            self.states["P"] = K.minimum(self.prediction(self.states["R"]), self.pixel_max) if self.bottom_layer else self.prediction(self.states["R"])
-            self.states["P_recon"] = K.minimum(self.prediction_recon(self.states["R"]), self.pixel_max) if self.bottom_layer else self.prediction_recon(self.states["R"])
+            if self.bottom_layer:
+                # self.states["P_rgb"] = tf.clip_by_value(self.prediction_rgb(self.states["R"]), 0.0, self.pixel_max) # clip RGB values to 1
+                # self.states["P_disp"] = tf.maximum(self.prediction_disp(self.states["R"]), 0.0) # clip disparity values to > 0
+                self.states["P_rgb"] = self.prediction_rgb(self.states["R"])
+                self.states["P_disp"] = self.prediction_disp(self.states["R"])
+                self.states["P"] = keras.layers.Concatenate(axis=-1)([self.states["P_disp"], self.states["P_rgb"]])
+            else:
+                self.states["P"] = self.prediction(self.states["R"])
+                    
+                # temp_mat_obj = tf.clip_by_value(self.states["P"][..., 1:3], 0.0, 500.0) # clip material and object segmentation values to > 0
+                # temp_opt = tf.clip_by_value(self.states["P"][..., 3:6], -1000.0, 1000.0) # leave optical flow values as is
+                # temp_mot = tf.clip_by_value(self.states["P"][..., 6], -self.pixel_max, self.pixel_max) # clip mot values to -1.0 to 1.0
 
         elif direction == "bottom_up":
-            # RETRIEVE TARGET(S) (bottom-up input) ~ (batch_size, im_height, im_width, output_channels)
+            # RETRIEVE TARGET(S) (bottom-up input) ~ (batch_size, im_height, im_width, sum of multi-modal channels OR output_channels)
             target = inputs[0]
             self.states["T"] = target if self.bottom_layer else self.target(target)
-            if self.states["T_last"] is None:
-                # First frame, keep reconstruction target as zeros
-                self.states["T_last"] = self.states["T"]
-            else:
-                # Next frames, set reconstruction target as last frame
-                self.states["T_recon"] = self.states["T_last"]
-            self.states["T_last"] = self.states["T"]
 
             # COMPUTE TARGET ERROR
             self.states['E'] = self.error(self.states['P'], self.states['T'])
-            self.states['E_recon'] = self.error(self.states['P_recon'], self.states['T_recon'])
-            self.states['combined_E'] = keras.layers.Concatenate(axis=-1)([self.states['E'], self.states['E_recon']])
-
 
             # COMPUTE RAW ERROR FOR PLOTTING
-            self.states['E_raw'] = self.states['T'] - self.states['P']
+            if self.bottom_layer:
+                self.states['E_raw'] = self.states['T'][..., -3:] - self.states['P'][..., -3:]
 
-            return self.states['combined_E']
+            return self.states['E']
 
         else:
             raise ValueError("Invalid direction. Must be 'top_down' or 'bottom_up'.")
@@ -219,7 +208,7 @@ class ParaPredNet(keras.Model):
             if i == 0:
                 self.layer_input_channels[i] = self.layer_output_channels[i]
             else:
-                self.layer_input_channels[i] = 4 * self.layer_output_channels[i - 1]
+                self.layer_input_channels[i] = 2 * self.layer_output_channels[i - 1]
         # weighting for each layer's contribution to the loss
         self.layer_weights = [1] + [0.1] * (self.num_layers - 1)
         # equally weight all timesteps except the first
@@ -227,7 +216,7 @@ class ParaPredNet(keras.Model):
         self.time_loss_weights[0] = 0
         self.output_mode = training_args['output_mode']
         self.dataset = training_args['dataset']
-        self.num_passes = training_args['num_passes']
+        self.num_passes = training_args['num_passes
         self.predlayers = []
         for l, c in enumerate(self.layer_output_channels):
             self.predlayers.append(PredLayer(self.resolutions[l, 0], self.resolutions[l, 1], self.num_P_CNN, self.num_R_CLSTM, c, l, bottom_layer=(l == 0), top_layer=(l == self.num_layers - 1), name=f"PredLayer{l}"))
@@ -249,8 +238,9 @@ class ParaPredNet(keras.Model):
             # inputs = inputs[-1]
             pass
         elif self.dataset == "monkaa":
-            inputs = inputs[-1]
-
+            inputs = keras.layers.Concatenate(axis=-1)([inputs[0],inputs[-1]]) # (batch_size, nt, im_height, im_width, sum of multi-modal channels)
+            assert inputs.shape[-1] == 4 #TODO
+        
         # Initialize layer states
         for layer in self.predlayers:
             layer.initialize_states(self.batch_size)
@@ -281,7 +271,7 @@ class ParaPredNet(keras.Model):
                     error = layer([BU_inp, TD_inp], direction="bottom_up")
                 # Middle and Top layers
                 else:
-                    BU_inp = self.predlayers[l - 1].states["combined_E"]
+                    BU_inp = self.predlayers[l - 1].states["E"]
                     TD_inp = None
                     error = layer([BU_inp, TD_inp], direction="bottom_up")
                 # Update error in bottom-up pass
@@ -299,26 +289,22 @@ class ParaPredNet(keras.Model):
             elif self.output_mode == "Prediction":
                 if t == 0:
                     all_predictions = tf.expand_dims(self.predlayers[0].states["P"], axis=1)
-                    all_recon_predictions = tf.expand_dims(self.predlayers[0].states["P_recon"], axis=1)
                 else:
                     all_predictions = tf.concat([all_predictions, tf.expand_dims(self.predlayers[0].states["P"], axis=1)], axis=1)
-                    all_recon_predictions = tf.concat([all_recon_predictions, tf.expand_dims(self.predlayers[0].states["P_recon"], axis=1)], axis=1)
             elif self.output_mode == "Error_Images_and_Prediction":
                 if t == 0:
                     all_error_images = tf.expand_dims(self.predlayers[0].states["E_raw"], axis=1)
                     all_predictions = tf.expand_dims(self.predlayers[0].states["P"], axis=1)
-                    all_recon_predictions = tf.expand_dims(self.predlayers[0].states["P_recon"], axis=1)
                 else:
                     all_error_images = tf.concat([all_error_images, tf.expand_dims(self.predlayers[0].states["E_raw"], axis=1)], axis=1)
                     all_predictions = tf.concat([all_predictions, tf.expand_dims(self.predlayers[0].states["P"], axis=1)], axis=1)
-                    all_recon_predictions = tf.concat([all_recon_predictions, tf.expand_dims(self.predlayers[0].states["P_recon"], axis=1)], axis=1)
 
         if self.output_mode == "Error":
             output = all_errors_over_time * 100
         elif self.output_mode == "Prediction":
-            output = [all_predictions, all_recon_predictions]
+            output = all_predictions
         elif self.output_mode == "Error_Images_and_Prediction":
-            output = [all_error_images, all_predictions, all_recon_predictions]
+            output = [all_error_images, all_predictions]
 
         # Clear states from computation graph
         for layer in self.predlayers:
