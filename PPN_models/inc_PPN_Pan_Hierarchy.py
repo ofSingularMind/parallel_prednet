@@ -14,7 +14,6 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 # ,\r?\n
 # ,\s{2,}
 
-
 class PredLayer(keras.layers.Layer):
     def __init__(self, im_height, im_width, num_P_CNN, num_R_CLSTM, output_channels, layer_num, bottom_layer=False, top_layer=False, *args, **kwargs):
         super(PredLayer, self).__init__(*args, **kwargs)
