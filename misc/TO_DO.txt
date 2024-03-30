@@ -1,1 +1,9 @@
-Need to understand why the predicted images appear to be single channel
+Benchmarking:
+
+Baseline
+(X) Num passes == 5
+num P CNN == 3
+(3358715) Num R CLSTM == 3
+Comp learning delta
+Comp learning recon
+Pan-hierarchical
