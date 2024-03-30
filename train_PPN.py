@@ -202,6 +202,7 @@ if __name__ == "__main__":
     import argparse
     from config import update_settings, get_settings
     import numpy as np
+    import os
 
     parser = argparse.ArgumentParser(description="PPN")  # Training parameters
 
@@ -212,14 +213,15 @@ if __name__ == "__main__":
     parser.add_argument("--sequences_per_epoch_train", type=int, default=100, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=None, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
     parser.add_argument("--num_P_CNN", type=int, default=1, help="number of serial Prediction convolutions")
-    parser.add_argument("--num_R_CLSTM", type=int, default=1, help="number of hierarchical Representation CLSTMs")
-    parser.add_argument("--num_passes", type=int, default=5, help="number of prediction-update cycles per time-step")
+    parser.add_argument("--num_R_CLSTM", type=int, default=3, help="number of hierarchical Representation CLSTMs")
+    parser.add_argument("--num_passes", type=int, default=1, help="number of prediction-update cycles per time-step")
     parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 12, 24, 48], help="output channels")
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor")
     parser.add_argument("--train_proportion", type=float, default=0.7, help="proportion of data for training (only for monkaa)")
 
     # parser.add_argument("--seed", type=int, default=np.random.default_rng().integers(0,9999), help="random seed")
     parser.add_argument("--seed", type=int, default=666, help="random seed")
+    parser.add_argument("--results_subdir", type=str, default=None, help="Specify results directory")
 
     # Structure args
     parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")
@@ -233,5 +235,6 @@ if __name__ == "__main__":
 
     update_settings(args["system"], args["dataset"])
     DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = get_settings()["dirs"]
+    if args["results_dir"] is not None: RESULTS_SAVE_DIR = os.path.join(RESULTS_SAVE_DIR, args["results_subdir"])
 
     main(args)
