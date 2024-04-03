@@ -19,7 +19,11 @@ def main(args):
     # PICK MODEL
     if args["model_choice"] == "baseline":
         # Predict next frame along RGB channels only
-        from PPN_models.PPN_Baseline import ParaPredNet
+        if not args['pan_hierarchical']:
+            from PPN_models.PPN_Baseline import ParaPredNet
+        else:
+            from PPN_models.PPN_Baseline import ParaPredNet
+            print("Using Pan-Hierarchical Representation")
     elif args["model_choice"] == "cl_delta":
         # Predict next frame and change from current frame
         from PPN_models.PPN_CompLearning_Delta_Predictions import ParaPredNet
@@ -170,7 +174,7 @@ def main(args):
     num_layers = len(output_channels)  # number of layers in the architecture
     print(f"{num_layers} PredNet layers with resolutions:")
     for i in reversed(range(num_layers)):
-        print(f"Layer {i+1}:  {resos[i][0]} x {resos[i][1]}")
+        print(f"Layer {i+1}:  {resos[i][0]} x {resos[i][1]} x {output_channels[i]}")
 
     # load previously saved weights
     if os.path.exists(weights_checkpoint_file):
@@ -208,15 +212,16 @@ if __name__ == "__main__":
 
     # Tuning args
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
-    parser.add_argument("--nb_epoch", type=int, default=250, help="number of epochs")
+    parser.add_argument("--nb_epoch", type=int, default=5, help="number of epochs")
     parser.add_argument("--batch_size", type=int, default=1, help="batch size")
+    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 12, 24, 48], help="output channels")
     parser.add_argument("--sequences_per_epoch_train", type=int, default=10, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=None, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
     parser.add_argument("--num_P_CNN", type=int, default=1, help="number of serial Prediction convolutions")
     parser.add_argument("--num_R_CLSTM", type=int, default=1, help="number of hierarchical Representation CLSTMs")
     parser.add_argument("--num_passes", type=int, default=1, help="number of prediction-update cycles per time-step")
-    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 12], help="output channels")
-    parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor")
+    parser.add_argument("--pan_hierarchical", type=bool, default=False, help="utilize Pan-Hierarchical Representation")
+    parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor (monkaa)")
     parser.add_argument("--train_proportion", type=float, default=0.7, help="proportion of data for training (only for monkaa)")
 
     # parser.add_argument("--seed", type=int, default=np.random.default_rng().integers(0,9999), help="random seed")
@@ -224,9 +229,9 @@ if __name__ == "__main__":
     parser.add_argument("--results_subdir", type=str, default=None, help="Specify results directory")
 
     # Structure args
-    parser.add_argument("--model_choice", type=str, default="multi_channel", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")
+    parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
-    parser.add_argument("--dataset", type=str, default="monkaa", help="kitti or monkaa")
+    parser.add_argument("--dataset", type=str, default="kitti", help="kitti or monkaa")
     parser.add_argument("--reserialize_dataset", type=bool, default=False, help="reserialize dataset")
     parser.add_argument("--data_subset", type=str, default="family_x2", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
     parser.add_argument("--output_mode", type=str, default="Error", help="Error, Predictions, or Error_Images_and_Prediction (only trains on Error)")

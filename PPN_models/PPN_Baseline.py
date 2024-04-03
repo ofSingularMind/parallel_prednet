@@ -5,7 +5,7 @@ import tensorflow as tf
 import numpy as np
 import os
 import warnings
-from PPN_models.PPN_Common import Target, Prediction, Error, Representation
+from PPN_models.PPN_Common import Target, Prediction, Error, Representation, PanRepresentation
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -14,10 +14,10 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 # ,\r?\n
 # ,\s{2,}
 
-
 class PredLayer(keras.layers.Layer):
-    def __init__(self, im_height, im_width, num_P_CNN, num_R_CLSTM, output_channels, layer_num, bottom_layer=False, top_layer=False, *args, **kwargs):
+    def __init__(self, training_args, im_height, im_width, num_P_CNN, num_R_CLSTM, output_channels, layer_num, bottom_layer=False, top_layer=False, *args, **kwargs):
         super(PredLayer, self).__init__(*args, **kwargs)
+        self.training_args = training_args
         self.layer_num = layer_num
         self.im_height = im_height
         self.im_width = im_width
@@ -45,6 +45,7 @@ class PredLayer(keras.layers.Layer):
         
         self.states["TD_inp"] = None
         self.states["L_inp"] = None
+        self.states['P_Inp'] = None
         self.states["lstm"] = None
 
     def clear_states(self):
@@ -56,6 +57,7 @@ class PredLayer(keras.layers.Layer):
         
         self.states["TD_inp"] = None
         self.states["L_inp"] = None
+        self.states['P_Inp'] = None
         self.states["lstm"] = None
 
         self.states["E_raw"] = None
@@ -65,12 +67,21 @@ class PredLayer(keras.layers.Layer):
 
         if direction == "top_down":
             # UPDATE REPRESENTATION
-            if self.top_layer:
-                R_inp = keras.layers.Concatenate()([self.states["E"], self.states["R"]])
+            if self.training_args['pan_hierarchical']:
+                self.states["P_Inp"] = inputs[2]
+                if self.top_layer:
+                    R_inp = keras.layers.Concatenate()([self.states["E"], self.states["R"], self.states["P_Inp"]])
+                else:
+                    self.states["TD_inp"] = self.upsample(inputs[1])
+                    self.states["TD_inp"] = keras.layers.ZeroPadding2D(paddings)(self.states["TD_inp"])
+                    R_inp = keras.layers.Concatenate()([self.states["E"], self.states["R"], self.states["TD_inp"], self.states["P_Inp"]])
             else:
-                self.states["TD_inp"] = self.upsample(inputs[1])
-                self.states["TD_inp"] = keras.layers.ZeroPadding2D(paddings)(self.states["TD_inp"])
-                R_inp = keras.layers.Concatenate()([self.states["E"], self.states["R"], self.states["TD_inp"]])
+                if self.top_layer:
+                    R_inp = keras.layers.Concatenate()([self.states["E"], self.states["R"]])
+                else:
+                    self.states["TD_inp"] = self.upsample(inputs[1])
+                    self.states["TD_inp"] = keras.layers.ZeroPadding2D(paddings)(self.states["TD_inp"])
+                    R_inp = keras.layers.Concatenate()([self.states["E"], self.states["R"], self.states["TD_inp"]])
 
             if self.states["lstm"] is None:
                 self.states["R"], self.states["lstm"] = self.representation(R_inp)
@@ -127,9 +138,22 @@ class ParaPredNet(keras.Model):
         self.output_mode = training_args['output_mode']
         self.dataset = training_args['dataset']
         self.num_passes = training_args['num_passes']
+        self.pan_hierarchical = training_args['pan_hierarchical']
+        if self.pan_hierarchical:
+            self.panLayer = PanRepresentation(sum(self.layer_output_channels), name='PanLayer')
+            temp = tf.random.uniform((self.batch_size, self.im_height, self.im_width, 2*sum(self.layer_output_channels)), maxval=255, dtype=tf.float32)
+            temp_P = self.panLayer(temp)
         self.predlayers = []
         for l, c in enumerate(self.layer_output_channels):
-            self.predlayers.append(PredLayer(self.resolutions[l, 0], self.resolutions[l, 1], self.num_P_CNN, self.num_R_CLSTM, c, l, bottom_layer=(l == 0), top_layer=(l == self.num_layers - 1), name=f"PredLayer{l}"))
+            if self.pan_hierarchical:
+                P_idx_start = 0 if l == 0 else sum(self.layer_output_channels[:l])
+                P_idx_end = sum(self.layer_output_channels[:l+1])
+                l_temp_P = temp_P[..., P_idx_start:P_idx_end]
+                for _ in range(l):
+                    l_temp_P = keras.layers.MaxPool2D((2, 2))(l_temp_P)
+            else:
+                l_temp_P = None
+            self.predlayers.append(PredLayer(training_args, self.resolutions[l, 0], self.resolutions[l, 1], self.num_P_CNN, self.num_R_CLSTM, c, l, bottom_layer=(l == 0), top_layer=(l == self.num_layers - 1), name=f"PredLayer{l}"))
             # initialize layer states
             self.predlayers[-1].initialize_states(self.batch_size)
             # build layers
@@ -138,7 +162,7 @@ class ParaPredNet(keras.Model):
                 temp_TD = tf.random.uniform((self.batch_size, self.resolutions[l + 1, 0], self.resolutions[l + 1, 1], self.num_R_CLSTM * self.layer_output_channels[l + 1]), maxval=255, dtype=tf.float32)
             else:
                 temp_TD = None
-            temp_out = self.predlayers[l]([temp_BU, temp_TD], paddings=self.paddings[l])
+            temp_out = self.predlayers[l]([temp_BU, temp_TD, l_temp_P], paddings=self.paddings[l])
 
     def call(self, inputs):
         # print("Calling PredNet...")
@@ -153,22 +177,39 @@ class ParaPredNet(keras.Model):
         # Initialize layer states
         for layer in self.predlayers:
             layer.initialize_states(self.batch_size)
+        if self.pan_hierarchical:
+            self.panLayer.initialize_states((self.batch_size, self.im_height, self.im_width, sum(self.layer_output_channels)))
 
         # Iterate through the time-steps manually
         for t in range(self.nt):
+            if self.pan_hierarchical:
+                all_P_inp = self.panLayer.states['P']
+
             for _ in range(self.num_passes):
                 """Perform top-down pass, starting from the top layer"""
                 for l, layer in reversed(list(enumerate(self.predlayers))):
+                    # BU_inp = bottom-up input, TD_inp = top-down input, P_inp = pan-hierarchical input
+                
+                    if self.pan_hierarchical:
+                        # Pan-hierarchical input
+                        P_idx_start = 0 if l == 0 else sum(self.layer_output_channels[:l])
+                        P_idx_end = sum(self.layer_output_channels[:l+1])
+                        P_inp = all_P_inp[..., P_idx_start:P_idx_end]
+                        for _ in range(l):
+                            P_inp = keras.layers.MaxPool2D((2, 2))(P_inp)
+                    else:
+                        P_inp = None
+                    
                     # Top layer
                     if l == self.num_layers - 1:
                         BU_inp = None
                         TD_inp = None
-                        layer([BU_inp, TD_inp], direction="top_down", paddings=self.paddings[l])
+                        layer([BU_inp, TD_inp, P_inp], direction="top_down", paddings=self.paddings[l])
                     # Bottom and Middle layers
                     else:
                         BU_inp = None
                         TD_inp = self.predlayers[l + 1].states["R"]
-                        layer([BU_inp, TD_inp], direction="top_down", paddings=self.paddings[l])
+                        layer([BU_inp, TD_inp, P_inp], direction="top_down", paddings=self.paddings[l])
 
             """ Perform bottom-up pass, starting from the bottom layer """
             for l, layer in list(enumerate(self.predlayers)):
@@ -188,6 +229,15 @@ class ParaPredNet(keras.Model):
                     layer_error = self.layer_weights[l] * K.mean(K.batch_flatten(error), axis=-1, keepdims=True)  # (batch_size, 1)
                     all_error = layer_error if l == 0 else tf.add(all_error, layer_error)  # (batch_size, 1)
 
+            if self.pan_hierarchical:
+                # Update pan-hierarchical states
+                for l in reversed(range(self.num_layers)):
+                    e = self.predlayers[l].states['E']
+                    for _ in range(l):
+                        e = keras.layers.UpSampling2D((2, 2))(e)
+                    all_e = e if l == self.num_layers - 1 else tf.concat([all_e, e], axis=-1)
+                # all_e = tf.expand_dims(all_e, axis=1)
+                self.panLayer(all_e)
 
             # save outputs over time
             if self.output_mode == "Error":
@@ -218,6 +268,8 @@ class ParaPredNet(keras.Model):
         # Clear states from computation graph
         for layer in self.predlayers:
             layer.clear_states()
+        if self.pan_hierarchical: 
+            self.panLayer.clear_states()
 
         return output
 

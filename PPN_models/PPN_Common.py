@@ -35,7 +35,7 @@ class Prediction(keras.layers.Layer):
         self.num_P_CNN = num_P_CNN
         self.conv_layers = []
         for i in range(num_P_CNN):
-            self.conv_layers.append(layers.Conv2D(self.output_channels, (3, 3), padding="same", activation=activation, name=f"Prediction_Conv{i}_Layer{layer_num}"))
+            self.conv_layers.append(layers.Conv2D(self.output_channels, (7, 7), padding="same", activation=activation, name=f"Prediction_Conv{i}_Layer{layer_num}"))
 
     def call(self, inputs):
         out = inputs
@@ -87,3 +87,21 @@ class Representation(keras.layers.Layer):
         output = keras.layers.Concatenate(axis=-1)(outs) if self.num_R_CLSTM > 1 else outs[0]
         return output, states
 
+class PanRepresentation(keras.layers.Layer):
+    def __init__(self, output_channels, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Add ConvLSTM, being sure to pass previous states in OR use stateful=True
+        self.conv_lstm = layers.Conv2D(output_channels, (3, 3), padding='same', activation='relu')
+        self.states = {'P': None}
+
+    def call(self, inputs):
+        self.states['P'] = self.conv_lstm(inputs)
+        return self.states['P']
+
+    def initialize_states(self, shape):
+        self.states['P'] = tf.zeros(shape)
+    
+    def clear_states(self):
+        self.states['P'] = None
+
+    
