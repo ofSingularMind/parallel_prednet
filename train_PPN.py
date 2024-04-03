@@ -235,11 +235,16 @@ if __name__ == "__main__":
     parser.add_argument("--reserialize_dataset", action='store_true', help="reserialize dataset")
     parser.add_argument("--data_subset", type=str, default="family_x2", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
     parser.add_argument("--output_mode", type=str, default="Error", help="Error, Predictions, or Error_Images_and_Prediction (only trains on Error)")
-
+    
     args = parser.parse_args().__dict__
 
     update_settings(args["system"], args["dataset"])
     DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = get_settings()["dirs"]
     if args["results_subdir"] is not None: RESULTS_SAVE_DIR = os.path.join(RESULTS_SAVE_DIR, args["results_subdir"])
 
+    # print all args to file
+    with open(os.path.join(RESULTS_SAVE_DIR, "job_args.txt"), "w") as f:
+        for key, value in args.items():
+            f.write(f"{key}: {value}\n")
+    
     main(args)
