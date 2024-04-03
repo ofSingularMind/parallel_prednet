@@ -57,6 +57,11 @@ def main(args):
     if os.path.exists(LOG_DIR):
         shutil.rmtree(LOG_DIR)
     os.makedirs(LOG_DIR, exist_ok=True)
+    os.makedirs(RESULTS_SAVE_DIR, exist_ok=True)
+    # print all args to file
+    with open(os.path.join(RESULTS_SAVE_DIR, "job_args.txt"), "w+") as f:
+        for key, value in args.items():
+            f.write(f"{key}: {value}\n")
 
     save_model = True  # if weights will be saved
     plot_intermediate = True  # if the intermediate model predictions will be plotted
@@ -64,10 +69,8 @@ def main(args):
 
     # where weights are loaded prior to training
     def get_weights_files(dataset="monkaa"):
-        global weights_checkpoint_file, weights_file, json_file
-        weights_checkpoint_file = os.path.join(
-            WEIGHTS_DIR, f"para_prednet_{dataset}_weights.hdf5"
-        )
+        global results_weights_file, weights_file, json_file
+        results_weights_file = os.path.join(RESULTS_SAVE_DIR, f"tensorflow_weights/para_prednet_{dataset}_weights.hdf5")
         # where weights will be saved
         weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_{dataset}_weights.hdf5")
         json_file = os.path.join(WEIGHTS_DIR, f"para_prednet_{dataset}_model_ALEX.json")
@@ -177,9 +180,9 @@ def main(args):
         print(f"Layer {i+1}:  {resos[i][0]} x {resos[i][1]} x {output_channels[i]}")
 
     # load previously saved weights
-    if os.path.exists(weights_checkpoint_file):
+    if os.path.exists(weights_file):
         try: 
-            PPN.load_weights(weights_checkpoint_file)
+            PPN.load_weights(weights_file)
             print("Weights loaded successfully - continuing training from last epoch")
         except: 
             os.remove(weights_file) # model architecture has changed, so weights cannot be loaded
@@ -193,6 +196,7 @@ def main(args):
     if save_model:
         if not os.path.exists(WEIGHTS_DIR): os.makedirs(WEIGHTS_DIR, exist_ok=True)
         callbacks.append(ModelCheckpoint(filepath=weights_file, monitor="val_loss", save_best_only=True, save_weights_only=True))
+        callbacks.append(ModelCheckpoint(filepath=results_weights_file, monitor="val_loss", save_best_only=True, save_weights_only=True))
     if plot_intermediate:
             callbacks.append(IntermediateEvaluations(test_dataset, test_size, batch_size=batch_size, nt=nt, output_channels=output_channels, dataset=args["dataset"], model_choice=args["model_choice"]))
     if tensorboard:
@@ -207,6 +211,7 @@ if __name__ == "__main__":
     from config import update_settings, get_settings
     import numpy as np
     import os
+    from datetime import datetime
 
     parser = argparse.ArgumentParser(description="PPN")  # Training parameters
 
@@ -226,7 +231,7 @@ if __name__ == "__main__":
 
     # parser.add_argument("--seed", type=int, default=np.random.default_rng().integers(0,9999), help="random seed")
     parser.add_argument("--seed", type=int, default=666, help="random seed")
-    parser.add_argument("--results_subdir", type=str, default=None, help="Specify results directory")
+    parser.add_argument("--results_subdir", type=str, default=f"{str(datetime.now())}", help="Specify results directory")
 
     # Structure args
     parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")
@@ -238,13 +243,7 @@ if __name__ == "__main__":
     
     args = parser.parse_args().__dict__
 
-    update_settings(args["system"], args["dataset"])
+    update_settings(args["system"], args["dataset"], args["results_subdir"])
     DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = get_settings()["dirs"]
-    if args["results_subdir"] is not None: RESULTS_SAVE_DIR = os.path.join(RESULTS_SAVE_DIR, args["results_subdir"])
-
-    # print all args to file
-    with open(os.path.join(RESULTS_SAVE_DIR, "job_args.txt"), "w") as f:
-        for key, value in args.items():
-            f.write(f"{key}: {value}\n")
     
     main(args)

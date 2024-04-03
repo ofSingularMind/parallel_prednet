@@ -148,9 +148,6 @@ class IntermediateEvaluations(Callback):
 
         if not os.path.exists(RESULTS_SAVE_DIR):
             os.makedirs(RESULTS_SAVE_DIR, exist_ok=True)
-        self.test_weights_path = os.path.join(RESULTS_SAVE_DIR, "tensorflow_weights/")
-        if not os.path.exists(self.test_weights_path):
-            os.makedirs(self.test_weights_path, exist_ok=True)
 
     def on_epoch_end(self, epoch, logs=None):
         if epoch % 1 == 0 or epoch == 1:
