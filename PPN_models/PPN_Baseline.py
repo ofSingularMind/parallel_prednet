@@ -171,7 +171,7 @@ class ParaPredNet(keras.Model):
         if self.dataset == "kitti":
             # inputs = inputs[-1]
             pass
-        elif self.dataset == "monkaa":
+        elif self.dataset == "monkaa" or self.dataset == "driving":
             inputs = inputs[-1]
 
         # Initialize layer states

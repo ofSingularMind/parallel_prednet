@@ -124,18 +124,30 @@ class IntermediateEvaluations(Callback):
         self.output_channels = output_channels
         self.dataset = dataset
         self.model_choice = model_choice
-        self.weights_file = os.path.join(WEIGHTS_DIR, "tensorflow_weights/para_prednet_monkaa_weights.hdf5")
+        # self.weights_file = os.path.join(WEIGHTS_DIR, "tensorflow_weights/para_prednet_monkaa_weights.hdf5")
         self.rg_colormap = LinearSegmentedColormap.from_list('custom_cmap', [(0, 'red'), (0.5, 'black'), (1, 'green')])
         # Retrieve target sequence (use the same sequence(s) always)
         self.X_test_inputs = [next(self.dataset_iterator) for _ in range(10)][-1][0]  # take just batch_x not batch_y
 
         if self.dataset == "kitti":
             self.X_test = self.X_test_inputs
-        elif self.dataset == "monkaa" and self.model_choice != "multi_channel":
+        elif (self.dataset == "monkaa" or self.dataset == "driving") and self.model_choice != "multi_channel":
             self.X_test = self.X_test_inputs[-1]  # take only the PNG images for MSE calcs and plotting
-        elif self.model_choice == "multi_channel":
+        elif self.dataset == "monkaa" and self.model_choice == "multi_channel":
             # self.X_test_inputs = 
             self.X_test = tf.concat([self.X_test_inputs[0], self.X_test_inputs[3], self.X_test_inputs[5]], axis=-1)
+            self.X_test = self.X_test.numpy()
+            self.X_test[..., 0] = np.interp(self.X_test[..., 0], (self.X_test[..., 0].min(), self.X_test[..., 0].max()), (0, 1))
+            # self.X_test_mat = self.X_test[..., 1].astype(np.int32)
+            # self.X_test_obj = self.X_test[..., 2].astype(np.int32)
+            # self.X_test_opt = np.zeros_like(self.X_test[..., 3:6], dtype=np.int32)
+            for b in range(self.batch_size):
+                for t in range(self.nt):
+                    self.X_test[b, t, ..., 1:4] = flow_vis.flow_to_color(self.X_test[b, t, ..., 1:3], convert_to_bgr=False).astype(np.float32) // 255.0
+            # self.X_test_mot = self.X_test[..., 6]
+        elif self.dataset == "driving" and self.model_choice == "multi_channel":
+            # self.X_test_inputs = 
+            self.X_test = tf.concat([self.X_test_inputs[0], self.X_test_inputs[1], self.X_test_inputs[2]], axis=-1)
             self.X_test = self.X_test.numpy()
             self.X_test[..., 0] = np.interp(self.X_test[..., 0], (self.X_test[..., 0].min(), self.X_test[..., 0].max()), (0, 1))
             # self.X_test_mat = self.X_test[..., 1].astype(np.int32)
@@ -430,7 +442,7 @@ def sort_files_by_name(files):
     return sorted(files, key=lambda x: os.path.basename(x))
 
 
-def serialize_dataset(pfm_paths, pgm_paths, png_paths, start_time=time.perf_counter()):
+def serialize_dataset(pfm_paths, pgm_paths, png_paths, dataset_name="driving", start_time=time.perf_counter()):
     print(f"Start to serialize at {time.perf_counter() - start_time} seconds.")
     pfm_sources = []
     pgm_sources = []
@@ -454,12 +466,12 @@ def serialize_dataset(pfm_paths, pgm_paths, png_paths, start_time=time.perf_coun
     # Prepare array for filling with data
     # data = np.zeros_like(all_files, dtype=np.float32)
 
-    temp = length
+    temp = np.minimum(length,200)
     print(f"Start to load images at {time.perf_counter() - start_time} seconds.")
 
     for j in range(len(pfm_paths)):
         l = []
-        # last = time.perf_counter()
+        last = time.perf_counter()
         for i in range(temp):
             im = readPFM(all_files[i, j])
             if j == 0:
@@ -468,8 +480,9 @@ def serialize_dataset(pfm_paths, pgm_paths, png_paths, start_time=time.perf_coun
                 # expand to include channel dimension
                 im = np.expand_dims(im, axis=2)
             l.append(im)
-            # print(f"PFM image {i} of {temp-1} done in {time.perf_counter() - last} seconds.")
-            # last = time.perf_counter()
+            # l = np.array(np.expand_dims(im, axis=0)) if i == 0 else np.concatenate((l, np.expand_dims(im, axis=0)), axis=0)
+            print(f"PFM image {i+1} of {temp} done in {time.perf_counter() - last} seconds.")
+            last = time.perf_counter()
         dataset[j] = np.array(l)
         print(f"PFM source {j+1} of {len(pfm_paths)} done at {time.perf_counter() - start_time} seconds.")
 
@@ -517,7 +530,7 @@ def serialize_dataset(pfm_paths, pgm_paths, png_paths, start_time=time.perf_coun
     if not os.path.exists(DATA_DIR):
         os.makedirs(DATA_DIR, exist_ok=True)
     # where weights are loaded prior to training
-    dataset_file = os.path.join(DATA_DIR, "monkaa_train.hkl")
+    dataset_file = os.path.join(DATA_DIR, f"{dataset_name}_train.hkl")
 
     hkl.dump(dataset, dataset_file, mode="w")
     print(f"HKL dump done at {time.perf_counter() - start_time} seconds.")
@@ -570,10 +583,10 @@ def create_dataset_from_generator(pfm_paths, pgm_paths, png_paths, im_height=540
     return dataset, length
 
 
-def create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode="Error", im_height=540, im_width=960, batch_size=4, nt=10, train_split=0.7, reserialize=False, shuffle=True, resize=False, ):
+def create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name="driving", im_height=540, im_width=960, batch_size=4, nt=10, train_split=0.7, reserialize=False, shuffle=True, resize=False, ):
     start_time = time.perf_counter()
     if reserialize:
-        serialize_dataset(pfm_paths, pgm_paths, png_paths, start_time=start_time)
+        serialize_dataset(pfm_paths, pgm_paths, png_paths, dataset_name="driving", start_time=start_time)
         print("Reserialized dataset.")
     else:
         print("Using previously serialized dataset.")
@@ -585,7 +598,7 @@ def create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, ou
     num_total_paths = num_pfm_paths + num_pgm_paths + num_png_paths
 
     # list of numpy arrays, one for each source
-    all_files = hkl.load(os.path.join(DATA_DIR, "monkaa_train.hkl"))
+    all_files = hkl.load(os.path.join(DATA_DIR, f"{dataset_name}_train.hkl"))
     num_samples = all_files[0].shape[0]
     assert all([all_files[i].shape[0] == num_samples for i in range(num_total_paths)]), "All sources must have the same number of samples"
 
@@ -625,8 +638,10 @@ def create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, ou
     datasets = []
     for details in all_details:
         gen = create_generator(details, shuffle)
-
-        dataset = tf.data.Dataset.from_generator(gen, output_signature=(((tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32), ), (tf.TensorSpec(shape=(1), dtype=tf.float32)), )), )
+        if dataset_name == "monkaa":
+            dataset = tf.data.Dataset.from_generator(gen, output_signature=((tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32)), tf.TensorSpec(shape=(1), dtype=tf.float32)))
+        elif dataset_name == "driving":
+            dataset = tf.data.Dataset.from_generator(gen, output_signature=((tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32)), tf.TensorSpec(shape=(1), dtype=tf.float32)))
         # Batch and prefetch the dataset, and ensure infinite dataset
         dataset = (dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat())
         datasets.append(dataset)

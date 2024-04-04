@@ -172,6 +172,9 @@ class ParaPredNet(keras.Model):
         elif self.dataset == "monkaa":
             inputs = keras.layers.Concatenate(axis=-1)([inputs[0], inputs[3], inputs[5]]) # (batch_size, nt, im_height, im_width, sum of multi-modal channels)
             assert inputs.shape[-1] == 7 #TODO
+        elif self.dataset == "driving":
+            inputs = keras.layers.Concatenate(axis=-1)([inputs[0], inputs[1], inputs[2]]) # (batch_size, nt, im_height, im_width, sum of multi-modal channels)
+            assert inputs.shape[-1] == 7 #TODO
         
         # Initialize layer states
         for layer in self.predlayers:

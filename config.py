@@ -26,17 +26,32 @@ def update_settings(system, dataset, subdir):
                        ]
     }
 
+    settings_dict[('laptop', 'driving')] = {'dirs' : ['/home/evalexii/Documents/Thesis/code/parallel_prednet/driving_data/',
+                       '/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/driving/',
+                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/driving_results/{subdir}/',
+                       '/home/evalexii/Documents/Thesis/code/parallel_prednet/logs/driving/'
+                       ]
+    }
+
+    settings_dict[('laptop', 'kitti')] = {'dirs' : ['/home/evalexii/Documents/Thesis/code/parallel_prednet/kitti_data/',
+                       '/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/kitti/',
+                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/kitti_results/{subdir}/',
+                       '/home/evalexii/Documents/Thesis/code/parallel_prednet/logs/kitti/'
+                       ]
+    }
+
     settings_dict[('delftblue', 'monkaa')] = {'dirs' : ['/scratch/aledbetter/parallel_prednet/monkaa_data/',
                           '/scratch/aledbetter/parallel_prednet/model_weights/monkaa/',
                           f'/scratch/aledbetter/parallel_prednet/monkaa_results/{subdir}/',
                           '/scratch/aledbetter/parallel_prednet/logs/monkaa/'
                           ]
     }
-    settings_dict[('laptop', 'kitti')] = {'dirs' : ['/home/evalexii/Documents/Thesis/code/parallel_prednet/kitti_data/',
-                       '/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/kitti/',
-                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/kitti_results/{subdir}/',
-                       '/home/evalexii/Documents/Thesis/code/parallel_prednet/logs/kitti/'
-                       ]
+
+    settings_dict[('delftblue', 'driving')] = {'dirs' : ['/scratch/aledbetter/parallel_prednet/driving_data/',
+                          '/scratch/aledbetter/parallel_prednet/model_weights/driving/',
+                          f'/scratch/aledbetter/parallel_prednet/driving_results/{subdir}/',
+                          '/scratch/aledbetter/parallel_prednet/logs/driving/'
+                          ]
     }
 
     settings_dict[('delftblue', 'kitti')] = {'dirs' : ['/scratch/aledbetter/parallel_prednet/kitti_data/',

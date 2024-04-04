@@ -33,7 +33,7 @@ def main(args):
     elif args["model_choice"] == "multi_channel":
         # Predict next frame along Disparity, Material Index, Object Index, 
         # Optical Flow, Motion Boundaries, and RGB channels all stacked together
-        assert args["dataset"] == "monkaa", "Multi-channel model only works with Monkaa dataset"
+        assert args["dataset"] == "monkaa" or args["dataset"] == "driving", "Multi-channel model only works with Monkaa or Driving dataset"
         from PPN_models.PPN_Multi_Channel import ParaPredNet
         bottom_layer_output_channels = 7 # 1 Disparity, 3 Optical Flow, 3 RGB
         args["output_channels"][0] = bottom_layer_output_channels
@@ -94,7 +94,7 @@ def main(args):
     if args["dataset"] == "kitti":
         original_im_shape = (128, 160, 3)
         im_shape = original_im_shape
-    elif args["dataset"] == "monkaa":
+    elif args["dataset"] == "monkaa" or args["dataset"] == "driving":
         original_im_shape = (540, 960, 3)
         downscale_factor = args["downscale_factor"]
         im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3)
@@ -142,6 +142,31 @@ def main(args):
         val_size = int(val_split * length)
         test_size = int(val_split * length)
 
+    elif args["dataset"] == "driving":
+        # Training data
+        assert os.path.exists(DATA_DIR + "disparity/15mm_focallength/scene_forwards/slow/left/"), "Dataset not found"
+        pfm_paths = []
+        pfm_paths.append(DATA_DIR + "disparity/15mm_focallength/scene_forwards/slow/left/") # 1 channel
+        # pfm_paths.append(DATA_DIR + "material_index/" + args["data_subset"] + "/left/") # 1 channel
+        # pfm_paths.append(DATA_DIR + "object_index/" + args["data_subset"] + "/left/") # 1 channel
+        pfm_paths.append(DATA_DIR + "optical_flow/15mm_focallength/scene_forwards/slow/into_future/left/") # 3 channels
+        pgm_paths = []
+        # pgm_paths.append(DATA_DIR + "motion_boundaries/" + args["data_subset"] + "/into_future/left/") # 1 channel
+        png_paths = []
+        png_paths.append(DATA_DIR + "frames_cleanpass/15mm_focallength/scene_forwards/slow/left") # 3 channels (RGB)
+        num_sources = len(pfm_paths) + len(pgm_paths) + len(png_paths)
+
+        train_split = 0.7
+        val_split = (1 - train_split) / 2
+        #  Create and split dataset
+        datasets, length = create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name="driving", im_height=im_shape[0], im_width=im_shape[1],
+                                                                    batch_size=batch_size, nt=nt, train_split=train_split, reserialize=args["reserialize_dataset"], shuffle=True, resize=True)
+        train_dataset, val_dataset, test_dataset = datasets
+
+        train_size = int(train_split * length)
+        val_size = int(val_split * length)
+        test_size = int(val_split * length)
+
     print(f"Working on dataset: {args['dataset']}")
     print(f"Train size: {train_size}")
     print(f"Validation size: {val_size}")
@@ -163,6 +188,16 @@ def main(args):
             keras.Input(shape=(nt, im_shape[0], im_shape[1], 1)),
             keras.Input(shape=(nt, im_shape[0], im_shape[1], 3)),
             keras.Input(shape=(nt, im_shape[0], im_shape[1], 1)),
+            keras.Input(shape=(nt, im_shape[0], im_shape[1], 3)),
+        )
+        PPN = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])  # [3, 48, 96, 192]
+        outputs = PPN(inputs)
+        PPN = keras.Model(inputs=inputs, outputs=outputs)
+
+    elif args["dataset"] == "driving":
+        # These are Monkaa specific input shapes
+        inputs = (keras.Input(shape=(nt, im_shape[0], im_shape[1], 1)),
+            keras.Input(shape=(nt, im_shape[0], im_shape[1], 3)),
             keras.Input(shape=(nt, im_shape[0], im_shape[1], 3)),
         )
         PPN = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])  # [3, 48, 96, 192]
@@ -217,10 +252,10 @@ if __name__ == "__main__":
 
     # Tuning args
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
-    parser.add_argument("--nb_epoch", type=int, default=5, help="number of epochs")
+    parser.add_argument("--nb_epoch", type=int, default=250, help="number of epochs")
     parser.add_argument("--batch_size", type=int, default=1, help="batch size")
-    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 12, 24, 48], help="output channels")
-    parser.add_argument("--sequences_per_epoch_train", type=int, default=10, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
+    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels")
+    parser.add_argument("--sequences_per_epoch_train", type=int, default=50, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=None, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
     parser.add_argument("--num_P_CNN", type=int, default=1, help="number of serial Prediction convolutions")
     parser.add_argument("--num_R_CLSTM", type=int, default=1, help="number of hierarchical Representation CLSTMs")
@@ -234,10 +269,10 @@ if __name__ == "__main__":
     parser.add_argument("--results_subdir", type=str, default=f"{str(datetime.now())}", help="Specify results directory")
 
     # Structure args
-    parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")
+    parser.add_argument("--model_choice", type=str, default="multi_channel", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
-    parser.add_argument("--dataset", type=str, default="kitti", help="kitti or monkaa")
-    parser.add_argument("--reserialize_dataset", action='store_true', help="reserialize dataset")
+    parser.add_argument("--dataset", type=str, default="driving", help="kitti, driving, or monkaa")
+    parser.add_argument("--reserialize_dataset", type=bool, default=False, help="reserialize dataset")
     parser.add_argument("--data_subset", type=str, default="family_x2", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
     parser.add_argument("--output_mode", type=str, default="Error", help="Error, Predictions, or Error_Images_and_Prediction (only trains on Error)")
     
