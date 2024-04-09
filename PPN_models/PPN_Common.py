@@ -35,7 +35,7 @@ class Prediction(keras.layers.Layer):
         self.num_P_CNN = num_P_CNN
         self.conv_layers = []
         for i in range(num_P_CNN):
-            self.conv_layers.append(layers.Conv2D(self.output_channels, (7, 7), padding="same", activation=activation, name=f"Prediction_Conv{i}_Layer{layer_num}"))
+            self.conv_layers.append(layers.Conv2D(self.output_channels, (3, 3), padding="same", activation=activation, name=f"Prediction_Conv{i}_Layer{layer_num}"))
 
     def call(self, inputs):
         out = inputs

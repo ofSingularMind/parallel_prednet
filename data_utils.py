@@ -222,13 +222,13 @@ class IntermediateEvaluations(Callback):
         aspect_ratio = float(X_hat.shape[2]) / X_hat.shape[3]
         if self.model_choice=="baseline":
             gs = gridspec.GridSpec(3, self.plot_nt)
-            plt.figure(figsize=(2 * self.plot_nt, 5 * aspect_ratio), layout="constrained")
+            plt.figure(figsize=(3 * self.plot_nt, 10 * aspect_ratio), layout="constrained")
         elif self.model_choice=="cl_delta" or self.model_choice=="cl_recon":
             gs = gridspec.GridSpec(5, self.plot_nt)
-            plt.figure(figsize=(2 * self.plot_nt, 10 * aspect_ratio), layout="constrained")
+            plt.figure(figsize=(3 * self.plot_nt, 15 * aspect_ratio), layout="constrained")
         elif self.model_choice=="multi_channel":
             gs = gridspec.GridSpec(7, self.plot_nt) # 13 for all modalities
-            plt.figure(figsize=(2 * self.plot_nt, 15 * aspect_ratio), layout="constrained")
+            plt.figure(figsize=(3 * self.plot_nt, 20 * aspect_ratio), layout="constrained")
         gs.update(wspace=0.0, hspace=0.0)
         plot_save_dir = os.path.join(RESULTS_SAVE_DIR, "training_plots/")
         if not os.path.exists(plot_save_dir):
@@ -474,7 +474,10 @@ def serialize_dataset(pfm_paths, pgm_paths, png_paths, dataset_name="driving", s
     # Prepare array for filling with data
     # data = np.zeros_like(all_files, dtype=np.float32)
 
-    temp = np.minimum(length,2000)
+    if dataset_name == "driving":
+        temp = np.minimum(length, 200)
+    else:    
+        temp = np.minimum(length, 2000)
     print(f"Start to load images at {time.perf_counter() - start_time} seconds.")
 
     for j in range(len(pfm_paths)):
@@ -634,7 +637,7 @@ def create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, ou
                     if resize:
                         nt_outs.append([tf.image.resize(all_files[j][i + k], (im_height, im_width)) for k in range(nt)])
                     else:
-                        nt_outs.append([tf.convert_to_tensor(all_files[j][i + k]) for k in range(nt)])
+                        nt_outs.append([all_files[j][i + k] for k in range(nt)])
                 batch_x = tuple(nt_outs) if len(nt_outs) > 1 else tuple(nt_outs)[0] 
                 if output_mode == "Error":
                     batch_y = [0.0]

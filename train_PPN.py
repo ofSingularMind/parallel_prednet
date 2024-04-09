@@ -68,14 +68,16 @@ def main(args):
     tensorboard = True  # if the Tensorboard callback will be used
 
     # where weights are loaded prior to training
-    def get_weights_files(dataset="monkaa"):
-        global results_weights_file, weights_file, json_file
-        results_weights_file = os.path.join(RESULTS_SAVE_DIR, f"tensorflow_weights/para_prednet_{dataset}_weights.hdf5")
-        # where weights will be saved
-        weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_{dataset}_weights.hdf5")
-        json_file = os.path.join(WEIGHTS_DIR, f"para_prednet_{dataset}_model_ALEX.json")
+    # def get_weights_files(dataset="monkaa"):
+        # global results_weights_file, weights_file, json_file
+    results_weights_file = os.path.join(RESULTS_SAVE_DIR, f"tensorflow_weights/para_prednet_"+args["dataset"]+"_weights.hdf5")
+    # where weights will be saved
+    weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["dataset"]+"_weights.hdf5")
+    if args["restart_training"]:
+        if os.path.exists(weights_file):
+            os.remove(weights_file)
 
-    get_weights_files(args["dataset"])
+    # get_weights_files(args["dataset"])
 
     # Training parameters
     nt = args["nt"]  # number of time steps
@@ -99,9 +101,9 @@ def main(args):
         downscale_factor = args["downscale_factor"]
         im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3)
     elif args["dataset"] == "rolling_square":
-        original_im_shape = (100, 200, 3)
+        original_im_shape = (50, 100, 3)
         downscale_factor = args["downscale_factor"]
-        im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 1)
+        im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3) if args["resize_images"] else original_im_shape
 
     # Create datasets
     if args["dataset"] == "kitti":
@@ -161,7 +163,7 @@ def main(args):
         val_split = (1 - train_split) / 2
         #  Create and split dataset
         datasets, length = create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name="driving", im_height=im_shape[0], im_width=im_shape[1],
-                                                                    batch_size=batch_size, nt=nt, train_split=train_split, reserialize=args["reserialize_dataset"], shuffle=True, resize=True)
+                                                                    batch_size=batch_size, nt=nt, train_split=train_split, reserialize=args["reserialize_dataset"], shuffle=True, resize=args["resize_images"])
         train_dataset, val_dataset, test_dataset = datasets
 
         train_size = int(train_split * length)
@@ -181,7 +183,7 @@ def main(args):
         val_split = (1 - train_split) / 2
         #  Create and split dataset
         datasets, length = create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name=args["data_subset"], im_height=im_shape[0], im_width=im_shape[1],
-                                                                    batch_size=batch_size, nt=nt, train_split=train_split, reserialize=args["reserialize_dataset"], shuffle=True, resize=True, single_channel=False)
+                                                                    batch_size=batch_size, nt=nt, train_split=train_split, reserialize=args["reserialize_dataset"], shuffle=True, resize=args["resize_images"], single_channel=False)
         train_dataset, val_dataset, test_dataset = datasets
 
         train_size = int(train_split * length)
@@ -227,7 +229,7 @@ def main(args):
 
     elif args["dataset"] == "rolling_square":
         # These are rolling_square specific input shapes
-        inputs = keras.Input(shape=(nt, im_shape[0], im_shape[1], 1))
+        inputs = keras.Input(shape=(nt, im_shape[0], im_shape[1], 3))
         PPN = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])
         outputs = PPN(inputs)
         PPN = keras.Model(inputs=inputs, outputs=outputs)
@@ -250,10 +252,20 @@ def main(args):
         except: 
             os.remove(weights_file) # model architecture has changed, so weights cannot be loaded
             print("Weights don't fit - restarting training from scratch")
+    elif args["restart_training"]:
+        print("Restarting training from scratch")
     else: print("No weights found - starting training from scratch")
 
     # start with lr of 0.001 and then drop to 0.0001 after 75 epochs
-    def lr_schedule(epoch): return 0.001 if epoch < 50 else 0.0001
+    def lr_schedule(epoch): 
+        if epoch <= 50:
+            return args["learning_rates"][0] 
+        # elif 5 < epoch <= 10:
+        #     return args["learning_rates"][1] 
+        # elif 10 < epoch <= 20:
+        #     return args["learning_rates"][2]
+        else:
+            return args["learning_rates"][1]
 
     callbacks = [LearningRateScheduler(lr_schedule)]
     if save_model:
@@ -289,12 +301,15 @@ if __name__ == "__main__":
     parser.add_argument("--num_R_CLSTM", type=int, default=1, help="number of hierarchical Representation CLSTMs")
     parser.add_argument("--num_passes", type=int, default=1, help="number of prediction-update cycles per time-step")
     parser.add_argument("--pan_hierarchical", action="store_true", help="utilize Pan-Hierarchical Representation")
-    parser.add_argument("--downscale_factor", type=int, default=3, help="downscale factor (monkaa)")
+    parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor for images prior to training")
+    parser.add_argument("--resize_images", type=bool, default=False, help="whether or not to downscale images prior to training")
     parser.add_argument("--train_proportion", type=float, default=0.7, help="proportion of data for training (only for monkaa)")
 
-    # parser.add_argument("--seed", type=int, default=np.random.default_rng().integers(0,9999), help="random seed")
+    # Training args
     parser.add_argument("--seed", type=int, default=666, help="random seed")
     parser.add_argument("--results_subdir", type=str, default=f"{str(datetime.now())}", help="Specify results directory")
+    parser.add_argument("--restart_training", type=bool, default=False, help="whether or not to delete weights and restart")
+    parser.add_argument("--learning_rates", nargs="+", type=int, default=[5e-3, 5e-4, 1e-4, 5e-5], help="output channels")
 
     # Structure args
     parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")
