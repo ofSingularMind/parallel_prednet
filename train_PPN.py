@@ -295,7 +295,7 @@ if __name__ == "__main__":
     parser.add_argument("--nb_epoch", type=int, default=250, help="number of epochs")
     parser.add_argument("--batch_size", type=int, default=1, help="batch size")
     parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels")
-    parser.add_argument("--sequences_per_epoch_train", type=int, default=20, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_train", type=int, default=100, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=None, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
     parser.add_argument("--num_P_CNN", type=int, default=1, help="number of serial Prediction convolutions")
     parser.add_argument("--num_R_CLSTM", type=int, default=1, help="number of hierarchical Representation CLSTMs")
@@ -308,8 +308,8 @@ if __name__ == "__main__":
     # Training args
     parser.add_argument("--seed", type=int, default=666, help="random seed")
     parser.add_argument("--results_subdir", type=str, default=f"{str(datetime.now())}", help="Specify results directory")
-    parser.add_argument("--restart_training", type=bool, default=False, help="whether or not to delete weights and restart")
-    parser.add_argument("--learning_rates", nargs="+", type=int, default=[5e-3, 5e-4, 1e-4, 5e-5], help="output channels")
+    parser.add_argument("--restart_training", type=bool, default=True, help="whether or not to delete weights and restart")
+    parser.add_argument("--learning_rates", nargs="+", type=int, default=[5e-4, 5e-4, 1e-4, 5e-5], help="output channels")
 
     # Structure args
     parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")

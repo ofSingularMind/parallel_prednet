@@ -1,12 +1,17 @@
-from PIL import Image
+import matplotlib.pyplot as plt
 import numpy as np
 
-for i in range(10):
-    noise = np.random.normal(0, 1, (50, 100, 3))
+x = np.linspace(0, 6*np.pi, 100)
+y = np.sin(x)
 
-    img = Image.fromarray(noise, 'RGB')
+# You probably won't need this if you're embedding things in a tkinter plot...
+plt.ion()
 
-    img.save(f"/home/evalexii/Documents/Thesis/animations/backgrounds/50x100/{i:03}.png")
+fig = plt.figure()
+ax = fig.add_subplot(111)
+line1, = ax.plot(x, y, 'r-') # Returns a tuple of line objects, thus the comma
 
-# a = 4
-# print(f'{a:03}')
+for phase in np.linspace(0, 10*np.pi, 500):
+    line1.set_ydata(np.sin(x + phase))
+    fig.canvas.draw()
+    fig.canvas.flush_events()

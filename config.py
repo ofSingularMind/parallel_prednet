@@ -33,6 +33,13 @@ def update_settings(system, dataset, subdir):
                        ]
     }
 
+    settings_dict[('laptop', 'rolling_circle')] = {'dirs' : ['/home/evalexii/Documents/Thesis/animations/rolling_circle/frames/',
+                       '/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/rolling_circle/',
+                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/rolling_circle_results/{subdir}/',
+                       '/home/evalexii/Documents/Thesis/code/parallel_prednet/logs/rolling_circle/'
+                       ]
+    }
+
     settings_dict[('laptop', 'driving')] = {'dirs' : ['/home/evalexii/Documents/Thesis/code/parallel_prednet/driving_data/',
                        '/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/driving/',
                        f'/home/evalexii/Documents/Thesis/code/parallel_prednet/driving_results/{subdir}/',
