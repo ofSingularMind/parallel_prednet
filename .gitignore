@@ -20,6 +20,9 @@ driving_results_archive/
 kitti_data/
 kitti_results/
 kitti_results_archive/
+rolling_square_data/
+rolling_square_results/
+rolling_square_results_archive/
 model_weights*/
 *.hdf5
 

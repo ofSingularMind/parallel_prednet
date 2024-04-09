@@ -168,7 +168,7 @@ class ParaPredNet(keras.Model):
         # print("Calling PredNet...")
         # inputs will be a tuple of batches of sequences of video frames
         # [-1] represents the PNG image source
-        if self.dataset == "kitti":
+        if self.dataset == "kitti" or self.dataset == "rolling_square":
             # inputs = inputs[-1]
             pass
         elif self.dataset == "monkaa" or self.dataset == "driving":
