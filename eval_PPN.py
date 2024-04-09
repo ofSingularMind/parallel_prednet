@@ -52,13 +52,12 @@ def main(args):
     #         f.write(f"{key}: {value}\n")
 
     # where weights are loaded prior to eval
-    weights_file = os.path.join("/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/rolling_square", f"para_prednet_"+"rolling_square"+"_weights.hdf5")
+    weights_file = os.path.join(f"/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/{args['dataset_weights']}", f"para_prednet_{args['dataset_weights']}_weights.hdf5")
     assert os.path.exists(weights_file), "Weights file not found"
-    if args["dataset"] != "rolling_square": print("WARNING: using rolling_square weights for all animations") 
-    if args["restart_training"]:
-        if os.path.exists(weights_file):
-            os.remove(weights_file)
-
+    if args['dataset'] != args['dataset_weights']: 
+        print(f"WARNING: dataset ({args['dataset']}) and dataset_weights ({args['dataset_weights']}) do not match - generalizing...") 
+    else:
+        print(f"OK: dataset ({args['dataset']}) and dataset_weights ({args['dataset_weights']}) match") 
 
     # Training parameters
     nt = args["nt"]  # number of time steps
@@ -73,7 +72,7 @@ def main(args):
         original_im_shape = (540, 960, 3)
         downscale_factor = args["downscale_factor"]
         im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3)
-    elif args["dataset"] == "rolling_square" or args["dataset"] == "rolling_circle":
+    elif args["dataset"] in ["rolling_square", "rolling_circle"]:
         original_im_shape = (50, 100, 3)
         downscale_factor = args["downscale_factor"]
         im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3) if args["resize_images"] else original_im_shape
@@ -143,7 +142,7 @@ def main(args):
         val_size = int(val_split * length)
         test_size = int(val_split * length)
 
-    elif args["dataset"] == "rolling_square" or args["dataset"] == "rolling_circle":
+    elif args["dataset"] in ["rolling_square", "rolling_circle"]:
         # Training data
         assert os.path.exists(DATA_DIR + args["data_subset"] + "/001.png"), "Dataset not found"
         pfm_paths = []
@@ -200,7 +199,7 @@ def main(args):
         outputs = PPN(inputs)
         PPN = keras.Model(inputs=inputs, outputs=outputs)
 
-    elif args["dataset"] == "rolling_square" or args["dataset"] == "rolling_circle":
+    elif args["dataset"] in ["rolling_square", "rolling_circle"]:
         # These are rolling_square specific input shapes
         inputs = keras.Input(shape=(nt, im_shape[0], im_shape[1], 3))
         PPN_layer = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])
@@ -289,11 +288,12 @@ if __name__ == "__main__":
     parser.add_argument("--resize_images", type=bool, default=False, help="whether or not to downscale images prior to training")
     parser.add_argument("--train_proportion", type=float, default=0.7, help="proportion of data for training (only for monkaa)")
 
-    # Training args
-    parser.add_argument("--seed", type=int, default=666, help="random seed")
+    # Eval args
+    # parser.add_argument("--seed", type=int, default=666, help="random seed")
     parser.add_argument("--results_subdir", type=str, default=f"{str(datetime.now())}", help="Specify results directory")
-    parser.add_argument("--restart_training", type=bool, default=False, help="whether or not to delete weights and restart")
-    parser.add_argument("--learning_rates", nargs="+", type=int, default=[5e-3, 5e-4, 1e-4, 5e-5], help="output channels")
+    # parser.add_argument("--restart_training", type=bool, default=False, help="whether or not to delete weights and restart")
+    # parser.add_argument("--learning_rates", nargs="+", type=int, default=[5e-3, 5e-4, 1e-4, 5e-5], help="output channels")
+    parser.add_argument("--dataset_weights", type=str, default="rolling_circle", help="kitti, driving, monkaa, or rolling_square")
 
     # Structure args
     parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")

@@ -10,11 +10,8 @@ def main(args):
     import tensorflow as tf
     import shutil
     import keras
-    from keras import backend as K
-    from keras import layers
     from data_utils import SequenceGenerator, IntermediateEvaluations, create_dataset_from_serialized_generator, config_gpus 
     from keras.callbacks import LearningRateScheduler, ModelCheckpoint, TensorBoard
-    import matplotlib.pyplot as plt
 
     # PICK MODEL
     if args["model_choice"] == "baseline":
@@ -67,17 +64,24 @@ def main(args):
     plot_intermediate = True  # if the intermediate model predictions will be plotted
     tensorboard = True  # if the Tensorboard callback will be used
 
-    # where weights are loaded prior to training
-    # def get_weights_files(dataset="monkaa"):
-        # global results_weights_file, weights_file, json_file
-    results_weights_file = os.path.join(RESULTS_SAVE_DIR, f"tensorflow_weights/para_prednet_"+args["dataset"]+"_weights.hdf5")
-    # where weights will be saved
-    weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["dataset"]+"_weights.hdf5")
+    if (args["dataset"], args["data_subset"]) in [
+        ("rolling_square", "single_rolling_square"),
+        ("rolling_circle", "single_rolling_circle")
+    ]:
+        # where weights will be loaded/saved
+        weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["data_subset"]+"_weights.hdf5")
+        # where weights will be saved with results
+        results_weights_file = os.path.join(RESULTS_SAVE_DIR, f"tensorflow_weights/para_prednet_"+args["data_subset"]+"_weights.hdf5")
+    
+    else:
+        # where weights will be loaded/saved
+        weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["dataset"]+"_weights.hdf5")
+        # where weights will be saved with results
+        results_weights_file = os.path.join(RESULTS_SAVE_DIR, f"tensorflow_weights/para_prednet_"+args["dataset"]+"_weights.hdf5")
+    
     if args["restart_training"]:
         if os.path.exists(weights_file):
             os.remove(weights_file)
-
-    # get_weights_files(args["dataset"])
 
     # Training parameters
     nt = args["nt"]  # number of time steps
@@ -100,7 +104,7 @@ def main(args):
         original_im_shape = (540, 960, 3)
         downscale_factor = args["downscale_factor"]
         im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3)
-    elif args["dataset"] == "rolling_square":
+    elif args["dataset"] in ["rolling_square", "rolling_circle"]:
         original_im_shape = (50, 100, 3)
         downscale_factor = args["downscale_factor"]
         im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3) if args["resize_images"] else original_im_shape
@@ -159,7 +163,7 @@ def main(args):
         png_paths.append(DATA_DIR + "frames_cleanpass/15mm_focallength/scene_forwards/slow/left") # 3 channels (RGB)
         num_sources = len(pfm_paths) + len(pgm_paths) + len(png_paths)
 
-        train_split = 0.7
+        train_split = args["training_split"]
         val_split = (1 - train_split) / 2
         #  Create and split dataset
         datasets, length = create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name="driving", im_height=im_shape[0], im_width=im_shape[1],
@@ -170,16 +174,16 @@ def main(args):
         val_size = int(val_split * length)
         test_size = int(val_split * length)
 
-    elif args["dataset"] == "rolling_square":
+    elif args["dataset"] in ["rolling_square", "rolling_circle"]:
         # Training data
-        assert os.path.exists(DATA_DIR + args["data_subset"] + "/001.png"), "Dataset not found"
+        assert os.path.exists(DATA_DIR + "/001.png"), "Dataset not found"
         pfm_paths = []
         pgm_paths = []
         png_paths = []
-        png_paths.append(DATA_DIR + args["data_subset"]) # 3 channels (RGB)
+        png_paths.append(DATA_DIR) # 3 channels (RGB)
         num_sources = len(pfm_paths) + len(pgm_paths) + len(png_paths)
 
-        train_split = 0.7
+        train_split = args["training_split"]
         val_split = (1 - train_split) / 2
         #  Create and split dataset
         datasets, length = create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name=args["data_subset"], im_height=im_shape[0], im_width=im_shape[1],
@@ -227,8 +231,8 @@ def main(args):
         outputs = PPN(inputs)
         PPN = keras.Model(inputs=inputs, outputs=outputs)
 
-    elif args["dataset"] == "rolling_square":
-        # These are rolling_square specific input shapes
+    elif args["dataset"] in ["rolling_square", "rolling_circle"]:
+        # These are animation specific input shapes
         inputs = keras.Input(shape=(nt, im_shape[0], im_shape[1], 3))
         PPN = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])
         outputs = PPN(inputs)
@@ -293,35 +297,35 @@ if __name__ == "__main__":
     # Tuning args
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
     parser.add_argument("--nb_epoch", type=int, default=250, help="number of epochs")
-    parser.add_argument("--batch_size", type=int, default=1, help="batch size")
-    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels")
-    parser.add_argument("--sequences_per_epoch_train", type=int, default=100, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
+    parser.add_argument("--batch_size", type=int, default=6, help="batch size")
+    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 6, 12, 24], help="output channels")
+    parser.add_argument("--sequences_per_epoch_train", type=int, default=200, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=None, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
     parser.add_argument("--num_P_CNN", type=int, default=1, help="number of serial Prediction convolutions")
     parser.add_argument("--num_R_CLSTM", type=int, default=1, help="number of hierarchical Representation CLSTMs")
     parser.add_argument("--num_passes", type=int, default=1, help="number of prediction-update cycles per time-step")
-    parser.add_argument("--pan_hierarchical", action="store_true", help="utilize Pan-Hierarchical Representation")
+    parser.add_argument("--pan_hierarchical", type=bool, default=False, help="utilize Pan-Hierarchical Representation")
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor for images prior to training")
     parser.add_argument("--resize_images", type=bool, default=False, help="whether or not to downscale images prior to training")
-    parser.add_argument("--train_proportion", type=float, default=0.7, help="proportion of data for training (only for monkaa)")
+    parser.add_argument("--training_split", type=float, default=0.7, help="proportion of data for training (only for monkaa)")
 
     # Training args
     parser.add_argument("--seed", type=int, default=666, help="random seed")
     parser.add_argument("--results_subdir", type=str, default=f"{str(datetime.now())}", help="Specify results directory")
-    parser.add_argument("--restart_training", type=bool, default=True, help="whether or not to delete weights and restart")
+    parser.add_argument("--restart_training", type=bool, default=False, help="whether or not to delete weights and restart")
     parser.add_argument("--learning_rates", nargs="+", type=int, default=[5e-4, 5e-4, 1e-4, 5e-5], help="output channels")
 
     # Structure args
     parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
-    parser.add_argument("--dataset", type=str, default="rolling_square", help="kitti, driving, monkaa, or rolling_square")
-    parser.add_argument("--reserialize_dataset", type=bool, default=True, help="reserialize dataset")
-    parser.add_argument("--data_subset", type=str, default="single_rolling_square", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
+    parser.add_argument("--dataset", type=str, default="rolling_circle", help="kitti, driving, monkaa, rolling_square, or rolling_circle")
+    parser.add_argument("--data_subset", type=str, default="single_rolling_circle", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
+    parser.add_argument("--reserialize_dataset", type=bool, default=False, help="reserialize dataset")
     parser.add_argument("--output_mode", type=str, default="Error", help="Error, Predictions, or Error_Images_and_Prediction (only trains on Error)")
     
     args = parser.parse_args().__dict__
 
-    update_settings(args["system"], args["dataset"], args["results_subdir"])
+    update_settings(args["system"], args["dataset"], args["data_subset"], args["results_subdir"])
     DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = get_settings()["dirs"]
     
     main(args)

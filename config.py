@@ -16,7 +16,7 @@ settings = {'dirs': ''}
 
 # Unpack with DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = settings['dirs'], for example
 
-def update_settings(system, dataset, subdir):
+def update_settings(system, dataset, data_subset, subdir):
     global settings
     settings_dict = {}
     settings_dict[('laptop', 'monkaa')] = {'dirs' : ['/home/evalexii/Documents/Thesis/code/parallel_prednet/monkaa_data/',
@@ -26,16 +26,16 @@ def update_settings(system, dataset, subdir):
                        ]
     }
 
-    settings_dict[('laptop', 'rolling_square')] = {'dirs' : ['/home/evalexii/Documents/Thesis/animations/rolling_square/frames/',
-                       '/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/rolling_square/',
-                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/rolling_square_results/{subdir}/',
+    settings_dict[('laptop', 'rolling_square')] = {'dirs' : [f'/home/evalexii/Documents/Thesis/animations/rolling_square/frames/{data_subset}/',
+                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/rolling_square/{data_subset}/',
+                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/rolling_square_results/{data_subset}/{subdir}/',
                        '/home/evalexii/Documents/Thesis/code/parallel_prednet/logs/rolling_square/'
                        ]
     }
 
-    settings_dict[('laptop', 'rolling_circle')] = {'dirs' : ['/home/evalexii/Documents/Thesis/animations/rolling_circle/frames/',
-                       '/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/rolling_circle/',
-                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/rolling_circle_results/{subdir}/',
+    settings_dict[('laptop', 'rolling_circle')] = {'dirs' : [f'/home/evalexii/Documents/Thesis/animations/rolling_circle/frames/{data_subset}/',
+                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/rolling_circle/{data_subset}/',
+                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/rolling_circle_results/{data_subset}/{subdir}/',
                        '/home/evalexii/Documents/Thesis/code/parallel_prednet/logs/rolling_circle/'
                        ]
     }
