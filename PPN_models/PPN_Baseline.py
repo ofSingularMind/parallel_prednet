@@ -133,12 +133,15 @@ class ParaPredNet(keras.Model):
         # weighting for each layer's contribution to the loss
         self.layer_weights = [1] + [0.1] * (self.num_layers - 1)
         # equally weight all timesteps except the first
-        self.time_loss_weights = 1.0 / (self.nt - 1) * np.ones((self.nt, 1))
+        self.time_loss_weights = 1.0 / (self.nt - 1) * np.ones((self.nt, 1)) if self.nt > 1 else np.ones((self.nt, 1))
         self.time_loss_weights[0] = 0
         self.output_mode = training_args['output_mode']
         self.dataset = training_args['dataset']
         self.num_passes = training_args['num_passes']
         self.pan_hierarchical = training_args['pan_hierarchical']
+        self.continuous_eval = False
+
+        # perform setup
         if self.pan_hierarchical:
             self.panLayer = PanRepresentation(sum(self.layer_output_channels), name='PanLayer')
             temp = tf.random.uniform((self.batch_size, self.im_height, self.im_width, 2*sum(self.layer_output_channels)), maxval=255, dtype=tf.float32)
@@ -163,22 +166,14 @@ class ParaPredNet(keras.Model):
             else:
                 temp_TD = None
             temp_out = self.predlayers[l]([temp_BU, temp_TD, l_temp_P], paddings=self.paddings[l])
+        self.init_layer_states()
 
     def call(self, inputs):
-        # print("Calling PredNet...")
         # inputs will be a tuple of batches of sequences of video frames
-        # [-1] represents the PNG image source
-        if self.dataset == "kitti" or self.dataset == "rolling_square":
-            # inputs = inputs[-1]
-            pass
-        elif self.dataset == "monkaa" or self.dataset == "driving":
-            inputs = inputs[-1]
+        inputs = self.process_inputs(inputs)
 
         # Initialize layer states
-        for layer in self.predlayers:
-            layer.initialize_states(self.batch_size)
-        if self.pan_hierarchical:
-            self.panLayer.initialize_states((self.batch_size, self.im_height, self.im_width, sum(self.layer_output_channels)))
+        if not self.continuous_eval: self.init_layer_states()
 
         # Iterate through the time-steps manually
         for t in range(self.nt):
@@ -266,13 +261,33 @@ class ParaPredNet(keras.Model):
             output = [all_error_images, all_predictions]
 
         # Clear states from computation graph
+        if not self.continuous_eval: self.clear_layer_states()
+
+        return output
+
+    def process_inputs(self, inputs):
+        if self.dataset == "kitti" or self.dataset == "rolling_square":
+            # these datasets only have PNG images, so we don't need to do anything
+            pass
+        elif self.dataset == "monkaa" or self.dataset == "driving":
+            # these datasets have multi-modal inputs but baseline PredNet only uses the PNG images
+            # [-1] represents the PNG image source
+            inputs = inputs[-1]
+        
+        return inputs
+    
+    def init_layer_states(self):
+        for layer in self.predlayers:
+            layer.initialize_states(self.batch_size)
+        if self.pan_hierarchical:
+            self.panLayer.initialize_states((self.batch_size, self.im_height, self.im_width, sum(self.layer_output_channels)))
+
+    def clear_layer_states(self):
         for layer in self.predlayers:
             layer.clear_states()
         if self.pan_hierarchical: 
             self.panLayer.clear_states()
-
-        return output
-
+    
     def calculate_resolutions(self, im_height, im_width, num_layers):
         # Calculate resolutions for each layer
         resolutions = np.array([[im_height, im_width]])

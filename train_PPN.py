@@ -77,9 +77,9 @@ def main(args):
         ("all_rolling", "multi")
     ]:
         # where weights will be loaded/saved
-        weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["data_subset"]+"_"+args["data_subset"]+"_weights.hdf5")
+        weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["dataset"]+"_"+args["data_subset"]+"_weights.hdf5")
         # where weights will be saved with results
-        results_weights_file = os.path.join(RESULTS_SAVE_DIR, f"tensorflow_weights/para_prednet_"+args["data_subset"]+"_"+args["data_subset"]+"_weights.hdf5")
+        results_weights_file = os.path.join(RESULTS_SAVE_DIR, f"tensorflow_weights/para_prednet_"+args["dataset"]+"_"+args["data_subset"]+"_weights.hdf5")
     else:
         # where weights will be loaded/saved
         weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["dataset"]+"_weights.hdf5")

@@ -53,18 +53,18 @@ def main(args):
     #         f.write(f"{key}: {value}\n")
 
     # where weights are loaded prior to eval
-    if (args["dataset"], args["data_subset"]) in [
+    if (args["dataset_weights"], args["data_subset_weights"]) in [
         ("rolling_square", "single_rolling_square"),
         ("rolling_circle", "single_rolling_circle"),
     ]:
         # where weights will be loaded/saved
         weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["data_subset"]+"_weights.hdf5")
-    elif (args["dataset"], args["data_subset"]) in [
+    elif (args["dataset_weights"], args["data_subset_weights"]) in [
         ("all_rolling", "single"),
         ("all_rolling", "multi")
     ]:
         # where weights will be loaded/saved
-        weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["data_subset"]+"_"+args["data_subset"]+"_weights.hdf5")
+        weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["dataset_weights"]+"_"+args["data_subset_weights"]+"_weights.hdf5")
     else:
         # where weights will be loaded/saved
         weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["dataset"]+"_weights.hdf5")
@@ -262,6 +262,7 @@ def main(args):
         inputs = keras.Input(shape=(nt, im_shape[0], im_shape[1], 3))
         PPN_layer = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])
         PPN_layer.output_mode = "Prediction"
+        PPN_layer.continuous_eval = True
         outputs = PPN_layer(inputs)
         PPN = keras.Model(inputs=inputs, outputs=outputs)
     
@@ -282,54 +283,37 @@ def main(args):
     except: 
         raise ValueError("Weights don't fit - exiting...")
 
+    # manually initialize PPN layer states
+    PPN.layers[-1].init_layer_states()
+
     # dataset_iter = iter(test_dataset)
     fig, axs = plt.subplots(1, 2)
     plt.show(block=False)
 
-    # while True:
-    from PIL import Image
-    # test_data_dir = DATA_DIR + f"rolling_circle/frames/{args['data_subset']}/"
-    test_data = hkl.load("/home/evalexii/Documents/Thesis/animations/rolling_circle/frames/single_rolling_circle/single_rolling_circle_train.hkl")
-    td_len = test_data[0].shape[0]
-    td = tf.expand_dims(test_data[0], axis=0)
-    for ground_truth_image in os.scandir(test_data_dir):
+    # Only working for animations
+    test_data = hkl.load(DATA_DIR + f"/{args['dataset']}/frames/{args['data_subset']}/{args['data_subset']}_train.hkl")[0]
+    td_len = test_data.shape[0]
+    # test_data = np.reshape(test_data, (batch_size, td_len, im_shape[0], im_shape[1], 3))
+    for i in range(td_len):
         # ground_truth_image = next(dataset_iter)[0]
-        ground_truth_image = Image.open(ground_truth_image)
+        ground_truth_image = np.reshape(test_data[i], (1, 1, *test_data.shape[1:]))
         predicted_image = PPN.layers[-1](ground_truth_image)
 
+        # clear the axes
         axs[0].cla()
         axs[1].cla()
+
         # print the two images side-by-side
-        axs[0].imshow(ground_truth_image.numpy()[0, -1, :, :, :])
-        axs[1].imshow(predicted_image.numpy()[0, -1, :, :, :])
+        axs[0].imshow(ground_truth_image[0,0,...])
+        axs[1].imshow(predicted_image[0,0,...])
+
+        # add titles
+        axs[0].set_title("Ground Truth")
+        axs[1].set_title("Predicted")
+        fig.suptitle(f"Frame {i+1}/{td_len}")
+
         fig.canvas.draw()
         fig.canvas.flush_events()
-
-
-    # # start with lr of 0.001 and then drop to 0.0001 after 75 epochs
-    # def lr_schedule(epoch): 
-    #     if epoch <= 50:
-    #         return args["learning_rates"][0] 
-    #     # elif 5 < epoch <= 10:
-    #     #     return args["learning_rates"][1] 
-    #     # elif 10 < epoch <= 20:
-    #     #     return args["learning_rates"][2]
-    #     else:
-    #         return args["learning_rates"][1]
-
-    # callbacks = [LearningRateScheduler(lr_schedule)]
-    # if save_model:
-    #     if not os.path.exists(WEIGHTS_DIR): os.makedirs(WEIGHTS_DIR, exist_ok=True)
-    #     callbacks.append(ModelCheckpoint(filepath=weights_file, monitor="val_loss", save_best_only=True, save_weights_only=True))
-    #     callbacks.append(ModelCheckpoint(filepath=results_weights_file, monitor="val_loss", save_best_only=True, save_weights_only=True))
-    # if plot_intermediate:
-    #         callbacks.append(IntermediateEvaluations(test_dataset, test_size, batch_size=batch_size, nt=nt, output_channels=output_channels, dataset=args["dataset"], model_choice=args["model_choice"]))
-    # if tensorboard:
-    #     callbacks.append(TensorBoard(log_dir=LOG_DIR, histogram_freq=1, write_graph=True, write_images=False))
-
-    # history = PPN.fit(train_dataset, steps_per_epoch=train_size // batch_size if sequences_per_epoch_train is None else sequences_per_epoch_train,
-    #                   epochs=nb_epoch, callbacks=callbacks, validation_data=val_dataset, validation_steps=val_size // batch_size if sequences_per_epoch_val is None else sequences_per_epoch_val)
-
 
 if __name__ == "__main__":
     import argparse
@@ -341,7 +325,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="PPN")  # Training parameters
 
     # Tuning args
-    parser.add_argument("--nt", type=int, default=10, help="sequence length")
+    parser.add_argument("--nt", type=int, default=1, help="sequence length")
     parser.add_argument("--nb_epoch", type=int, default=250, help="number of epochs")
     parser.add_argument("--batch_size", type=int, default=1, help="batch size")
     parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 6, 12, 24], help="output channels")
@@ -371,7 +355,7 @@ if __name__ == "__main__":
     
     args = parser.parse_args().__dict__
 
-    update_settings(args["system"], args["dataset"], args["data_subset"], args["results_subdir"])
+    update_settings(args["system"], args["dataset_weights"], args["data_subset_weights"], args["results_subdir"])
     DATA_DIR, WEIGHTS_DIR, _, _ = get_settings()["dirs"]
     
     main(args)
