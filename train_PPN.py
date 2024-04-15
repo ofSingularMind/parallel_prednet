@@ -66,13 +66,20 @@ def main(args):
 
     if (args["dataset"], args["data_subset"]) in [
         ("rolling_square", "single_rolling_square"),
-        ("rolling_circle", "single_rolling_circle")
+        ("rolling_circle", "single_rolling_circle"),
     ]:
         # where weights will be loaded/saved
         weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["data_subset"]+"_weights.hdf5")
         # where weights will be saved with results
         results_weights_file = os.path.join(RESULTS_SAVE_DIR, f"tensorflow_weights/para_prednet_"+args["data_subset"]+"_weights.hdf5")
-    
+    elif (args["dataset"], args["data_subset"]) in [
+        ("all_rolling", "single"),
+        ("all_rolling", "multi")
+    ]:
+        # where weights will be loaded/saved
+        weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["data_subset"]+"_"+args["data_subset"]+"_weights.hdf5")
+        # where weights will be saved with results
+        results_weights_file = os.path.join(RESULTS_SAVE_DIR, f"tensorflow_weights/para_prednet_"+args["data_subset"]+"_"+args["data_subset"]+"_weights.hdf5")
     else:
         # where weights will be loaded/saved
         weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["dataset"]+"_weights.hdf5")
@@ -104,7 +111,7 @@ def main(args):
         original_im_shape = (540, 960, 3)
         downscale_factor = args["downscale_factor"]
         im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3)
-    elif args["dataset"] in ["rolling_square", "rolling_circle"]:
+    elif args["dataset"] in ["rolling_square", "rolling_circle", "all_rolling"]:
         original_im_shape = (50, 100, 3)
         downscale_factor = args["downscale_factor"]
         im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3) if args["resize_images"] else original_im_shape
@@ -187,18 +194,101 @@ def main(args):
         val_split = (1 - train_split) / 2
         #  Create and split dataset
         datasets, length = create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name=args["data_subset"], im_height=im_shape[0], im_width=im_shape[1],
-                                                                    batch_size=batch_size, nt=nt, train_split=train_split, reserialize=args["reserialize_dataset"], shuffle=True, resize=args["resize_images"], single_channel=False)
+                                                                    batch_size=batch_size, nt=nt, train_split=train_split, reserialize=args["reserialize_dataset"], shuffle=False, resize=args["resize_images"], single_channel=False)
         train_dataset, val_dataset, test_dataset = datasets
 
         train_size = int(train_split * length)
         val_size = int(val_split * length)
         test_size = int(val_split * length)
 
+    elif args["dataset"] == "all_rolling":
+        dataset_names = [
+            f"{args['data_subset']}_rolling_circle", 
+            f"{args['data_subset']}_rolling_square"
+        ]
+        # Training data
+        assert os.path.exists(DATA_DIR + f"rolling_circle/frames/{args['data_subset']}_rolling_circle/" + "/001.png"), "Dataset not found"
+        assert os.path.exists(DATA_DIR + f"rolling_square/frames/{args['data_subset']}_rolling_square/" + "/001.png"), "Dataset not found"
+        pfm_paths = []
+        pgm_paths = []
+        list_png_paths = []
+        list_png_paths.append([DATA_DIR + f"rolling_circle/frames/{args['data_subset']}_rolling_circle/"]) # 3 channels (RGB)
+        list_png_paths.append([DATA_DIR + f"rolling_square/frames/{args['data_subset']}_rolling_square/"]) # 3 channels (RGB)
+
+        train_split = args["training_split"]
+        val_split = (1 - train_split) / 2
+
+        length = 0
+        full_train_dataset, full_val_dataset, full_test_dataset = None, None, None
+        for png_paths, dataset_name in zip(list_png_paths, dataset_names):
+            #  Create and split dataset
+            datasets, ds_len = create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name=dataset_name, im_height=im_shape[0], im_width=im_shape[1],
+                                                                        batch_size=batch_size, nt=nt, train_split=train_split, reserialize=args["reserialize_dataset"], shuffle=True, resize=args["resize_images"], single_channel=False)
+            train_dataset, val_dataset, test_dataset = datasets
+            full_train_dataset = train_dataset if full_train_dataset is None else full_train_dataset.concatenate(train_dataset)
+            full_val_dataset = val_dataset if full_val_dataset is None else full_val_dataset.concatenate(val_dataset)
+            full_test_dataset = test_dataset if full_test_dataset is None else full_test_dataset.concatenate(test_dataset)
+            length += ds_len
+
+        
+        train_size = int(train_split * length)
+        val_size = int(val_split * length)
+        test_size = length-train_size-val_size
+
+        full_train_dataset = full_train_dataset.shuffle(train_size).batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat()
+        full_val_dataset = full_val_dataset.shuffle(val_size).batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat()
+        full_test_dataset = full_test_dataset.shuffle(test_size).batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat()
+
+        train_dataset, val_dataset, test_dataset = full_train_dataset, full_val_dataset, full_test_dataset
+
+
     print(f"Working on dataset: {args['dataset']}")
     print(f"Train size: {train_size}")
     print(f"Validation size: {val_size}")
     print(f"Test size: {test_size}")
     print("All datasets created successfully")
+
+    # viter = iter(full_test_dataset)
+    # while True:
+    #     a = next(viter)
+    #     b = next(viter)
+    #     c = next(viter)
+    #     d = next(viter)
+
+    #     import matplotlib.pyplot as plt
+    #     # Sequences are maintained and sequences in a batch, and between batches, are shuffled
+    #     # plot in one row all images in a[0][0]
+    #     fig, axs = plt.subplots(8, 10, figsize=(20, 5))
+    #     for i, im in enumerate(a[0][0]):
+    #         axs[0,i].imshow(im)
+    #     # plot in one row all images in a[0][1]
+    #     for i, im in enumerate(a[0][1]):
+    #         axs[1,i].imshow(im)
+    #     # # plot in one row all images in a[0][-1]
+    #     for i, im in enumerate(b[0][0]):
+    #         axs[2,i].imshow(im)
+    #     # # plot in one row all images in b[0][0]
+    #     for i, im in enumerate(b[0][1]):
+    #         axs[3,i].imshow(im)
+    #     # plot in one row all images in a[0][-1]
+    #     for i, im in enumerate(c[0][0]):
+    #         axs[4,i].imshow(im)
+    #     # # plot in one row all images in b[0][0]
+    #     for i, im in enumerate(c[0][1]):
+    #         axs[5,i].imshow(im)
+    #     # # plot in one row all images in a[0][-1]
+    #     for i, im in enumerate(d[0][0]):
+    #         axs[6,i].imshow(im)
+    #     # # plot in one row all images in b[0][0]
+    #     for i, im in enumerate(d[0][1]):
+    #         axs[7,i].imshow(im)
+    #     plt.show(block=True)
+
+    # if (
+    #     np.all(a[0,1,...] == a[1,0,...]) and \
+    #     np.all(a[-1,1,...] == b[0,0,...]) 
+        
+    # ): print("true")
 
     # Create ParaPredNet
     if args["dataset"] == "kitti":
@@ -231,7 +321,7 @@ def main(args):
         outputs = PPN(inputs)
         PPN = keras.Model(inputs=inputs, outputs=outputs)
 
-    elif args["dataset"] in ["rolling_square", "rolling_circle"]:
+    elif args["dataset"] in ["rolling_square", "rolling_circle", "all_rolling"]:
         # These are animation specific input shapes
         inputs = keras.Input(shape=(nt, im_shape[0], im_shape[1], 3))
         PPN = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])
@@ -297,7 +387,7 @@ if __name__ == "__main__":
     # Tuning args
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
     parser.add_argument("--nb_epoch", type=int, default=250, help="number of epochs")
-    parser.add_argument("--batch_size", type=int, default=6, help="batch size")
+    parser.add_argument("--batch_size", type=int, default=2, help="batch size")
     parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 6, 12, 24], help="output channels")
     parser.add_argument("--sequences_per_epoch_train", type=int, default=200, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=None, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
@@ -318,10 +408,22 @@ if __name__ == "__main__":
     # Structure args
     parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
-    parser.add_argument("--dataset", type=str, default="rolling_circle", help="kitti, driving, monkaa, rolling_square, or rolling_circle")
-    parser.add_argument("--data_subset", type=str, default="single_rolling_circle", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
-    parser.add_argument("--reserialize_dataset", type=bool, default=False, help="reserialize dataset")
-    parser.add_argument("--output_mode", type=str, default="Error", help="Error, Predictions, or Error_Images_and_Prediction (only trains on Error)")
+    parser.add_argument("--dataset", type=str, default="all_rolling", help="kitti, driving, monkaa, rolling_square, or rolling_circle")
+    parser.add_argument("--data_subset", type=str, default="single", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
+    """
+    Avaialble dataset/data_subset arg combinations:
+    - kitti / None: Kitti dataset
+    - driving / None: Driving dataset
+    - monkaa / None: Monkaa dataset
+    - rolling_square / single_rolling_square: Single rolling square animation
+    - rolling_square / multi_rolling_square: Multiple rolling squares of different sizes animation
+    - rolling_circle / single_rolling_circle: Single rolling circle animation
+    - rolling_circle / multi_rolling_circle: Multiple rolling circles of different sizes animation
+    - all_rolling / single: Single rolling shapes animation
+    - all_rolling / multi: Multiple rolling shapes of different sizes animation
+    """
+    parser.add_argument("--reserialize_dataset", type=bool, default=True, help="reserialize dataset")
+    parser.add_argument("--output_mode", type=str, default="Error", help="Error, Predictions, or Error_Images_and_Prediction. Only trains on Error.")
     
     args = parser.parse_args().__dict__
 

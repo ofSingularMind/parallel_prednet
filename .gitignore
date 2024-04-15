@@ -24,6 +24,7 @@ rolling_square_data/
 rolling_square_results/
 rolling_square_results_archive/
 rolling_circle_results/
+all_rolling_results/
 model_weights*/
 *.hdf5
 

@@ -135,7 +135,7 @@ class IntermediateEvaluations(Callback):
             self.X_test = self.X_test_inputs
         elif self.dataset in ["monkaa", "driving"] and self.model_choice != "multi_channel":
             self.X_test = self.X_test_inputs[-1] # take only the PNG images for MSE calcs and plotting
-        elif self.dataset in ["rolling_square", "rolling_circle"] and self.model_choice != "multi_channel":
+        elif self.dataset in ["rolling_square", "rolling_circle", "all_rolling"] and self.model_choice != "multi_channel":
             self.X_test = self.X_test_inputs # take only the PNG images for MSE calcs and plotting
             self.Xtc = self.X_test.shape[-1] # X_test_channels        
         elif self.dataset == "monkaa" and self.model_choice == "multi_channel":
@@ -477,7 +477,7 @@ def serialize_dataset(pfm_paths, pgm_paths, png_paths, dataset_name="driving", s
     if dataset_name == "driving":
         temp = np.minimum(length, 200)
     else:    
-        temp = np.minimum(length, 2000)
+        temp = np.minimum(length, 500)
     print(f"Start to load images at {time.perf_counter() - start_time} seconds.")
 
     for j in range(len(pfm_paths)):
@@ -661,7 +661,8 @@ def create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, ou
             else:
                 dataset = tf.data.Dataset.from_generator(gen, output_signature=(tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32), tf.TensorSpec(shape=(1), dtype=tf.float32)))
         # Batch and prefetch the dataset, and ensure infinite dataset
-        dataset = (dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat())
+        # if shuffle: dataset = dataset.shuffle(dataset.cardinality(), reshuffle_each_iteration=True)
+        # dataset = (dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat())
         datasets.append(dataset)
 
     print(f"{len(datasets)} datasets created.")
