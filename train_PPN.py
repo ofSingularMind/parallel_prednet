@@ -80,6 +80,11 @@ def main(args):
         weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["dataset"]+"_"+args["data_subset"]+"_weights.hdf5")
         # where weights will be saved with results
         results_weights_file = os.path.join(RESULTS_SAVE_DIR, f"tensorflow_weights/para_prednet_"+args["dataset"]+"_"+args["data_subset"]+"_weights.hdf5")
+    elif args["dataset"] == "various":
+        # where weights will be loaded/saved
+        weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["dataset"]+"_"+args["data_subset"]+"_weights.hdf5")
+        # where weights will be saved with results
+        results_weights_file = os.path.join(RESULTS_SAVE_DIR, f"tensorflow_weights/para_prednet_"+args["dataset"]+"_"+args["data_subset"]+"_weights.hdf5")
     else:
         # where weights will be loaded/saved
         weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["dataset"]+"_weights.hdf5")
@@ -113,6 +118,10 @@ def main(args):
         im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3)
     elif args["dataset"] in ["rolling_square", "rolling_circle", "all_rolling"]:
         original_im_shape = (50, 100, 3)
+        downscale_factor = args["downscale_factor"]
+        im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3) if args["resize_images"] else original_im_shape
+    elif args["dataset"] in ["various"]:
+        original_im_shape = (50, 50, 3)
         downscale_factor = args["downscale_factor"]
         im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3) if args["resize_images"] else original_im_shape
 
@@ -241,7 +250,52 @@ def main(args):
 
         train_dataset, val_dataset, test_dataset = full_train_dataset, full_val_dataset, full_test_dataset
 
+    elif args["dataset"] == "various":
+        dataset_names = [
+            "circle_vertical", 
+            "cross_horizontal"
+        ]
 
+        # print dataset names to job details file
+        with open(os.path.join(RESULTS_SAVE_DIR, "job_args.txt"), "w+") as f:
+            f.write(f"Dataset names: {dataset_names}\n")
+
+        # Training data
+        pfm_paths = []
+        pgm_paths = []
+        list_png_paths = []
+        for ds_name in dataset_names:
+            assert os.path.exists(DATA_DIR + f"{ds_name}/frames/{ds_name}/" + "/001.png"), "Dataset not found"
+            list_png_paths.append([DATA_DIR + f"{ds_name}/frames/{ds_name}/"]) # 3 channels (RGB)
+
+        train_split = args["training_split"]
+        val_split = (1 - train_split) / 2
+
+        length = 0
+        full_train_dataset, full_val_dataset, full_test_dataset = None, None, None
+        for png_paths, dataset_name in zip(list_png_paths, dataset_names):
+            #  Create and split dataset
+            datasets, ds_len = create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name=dataset_name, im_height=im_shape[0], im_width=im_shape[1],
+                                                                        batch_size=batch_size, nt=nt, train_split=train_split, reserialize=args["reserialize_dataset"], shuffle=True, resize=args["resize_images"], single_channel=False)
+            train_dataset, val_dataset, test_dataset = datasets
+            full_train_dataset = train_dataset if full_train_dataset is None else full_train_dataset.concatenate(train_dataset)
+            full_val_dataset = val_dataset if full_val_dataset is None else full_val_dataset.concatenate(val_dataset)
+            full_test_dataset = test_dataset if full_test_dataset is None else full_test_dataset.concatenate(test_dataset)
+            length += ds_len
+
+        
+        train_size = int(train_split * length)
+        val_size = int(val_split * length)
+        test_size = length-train_size-val_size
+
+        full_train_dataset = full_train_dataset.shuffle(train_size).batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat()
+        full_val_dataset = full_val_dataset.shuffle(val_size).batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat()
+        full_test_dataset = full_test_dataset.shuffle(test_size).batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat()
+
+        train_dataset, val_dataset, test_dataset = full_train_dataset, full_val_dataset, full_test_dataset
+
+
+    
     print(f"Working on dataset: {args['dataset']}")
     print(f"Train size: {train_size}")
     print(f"Validation size: {val_size}")
@@ -321,7 +375,7 @@ def main(args):
         outputs = PPN(inputs)
         PPN = keras.Model(inputs=inputs, outputs=outputs)
 
-    elif args["dataset"] in ["rolling_square", "rolling_circle", "all_rolling"]:
+    elif args["dataset"] in ["rolling_square", "rolling_circle", "all_rolling", "various"]:
         # These are animation specific input shapes
         inputs = keras.Input(shape=(nt, im_shape[0], im_shape[1], 3))
         PPN = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])
@@ -408,8 +462,8 @@ if __name__ == "__main__":
     # Structure args
     parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
-    parser.add_argument("--dataset", type=str, default="all_rolling", help="kitti, driving, monkaa, rolling_square, or rolling_circle")
-    parser.add_argument("--data_subset", type=str, default="single", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
+    parser.add_argument("--dataset", type=str, default="various", help="kitti, driving, monkaa, rolling_square, or rolling_circle")
+    parser.add_argument("--data_subset", type=str, default="CircleV_CrossH", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
     """
     Avaialble dataset/data_subset arg combinations:
     - kitti / None: Kitti dataset
@@ -421,6 +475,7 @@ if __name__ == "__main__":
     - rolling_circle / multi_rolling_circle: Multiple rolling circles of different sizes animation
     - all_rolling / single: Single rolling shapes animation
     - all_rolling / multi: Multiple rolling shapes of different sizes animation
+    - various / *: Specify within dataset-creation block which datasets to use. arg["data_subset"] can provide descriptive name for results and weights
     """
     parser.add_argument("--reserialize_dataset", type=bool, default=True, help="reserialize dataset")
     parser.add_argument("--output_mode", type=str, default="Error", help="Error, Predictions, or Error_Images_and_Prediction. Only trains on Error.")

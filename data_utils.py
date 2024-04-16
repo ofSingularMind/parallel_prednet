@@ -135,7 +135,7 @@ class IntermediateEvaluations(Callback):
             self.X_test = self.X_test_inputs
         elif self.dataset in ["monkaa", "driving"] and self.model_choice != "multi_channel":
             self.X_test = self.X_test_inputs[-1] # take only the PNG images for MSE calcs and plotting
-        elif self.dataset in ["rolling_square", "rolling_circle", "all_rolling"] and self.model_choice != "multi_channel":
+        elif self.dataset in ["rolling_square", "rolling_circle", "all_rolling", "various"] and self.model_choice != "multi_channel":
             self.X_test = self.X_test_inputs # take only the PNG images for MSE calcs and plotting
             self.Xtc = self.X_test.shape[-1] # X_test_channels        
         elif self.dataset == "monkaa" and self.model_choice == "multi_channel":
@@ -655,7 +655,7 @@ def create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, ou
             dataset = tf.data.Dataset.from_generator(gen, output_signature=((tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32)), tf.TensorSpec(shape=(1), dtype=tf.float32)))
         elif dataset_name == "driving":
             dataset = tf.data.Dataset.from_generator(gen, output_signature=((tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32)), tf.TensorSpec(shape=(1), dtype=tf.float32)))
-        elif dataset_name.endswith("rolling_square") or dataset_name.endswith("rolling_circle"):
+        else:
             if single_channel:
                 dataset = tf.data.Dataset.from_generator(gen, output_signature=(tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(1), dtype=tf.float32)))
             else:

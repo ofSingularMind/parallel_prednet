@@ -15,6 +15,7 @@ def main(args):
     from keras import layers
     from data_utils import SequenceGenerator, IntermediateEvaluations, create_dataset_from_serialized_generator, config_gpus 
     import matplotlib.pyplot as plt
+    from matplotlib.colors import LinearSegmentedColormap
 
     # PICK MODEL
     if args["model_choice"] == "baseline":
@@ -287,8 +288,9 @@ def main(args):
     PPN.layers[-1].init_layer_states()
 
     # dataset_iter = iter(test_dataset)
-    fig, axs = plt.subplots(1, 2)
+    fig, axs = plt.subplots(1, 3, figsize=(30, 10))
     plt.show(block=False)
+    rg_colormap = LinearSegmentedColormap.from_list('custom_cmap', [(0, 'red'), (0.5, 'black'), (1, 'green')])
 
     # Only working for animations
     test_data = hkl.load(DATA_DIR + f"/{args['dataset']}/frames/{args['data_subset']}/{args['data_subset']}_train.hkl")[0]
@@ -298,22 +300,32 @@ def main(args):
         # ground_truth_image = next(dataset_iter)[0]
         ground_truth_image = np.reshape(test_data[i], (1, 1, *test_data.shape[1:]))
         predicted_image = PPN.layers[-1](ground_truth_image)
+        error_image = ground_truth_image - predicted_image
+        error_image_grey = np.mean(error_image, axis=-1, keepdims=True)
+        mse = np.mean(error_image**2)
 
         # clear the axes
         axs[0].cla()
         axs[1].cla()
+        axs[2].cla()
 
         # print the two images side-by-side
         axs[0].imshow(ground_truth_image[0,0,...])
         axs[1].imshow(predicted_image[0,0,...])
+        axs[2].imshow(error_image_grey[0,0,...], cmap=rg_colormap)
 
         # add titles
         axs[0].set_title("Ground Truth")
         axs[1].set_title("Predicted")
+        axs[2].set_title(f"Error, MSE: {mse:.3f}")
         fig.suptitle(f"Frame {i+1}/{td_len}")
 
         fig.canvas.draw()
         fig.canvas.flush_events()
+
+        # delay 2 seconds
+        plt.pause(50)
+
 
 if __name__ == "__main__":
     import argparse
@@ -342,10 +354,10 @@ if __name__ == "__main__":
     parser.add_argument("--results_subdir", type=str, default=f"{str(datetime.now())}", help="Specify results directory")
     # parser.add_argument("--restart_training", type=bool, default=False, help="whether or not to delete weights and restart")
     # parser.add_argument("--learning_rates", nargs="+", type=int, default=[5e-3, 5e-4, 1e-4, 5e-5], help="output channels")
-    parser.add_argument("--dataset_weights", type=str, default="all_rolling", help="kitti, driving, monkaa, or rolling_square")
-    parser.add_argument("--data_subset_weights", type=str, default="single", help="kitti, driving, monkaa, or rolling_square")
-    parser.add_argument("--dataset", type=str, default="rolling_circle", help="kitti, driving, monkaa, or rolling_square")
-    parser.add_argument("--data_subset", type=str, default="single_rolling_circle", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
+    parser.add_argument("--dataset_weights", type=str, default="various", help="kitti, driving, monkaa, or rolling_square")
+    parser.add_argument("--data_subset_weights", type=str, default="CircleV_CrossH", help="kitti, driving, monkaa, or rolling_square")
+    parser.add_argument("--dataset", type=str, default="circle_vertical", help="kitti, driving, monkaa, or rolling_square")
+    parser.add_argument("--data_subset", type=str, default="circle_vertical", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
 
     # Structure args
     parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")
