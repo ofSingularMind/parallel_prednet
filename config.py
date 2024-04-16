@@ -92,7 +92,17 @@ def update_settings(system, dataset, data_subset, subdir):
     if (system, dataset) in settings_dict:
         settings.update(settings_dict[(system, dataset)])
     else:
-        raise ValueError("Invalid system / dataset. Choose ('laptop' or 'delftblue') / ('kitti' or 'monkaa').")
+        try:
+            settings.update(
+                {'dirs' : [f'/home/evalexii/Documents/Thesis/animations/',
+                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/{dataset}/{data_subset}/',
+                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/{dataset}_results/{data_subset}/{subdir}/',
+                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/logs/{dataset}/'
+                       ]
+                }
+            )
+        except:
+            raise ValueError("Invalid system / dataset. Choose ('laptop' or 'delftblue') / ('kitti' or 'monkaa').")
 
 
 def get_settings():

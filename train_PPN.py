@@ -80,7 +80,7 @@ def main(args):
         weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["dataset"]+"_"+args["data_subset"]+"_weights.hdf5")
         # where weights will be saved with results
         results_weights_file = os.path.join(RESULTS_SAVE_DIR, f"tensorflow_weights/para_prednet_"+args["dataset"]+"_"+args["data_subset"]+"_weights.hdf5")
-    elif args["dataset"] == "various":
+    elif args["dataset"] in ["ball_collisions", "various"]:
         # where weights will be loaded/saved
         weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["dataset"]+"_"+args["data_subset"]+"_weights.hdf5")
         # where weights will be saved with results
@@ -120,7 +120,7 @@ def main(args):
         original_im_shape = (50, 100, 3)
         downscale_factor = args["downscale_factor"]
         im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3) if args["resize_images"] else original_im_shape
-    elif args["dataset"] in ["various"]:
+    elif args["dataset"] in ["ball_collisions", "various"]:
         original_im_shape = (50, 50, 3)
         downscale_factor = args["downscale_factor"]
         im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3) if args["resize_images"] else original_im_shape
@@ -257,7 +257,7 @@ def main(args):
         ]
 
         # print dataset names to job details file
-        with open(os.path.join(RESULTS_SAVE_DIR, "job_args.txt"), "w+") as f:
+        with open(os.path.join(RESULTS_SAVE_DIR, "job_args.txt"), "a+") as f:
             f.write(f"Dataset names: {dataset_names}\n")
 
         # Training data
@@ -294,55 +294,31 @@ def main(args):
 
         train_dataset, val_dataset, test_dataset = full_train_dataset, full_val_dataset, full_test_dataset
 
+    else:
+        # Training data
+        assert os.path.exists(DATA_DIR + f"{args['dataset']}/frames/{args['data_subset']}/001.png"), "Dataset not found"
+        pfm_paths = []
+        pgm_paths = []
+        png_paths = []
+        png_paths.append(DATA_DIR + f"{args['dataset']}/frames/{args['data_subset']}/") # 3 channels (RGB)
+        num_sources = len(pfm_paths) + len(pgm_paths) + len(png_paths)
 
+        train_split = args["training_split"]
+        val_split = (1 - train_split) / 2
+        #  Create and split dataset
+        datasets, length = create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name=args["data_subset"], im_height=im_shape[0], im_width=im_shape[1],
+                                                                    batch_size=batch_size, nt=nt, train_split=train_split, reserialize=args["reserialize_dataset"], shuffle=False, resize=args["resize_images"], single_channel=False)
+        train_dataset, val_dataset, test_dataset = datasets
+
+        train_size = int(train_split * length)
+        val_size = int(val_split * length)
+        test_size = int(val_split * length)
     
     print(f"Working on dataset: {args['dataset']}")
     print(f"Train size: {train_size}")
     print(f"Validation size: {val_size}")
     print(f"Test size: {test_size}")
     print("All datasets created successfully")
-
-    # viter = iter(full_test_dataset)
-    # while True:
-    #     a = next(viter)
-    #     b = next(viter)
-    #     c = next(viter)
-    #     d = next(viter)
-
-    #     import matplotlib.pyplot as plt
-    #     # Sequences are maintained and sequences in a batch, and between batches, are shuffled
-    #     # plot in one row all images in a[0][0]
-    #     fig, axs = plt.subplots(8, 10, figsize=(20, 5))
-    #     for i, im in enumerate(a[0][0]):
-    #         axs[0,i].imshow(im)
-    #     # plot in one row all images in a[0][1]
-    #     for i, im in enumerate(a[0][1]):
-    #         axs[1,i].imshow(im)
-    #     # # plot in one row all images in a[0][-1]
-    #     for i, im in enumerate(b[0][0]):
-    #         axs[2,i].imshow(im)
-    #     # # plot in one row all images in b[0][0]
-    #     for i, im in enumerate(b[0][1]):
-    #         axs[3,i].imshow(im)
-    #     # plot in one row all images in a[0][-1]
-    #     for i, im in enumerate(c[0][0]):
-    #         axs[4,i].imshow(im)
-    #     # # plot in one row all images in b[0][0]
-    #     for i, im in enumerate(c[0][1]):
-    #         axs[5,i].imshow(im)
-    #     # # plot in one row all images in a[0][-1]
-    #     for i, im in enumerate(d[0][0]):
-    #         axs[6,i].imshow(im)
-    #     # # plot in one row all images in b[0][0]
-    #     for i, im in enumerate(d[0][1]):
-    #         axs[7,i].imshow(im)
-    #     plt.show(block=True)
-
-    # if (
-    #     np.all(a[0,1,...] == a[1,0,...]) and \
-    #     np.all(a[-1,1,...] == b[0,0,...]) 
-        
-    # ): print("true")
 
     # Create ParaPredNet
     if args["dataset"] == "kitti":
@@ -375,7 +351,7 @@ def main(args):
         outputs = PPN(inputs)
         PPN = keras.Model(inputs=inputs, outputs=outputs)
 
-    elif args["dataset"] in ["rolling_square", "rolling_circle", "all_rolling", "various"]:
+    elif args["dataset"] in ["rolling_square", "rolling_circle", "all_rolling", "ball_collisions", "various"]:
         # These are animation specific input shapes
         inputs = keras.Input(shape=(nt, im_shape[0], im_shape[1], 3))
         PPN = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])
@@ -462,8 +438,8 @@ if __name__ == "__main__":
     # Structure args
     parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
-    parser.add_argument("--dataset", type=str, default="various", help="kitti, driving, monkaa, rolling_square, or rolling_circle")
-    parser.add_argument("--data_subset", type=str, default="CircleV_CrossH", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
+    parser.add_argument("--dataset", type=str, default="ball_collisions", help="kitti, driving, monkaa, rolling_square, or rolling_circle")
+    parser.add_argument("--data_subset", type=str, default="two_balls", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
     """
     Avaialble dataset/data_subset arg combinations:
     - kitti / None: Kitti dataset
@@ -475,6 +451,7 @@ if __name__ == "__main__":
     - rolling_circle / multi_rolling_circle: Multiple rolling circles of different sizes animation
     - all_rolling / single: Single rolling shapes animation
     - all_rolling / multi: Multiple rolling shapes of different sizes animation
+    - ball_collisions / two_balls: Two balls colliding animation
     - various / *: Specify within dataset-creation block which datasets to use. arg["data_subset"] can provide descriptive name for results and weights
     """
     parser.add_argument("--reserialize_dataset", type=bool, default=True, help="reserialize dataset")
