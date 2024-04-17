@@ -8,16 +8,16 @@ PVector e_color = new PVector(0, 0, 0); // Color of the ellipse
 float speed; // Speed of vertical movement
 int frame_rate = 1000; //<>//
 boolean save_gif = true;
-boolean save_frames = false;
+boolean save_frames = true;
 boolean rand_background = true;
-int num_frames = 100;
+int num_frames = 1000;
 PImage[] images = new PImage[num_frames];
 boolean rand_size = true;
 boolean rand_color = true;
 boolean rand_thickness = true;
 boolean rand_rotation = true;
 boolean rand_occlusions = true;
-int randomizationRate = 4;
+int randomizationRate = num_frames / 20;
 int h = 50;
 int w = 50;
 
@@ -33,7 +33,7 @@ void setup() {
   //size(w, h); // Set the size of the window
   
   diameter = height / 4; // Initial length of the ellipse
-  speed = width / 20; // Initial speed of vertical movement
+  speed = width / 8; // Initial speed of vertical movement
   posX = width / 2; // Initial X position
   posY = height / 2; // Initial Y position
   fill(e_color.x, e_color.y, e_color.z); // Set the inital fill color to black
@@ -42,7 +42,7 @@ void setup() {
   
   frameRate(frame_rate);
   if (save_gif == true) {
-    gifExport = new GifMaker(this, "general_ellipses_vertical.gif");
+    gifExport = new GifMaker(this, "general_ellipse_vertical.gif");
     gifExport.setRepeat(0); // make it an "endless" animation
     gifExport.setTransparent(255); // make white the transparent color -- match browser bg color
     gifExport.setDelay(1000/frame_rate);  //12fps in ms
@@ -78,7 +78,7 @@ void draw() {
 
   // Adjust thickness randomly
   if ((rand_size) && (frameCount % randomizationRate == 3)) {
-    thickness = random(1, 10);
+    thickness = random(1, 5);
     strokeWeight(thickness);
   }
 
@@ -126,7 +126,7 @@ void draw() {
   }
   
   if (save_frames == true) {
-    saveFrame("frames/circle_vertical/###.png");
+    saveFrame("frames/general_ellipse_vertical/###.png");
     if (frameCount == num_frames) {
       exit();
     }

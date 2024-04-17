@@ -135,7 +135,7 @@ class IntermediateEvaluations(Callback):
             self.X_test = self.X_test_inputs
         elif self.dataset in ["monkaa", "driving"] and self.model_choice != "multi_channel":
             self.X_test = self.X_test_inputs[-1] # take only the PNG images for MSE calcs and plotting
-        elif self.dataset in ["rolling_square", "rolling_circle", "all_rolling", "ball_collisions", "various"] and self.model_choice != "multi_channel":
+        elif self.dataset in ["rolling_square", "rolling_circle", "all_rolling", "ball_collisions", "general_ellipse_vertical", "general_cross_horizontal", "various"] and self.model_choice != "multi_channel":
             self.X_test = self.X_test_inputs # take only the PNG images for MSE calcs and plotting
             self.Xtc = self.X_test.shape[-1] # X_test_channels        
         elif self.dataset == "monkaa" and self.model_choice == "multi_channel":
@@ -477,7 +477,7 @@ def serialize_dataset(pfm_paths, pgm_paths, png_paths, dataset_name="driving", s
     if dataset_name == "driving":
         temp = np.minimum(length, 200)
     else:    
-        temp = np.minimum(length, 500)
+        temp = np.minimum(length, 1000)
     print(f"Start to load images at {time.perf_counter() - start_time} seconds.")
 
     for j in range(len(pfm_paths)):

@@ -80,7 +80,7 @@ def main(args):
         weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["dataset"]+"_"+args["data_subset"]+"_weights.hdf5")
         # where weights will be saved with results
         results_weights_file = os.path.join(RESULTS_SAVE_DIR, f"tensorflow_weights/para_prednet_"+args["dataset"]+"_"+args["data_subset"]+"_weights.hdf5")
-    elif args["dataset"] in ["ball_collisions", "various"]:
+    elif args["dataset"] in ["ball_collisions", "general_ellipse_vertical", "general_cross_horizontal", "various"]:
         # where weights will be loaded/saved
         weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["dataset"]+"_"+args["data_subset"]+"_weights.hdf5")
         # where weights will be saved with results
@@ -120,7 +120,7 @@ def main(args):
         original_im_shape = (50, 100, 3)
         downscale_factor = args["downscale_factor"]
         im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3) if args["resize_images"] else original_im_shape
-    elif args["dataset"] in ["ball_collisions", "various"]:
+    elif args["dataset"] in ["ball_collisions", "general_ellipse_vertical", "general_cross_horizontal", "various"]:
         original_im_shape = (50, 50, 3)
         downscale_factor = args["downscale_factor"]
         im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3) if args["resize_images"] else original_im_shape
@@ -351,7 +351,7 @@ def main(args):
         outputs = PPN(inputs)
         PPN = keras.Model(inputs=inputs, outputs=outputs)
 
-    elif args["dataset"] in ["rolling_square", "rolling_circle", "all_rolling", "ball_collisions", "various"]:
+    elif args["dataset"] in ["rolling_square", "rolling_circle", "all_rolling", "ball_collisions", "general_ellipse_vertical", "general_cross_horizontal", "various"]:
         # These are animation specific input shapes
         inputs = keras.Input(shape=(nt, im_shape[0], im_shape[1], 3))
         PPN = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])
@@ -438,8 +438,8 @@ if __name__ == "__main__":
     # Structure args
     parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
-    parser.add_argument("--dataset", type=str, default="ball_collisions", help="kitti, driving, monkaa, rolling_square, or rolling_circle")
-    parser.add_argument("--data_subset", type=str, default="two_balls", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
+    parser.add_argument("--dataset", type=str, default="general_ellipse_vertical", help="kitti, driving, monkaa, rolling_square, or rolling_circle")
+    parser.add_argument("--data_subset", type=str, default="general_ellipse_vertical", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
     """
     Avaialble dataset/data_subset arg combinations:
     - kitti / None: Kitti dataset
