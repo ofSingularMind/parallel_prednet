@@ -19,72 +19,72 @@ settings = {'dirs': ''}
 def update_settings(system, dataset, data_subset, subdir):
     global settings
     settings_dict = {}
-    settings_dict[('laptop', 'monkaa')] = {'dirs' : ['/home/evalexii/Documents/Thesis/code/parallel_prednet/monkaa_data/',
+    settings_dict[('laptop', 'monkaa')] = {'dirs' : ['/home/evalexii/Documents/Thesis/code/parallel_prednet/data/monkaa_data/',
                        '/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/monkaa/',
-                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/monkaa_results/{subdir}/',
+                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/results/monkaa_results/{subdir}/',
                        '/home/evalexii/Documents/Thesis/code/parallel_prednet/logs/monkaa/'
                        ]
     }
 
-    settings_dict[('laptop', 'various')] = {'dirs' : [f'/home/evalexii/Documents/Thesis/animations/',
+    settings_dict[('laptop', 'various')] = {'dirs' : [f'/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/',
                        f'/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/various/{data_subset}/',
-                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/various_results/{data_subset}/{subdir}/',
+                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/results/various_results/{data_subset}/{subdir}/',
                        '/home/evalexii/Documents/Thesis/code/parallel_prednet/logs/various/'
                        ]
     }
 
-    settings_dict[('laptop', 'all_rolling')] = {'dirs' : [f'/home/evalexii/Documents/Thesis/animations/',
+    settings_dict[('laptop', 'all_rolling')] = {'dirs' : [f'/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/',
                        f'/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/all_rolling/{data_subset}/',
-                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/all_rolling_results/{data_subset}/{subdir}/',
+                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/results/all_rolling_results/{data_subset}/{subdir}/',
                        '/home/evalexii/Documents/Thesis/code/parallel_prednet/logs/all_rolling/'
                        ]
     }
 
-    settings_dict[('laptop', 'rolling_square')] = {'dirs' : [f'/home/evalexii/Documents/Thesis/animations/rolling_square/frames/{data_subset}/',
+    settings_dict[('laptop', 'rolling_square')] = {'dirs' : [f'/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/rolling_square/frames/{data_subset}/',
                        f'/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/rolling_square/{data_subset}/',
-                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/rolling_square_results/{data_subset}/{subdir}/',
+                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/results/rolling_square_results/{data_subset}/{subdir}/',
                        '/home/evalexii/Documents/Thesis/code/parallel_prednet/logs/rolling_square/'
                        ]
     }
 
-    settings_dict[('laptop', 'rolling_circle')] = {'dirs' : [f'/home/evalexii/Documents/Thesis/animations/rolling_circle/frames/{data_subset}/',
+    settings_dict[('laptop', 'rolling_circle')] = {'dirs' : [f'/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/rolling_circle/frames/{data_subset}/',
                        f'/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/rolling_circle/{data_subset}/',
-                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/rolling_circle_results/{data_subset}/{subdir}/',
+                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/results/rolling_circle_results/{data_subset}/{subdir}/',
                        '/home/evalexii/Documents/Thesis/code/parallel_prednet/logs/rolling_circle/'
                        ]
     }
 
-    settings_dict[('laptop', 'driving')] = {'dirs' : ['/home/evalexii/Documents/Thesis/code/parallel_prednet/driving_data/',
+    settings_dict[('laptop', 'driving')] = {'dirs' : ['/home/evalexii/Documents/Thesis/code/parallel_prednet/data/driving_data/',
                        '/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/driving/',
-                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/driving_results/{subdir}/',
+                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/results/driving_results/{subdir}/',
                        '/home/evalexii/Documents/Thesis/code/parallel_prednet/logs/driving/'
                        ]
     }
 
-    settings_dict[('laptop', 'kitti')] = {'dirs' : ['/home/evalexii/Documents/Thesis/code/parallel_prednet/kitti_data/',
+    settings_dict[('laptop', 'kitti')] = {'dirs' : ['/home/evalexii/Documents/Thesis/code/parallel_prednet/data/kitti_data/',
                        '/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/kitti/',
-                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/kitti_results/{subdir}/',
+                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/results/kitti_results/{subdir}/',
                        '/home/evalexii/Documents/Thesis/code/parallel_prednet/logs/kitti/'
                        ]
     }
 
-    settings_dict[('delftblue', 'monkaa')] = {'dirs' : ['/scratch/aledbetter/parallel_prednet/monkaa_data/',
+    settings_dict[('delftblue', 'monkaa')] = {'dirs' : ['/scratch/aledbetter/parallel_prednet/data/monkaa_data/',
                           '/scratch/aledbetter/parallel_prednet/model_weights/monkaa/',
-                          f'/scratch/aledbetter/parallel_prednet/monkaa_results/{subdir}/',
+                          f'/scratch/aledbetter/parallel_prednet/results/monkaa_results/{subdir}/',
                           '/scratch/aledbetter/parallel_prednet/logs/monkaa/'
                           ]
     }
 
-    settings_dict[('delftblue', 'driving')] = {'dirs' : ['/scratch/aledbetter/parallel_prednet/driving_data/',
+    settings_dict[('delftblue', 'driving')] = {'dirs' : ['/scratch/aledbetter/parallel_prednet/data/driving_data/',
                           '/scratch/aledbetter/parallel_prednet/model_weights/driving/',
-                          f'/scratch/aledbetter/parallel_prednet/driving_results/{subdir}/',
+                          f'/scratch/aledbetter/parallel_prednet/results/driving_results/{subdir}/',
                           '/scratch/aledbetter/parallel_prednet/logs/driving/'
                           ]
     }
 
-    settings_dict[('delftblue', 'kitti')] = {'dirs' : ['/scratch/aledbetter/parallel_prednet/kitti_data/',
+    settings_dict[('delftblue', 'kitti')] = {'dirs' : ['/scratch/aledbetter/parallel_prednet/data/kitti_data/',
                           '/scratch/aledbetter/parallel_prednet/model_weights/kitti/',
-                          f'/scratch/aledbetter/parallel_prednet/kitti_results/{subdir}/',
+                          f'/scratch/aledbetter/parallel_prednet/results/kitti_results/{subdir}/',
                           '/scratch/aledbetter/parallel_prednet/logs/kitti/'
                           ]
     }
@@ -94,9 +94,9 @@ def update_settings(system, dataset, data_subset, subdir):
     else:
         try:
             settings.update(
-                {'dirs' : [f'/home/evalexii/Documents/Thesis/animations/',
+                {'dirs' : [f'/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/',
                        f'/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/{dataset}/{data_subset}/',
-                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/{dataset}_results/{data_subset}/{subdir}/',
+                       f'/home/evalexii/Documents/Thesis/code/parallel_prednet/results/{dataset}_results/{data_subset}/{subdir}/',
                        f'/home/evalexii/Documents/Thesis/code/parallel_prednet/logs/{dataset}/'
                        ]
                 }

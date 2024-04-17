@@ -9,26 +9,18 @@ __pycache__/
 # C extensions
 *.so
 
-# Video and data folders
+# Parallel_prednet folders
 images/
 monkaa_data/
-monkaa_results/
-monkaa_results_archive/
 driving_data/
-driving_results/
-driving_results_archive/
 kitti_data/
-kitti_results/
-kitti_results_archive/
 rolling_square_data/
-rolling_square_results/
-rolling_square_results_archive/
-rolling_circle_results/
-all_rolling_results/
-ball_collisions_results/
-various_results/
-model_weights*/
+results/
+model_weights/
 *.hdf5
+*.png
+*.hkl
+*.gif
 
 # Distribution / packaging
 .Python
