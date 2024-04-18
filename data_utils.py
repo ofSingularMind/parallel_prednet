@@ -477,7 +477,7 @@ def serialize_dataset(pfm_paths, pgm_paths, png_paths, dataset_name="driving", s
     if dataset_name == "driving":
         temp = np.minimum(length, 200)
     else:    
-        temp = np.minimum(length, 1000)
+        temp = np.minimum(length, 5000)
     print(f"Start to load images at {time.perf_counter() - start_time} seconds.")
 
     for j in range(len(pfm_paths)):
@@ -660,7 +660,7 @@ def create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, ou
                 dataset = tf.data.Dataset.from_generator(gen, output_signature=(tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(1), dtype=tf.float32)))
             else:
                 dataset = tf.data.Dataset.from_generator(gen, output_signature=(tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32), tf.TensorSpec(shape=(1), dtype=tf.float32)))
-            dataset = (dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat())
+            # dataset = (dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat())
         else:
             if single_channel:
                 dataset = tf.data.Dataset.from_generator(gen, output_signature=(tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(1), dtype=tf.float32)))

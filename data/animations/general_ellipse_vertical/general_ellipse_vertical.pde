@@ -4,20 +4,27 @@ float posY;
 float theta = 0; // Rotation angle of the ellipse
 float diameter; // diameter of the ellipse
 float thickness = 3; // Thickness of the ellipse
-PVector e_color = new PVector(0, 0, 0); // Color of the ellipse
+color e_color = color(0, 0, 0); // Color of the ellipse
 float speed; // Speed of vertical movement
 int frame_rate = 1000; //<>//
 boolean save_gif = true;
-boolean save_frames = true;
+boolean save_frames = false;
 boolean rand_background = true;
-int num_frames = 1000;
+int num_frames = 150;
 PImage[] images = new PImage[num_frames];
 boolean rand_size = true;
 boolean rand_color = true;
 boolean rand_thickness = true;
 boolean rand_rotation = true;
 boolean rand_occlusions = true;
-int randomizationRate = num_frames / 20;
+int num_occlusions = 6;
+float[] occlusionX = new float[num_occlusions];
+float[] occlusionY = new float[num_occlusions];
+float[] occlusionWidth = new float[num_occlusions];
+float[] occlusionHeight = new float[num_occlusions];
+float[] occ_rot = new float[num_occlusions];
+color[] occ_colors = new color[num_occlusions];
+int randomizationRate = 40;
 int h = 50;
 int w = 50;
 
@@ -32,11 +39,11 @@ public void settings() {
 void setup() {
   //size(w, h); // Set the size of the window
   
-  diameter = height / 4; // Initial length of the ellipse
-  speed = width / 8; // Initial speed of vertical movement
+  diameter = height / 3; // Initial length of the ellipse
+  speed = width / 10; // Initial speed of vertical movement
   posX = width / 2; // Initial X position
-  posY = height / 2; // Initial Y position
-  fill(e_color.x, e_color.y, e_color.z); // Set the inital fill color to black
+  posY = 0; // Initial Y position
+  fill(e_color); // Set the inital fill color to black
   strokeWeight(thickness);  // Set the initial stroke thickness
   rectMode(CENTER);
   
@@ -62,29 +69,29 @@ void draw() {
 
   // Adjust size randomly
   if ((rand_size) && (frameCount % randomizationRate == 0)) {
-    diameter = random(height / 6, height / 1.5);
+    diameter = random(height / 3, height / 1.2);
   }
 
   // Adjust color randomly
-  if ((rand_color) && (frameCount % randomizationRate == 1)) {
-    e_color = new PVector(random(255), random(255), random(255));
-    fill(e_color.x, e_color.y, e_color.z);
+  if ((rand_color) && (frameCount % randomizationRate == 0)) {
+    e_color = color(random(255), random(255), random(255));
+    fill(e_color);
   }
 
   // Adjust rotation randomly
-  if ((rand_size) && (frameCount % randomizationRate == 2)) {
+  if ((rand_rotation) && (frameCount % randomizationRate == 0)) {
     theta = random(0, 2 * PI);
   }
 
   // Adjust thickness randomly
-  if ((rand_size) && (frameCount % randomizationRate == 3)) {
+  if ((rand_thickness) && (frameCount % randomizationRate == 0)) {
     thickness = random(1, 5);
     strokeWeight(thickness);
   }
 
   // Update position
   posY += speed;
-  if (posY - diameter / 2 > width) { // Reset position when it goes beyond the screen
+  if (posY - diameter / 2 > height) { // Reset position when it goes beyond the screen
     posY = -diameter / 2;
   }
 
@@ -95,25 +102,37 @@ void draw() {
   // Draw the circle
   ellipse(0, 0, diameter, diameter/2);
 
-  // Draw the randomly rotated and sized rectangular occlusions
-  if ((rand_occlusions)) {
-    for (int i = 0; i < 3; i++) {
-      float occlusionX = random(-diameter/2, diameter/2);
-      float occlusionY = random(-diameter/2, diameter/2);
-      float occlusionWidth = random(0, diameter/2);
-      float occlusionHeight = random(0, diameter/2);
+  popMatrix(); // Restore the original drawing style settings and transformations
+
+  // Draw the randomly rotated and sized rectangular occlusions, static in the scene
+  if ((rand_occlusions) && (frameCount == 1)) {
+    float sw = 1;
+      for (int i = 0; i < num_occlusions; i++) {
+        occlusionX[i] = (i%(num_occlusions/2))*width/4-width/4;//random(-width/2, width/2);
+        if (i == num_occlusions/2) {sw = -1;}
+        occlusionY[i] = sw*occlusionX[i];//random(-height/2, height/2);
+        occlusionWidth[i] = width/14;//random(width/16, width/8);
+        occlusionHeight[i] = height/2;//random(height/6, height/2);
+        occ_colors[i] = color(random(255), random(255), random(255));
+        if (i < num_occlusions/2) {occ_rot[i] = PI/2;} else {occ_rot[i] = 0;}//(i%(num_occlusions/2))*PI/3-PI/3;//random(PI/5, PI/3);
+      }
+  }
+
+  if (rand_occlusions) {
+    for (int i = 0; i < num_occlusions; i++) {
       pushMatrix();
-      rotate(random(0, 2 * PI));
-      fill(random(255), random(255), random(255));
+      translate(width/2, height/2);
+      rotate(occ_rot[i]);
+      occ_colors[i] = color(random(255), random(255), random(255));
+      fill(occ_colors[i]);
       strokeWeight(1);
-      rect(occlusionX, occlusionY, occlusionWidth, occlusionHeight);
+      rect(occlusionX[i], occlusionY[i], occlusionWidth[i], occlusionHeight[i]);
       popMatrix();
     }
-    fill(e_color.x, e_color.y, e_color.z); // Reset fill color
+    fill(e_color); // Reset fill color
     strokeWeight(thickness);  // Reset stroke thickness
   }
 
-  popMatrix(); // Restore the original drawing style settings and transformations
 
   
   if (save_gif == true) {

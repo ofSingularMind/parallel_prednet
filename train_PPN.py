@@ -252,8 +252,8 @@ def main(args):
 
     elif args["dataset"] == "various":
         dataset_names = [
-            "circle_vertical", 
-            "cross_horizontal"
+            "general_ellipse_vertical", 
+            "general_cross_horizontal"
         ]
 
         # print dataset names to job details file
@@ -418,7 +418,7 @@ if __name__ == "__main__":
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
     parser.add_argument("--nb_epoch", type=int, default=250, help="number of epochs")
     parser.add_argument("--batch_size", type=int, default=2, help="batch size")
-    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 6, 12, 24], help="output channels")
+    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels")
     parser.add_argument("--sequences_per_epoch_train", type=int, default=200, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=None, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
     parser.add_argument("--num_P_CNN", type=int, default=1, help="number of serial Prediction convolutions")
@@ -427,19 +427,19 @@ if __name__ == "__main__":
     parser.add_argument("--pan_hierarchical", type=bool, default=False, help="utilize Pan-Hierarchical Representation")
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor for images prior to training")
     parser.add_argument("--resize_images", type=bool, default=False, help="whether or not to downscale images prior to training")
-    parser.add_argument("--training_split", type=float, default=0.7, help="proportion of data for training (only for monkaa)")
+    parser.add_argument("--training_split", type=float, default=0.95, help="proportion of data for training (only for monkaa)")
 
     # Training args
     parser.add_argument("--seed", type=int, default=666, help="random seed")
     parser.add_argument("--results_subdir", type=str, default=f"{str(datetime.now())}", help="Specify results directory")
     parser.add_argument("--restart_training", type=bool, default=False, help="whether or not to delete weights and restart")
-    parser.add_argument("--learning_rates", nargs="+", type=int, default=[5e-4, 5e-4, 1e-4, 5e-5], help="output channels")
+    parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-4, 1e-4, 1e-4, 5e-5], help="output channels")
 
     # Structure args
     parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
-    parser.add_argument("--dataset", type=str, default="general_ellipse_vertical", help="kitti, driving, monkaa, rolling_square, or rolling_circle")
-    parser.add_argument("--data_subset", type=str, default="general_ellipse_vertical", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
+    parser.add_argument("--dataset", type=str, default="various", help="kitti, driving, monkaa, rolling_square, or rolling_circle")
+    parser.add_argument("--data_subset", type=str, default="gen_ellipseV_crossH", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
     """
     Avaialble dataset/data_subset arg combinations:
     - kitti / None: Kitti dataset
