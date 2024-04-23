@@ -104,4 +104,35 @@ class PanRepresentation(keras.layers.Layer):
     def clear_states(self):
         self.states['P'] = None
 
-    
+class MotionMaskPrediction(keras.layers.Layer):
+    def __init__(self, output_channels, num_P_CNN, layer_num, activation='relu', *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.output_channels = output_channels
+        self.num_P_CNN = num_P_CNN
+        self.conv_layers = []
+        for i in range(num_P_CNN):
+            self.conv_layers.append(layers.Conv2D(self.output_channels, (3, 3), padding="same", activation=activation, name=f"MotionMask_Prediction_Conv{i}_Layer{layer_num}"))
+
+    def call(self, inputs):
+        out = inputs
+        for i in range(self.num_P_CNN):
+            out = self.conv_layers[i](out)
+        approximate_mask = out # cv2.inRange(frame, (minB, minG, minR), (maxB, maxG, maxR))
+        return approximate_mask
+
+class FlowNetSimple(keras.layers.Layer):
+    def __init__(self, layer_num, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.conv_c1 = layers.Conv2D(64, (7, 7), padding='same', activation='relu', name=f"FlowNetSimple_Conv_c1_Layer{layer_num}")
+        self.conv_c2 = layers.Conv2D(128, (5, 5), padding='same', activation='relu', name=f"FlowNetSimple_Conv_c2_Layer{layer_num}")
+        self.conv_e1 = layers.Conv2D(64, (7, 7), padding='same', activation='relu', name=f"FlowNetSimple_Conv_e1_Layer{layer_num}")
+        self.conv_f1 = layers.Conv2D(2, (5, 5), padding='same', activation='linear', name=f"FlowNetSimple_Conv_f1_Layer{layer_num}")
+
+    def call(self, inputs):
+        out = inputs
+        out = self.conv_c1(out)
+        out = self.conv_c2(out)
+        out = layers.UpSampling2D()(out)
+        out = self.conv_e1(out)
+        flow = self.conv_f1(out)
+        return flow

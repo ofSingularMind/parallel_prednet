@@ -10,7 +10,7 @@ def main(args):
     import tensorflow as tf
     import shutil
     import keras
-    from data_utils import SequenceGenerator, IntermediateEvaluations, create_dataset_from_serialized_generator, config_gpus 
+    from data_utils import SequenceGenerator, IntermediateEvaluations, create_dataset_from_generator, create_dataset_from_serialized_generator, config_gpus 
     from keras.callbacks import LearningRateScheduler, ModelCheckpoint, TensorBoard
 
     # PICK MODEL
@@ -121,7 +121,7 @@ def main(args):
         downscale_factor = args["downscale_factor"]
         im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3) if args["resize_images"] else original_im_shape
     elif args["dataset"] in ["ball_collisions", "general_ellipse_vertical", "general_cross_horizontal", "various"]:
-        original_im_shape = (50, 50, 3)
+        original_im_shape = (args["various_im_shape"][0], args["various_im_shape"][1], 3)
         downscale_factor = args["downscale_factor"]
         im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3) if args["resize_images"] else original_im_shape
 
@@ -160,7 +160,7 @@ def main(args):
         train_split = 0.7
         val_split = (1 - train_split) / 2
         #  Create and split dataset
-        datasets, length = create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode="Error", im_height=im_shape[0], im_width=im_shape[1],
+        datasets, length = create_dataset_from_serialized_generator(data_dirs, pfm_paths, pgm_paths, png_paths, output_mode="Error", im_height=im_shape[0], im_width=im_shape[1],
                                                                     batch_size=batch_size, nt=nt, train_split=train_split, reserialize=args["reserialize_dataset"], shuffle=True, resize=True)
         train_dataset, val_dataset, test_dataset = datasets
 
@@ -182,7 +182,7 @@ def main(args):
         train_split = args["training_split"]
         val_split = (1 - train_split) / 2
         #  Create and split dataset
-        datasets, length = create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name="driving", im_height=im_shape[0], im_width=im_shape[1],
+        datasets, length = create_dataset_from_serialized_generator(data_dirs, pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name="driving", im_height=im_shape[0], im_width=im_shape[1],
                                                                     batch_size=batch_size, nt=nt, train_split=train_split, reserialize=args["reserialize_dataset"], shuffle=True, resize=args["resize_images"])
         train_dataset, val_dataset, test_dataset = datasets
 
@@ -202,7 +202,7 @@ def main(args):
         train_split = args["training_split"]
         val_split = (1 - train_split) / 2
         #  Create and split dataset
-        datasets, length = create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name=args["data_subset"], im_height=im_shape[0], im_width=im_shape[1],
+        datasets, length = create_dataset_from_serialized_generator(data_dirs, pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name=args["data_subset"], im_height=im_shape[0], im_width=im_shape[1],
                                                                     batch_size=batch_size, nt=nt, train_split=train_split, reserialize=args["reserialize_dataset"], shuffle=False, resize=args["resize_images"], single_channel=False)
         train_dataset, val_dataset, test_dataset = datasets
 
@@ -231,7 +231,7 @@ def main(args):
         full_train_dataset, full_val_dataset, full_test_dataset = None, None, None
         for png_paths, dataset_name in zip(list_png_paths, dataset_names):
             #  Create and split dataset
-            datasets, ds_len = create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name=dataset_name, im_height=im_shape[0], im_width=im_shape[1],
+            datasets, ds_len = create_dataset_from_serialized_generator(data_dirs, pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name=dataset_name, im_height=im_shape[0], im_width=im_shape[1],
                                                                         batch_size=batch_size, nt=nt, train_split=train_split, reserialize=args["reserialize_dataset"], shuffle=True, resize=args["resize_images"], single_channel=False)
             train_dataset, val_dataset, test_dataset = datasets
             full_train_dataset = train_dataset if full_train_dataset is None else full_train_dataset.concatenate(train_dataset)
@@ -252,8 +252,12 @@ def main(args):
 
     elif args["dataset"] == "various":
         dataset_names = [
-            "general_ellipse_vertical", 
-            "general_cross_horizontal"
+            "general_shape_strafing", 
+            "general_shape_strafing"
+        ]
+        data_subset_names = [
+            "general_cross_R",
+            "general_ellipse_D",
         ]
 
         # print dataset names to job details file
@@ -264,9 +268,9 @@ def main(args):
         pfm_paths = []
         pgm_paths = []
         list_png_paths = []
-        for ds_name in dataset_names:
-            assert os.path.exists(DATA_DIR + f"{ds_name}/frames/{ds_name}/" + "/001.png"), "Dataset not found"
-            list_png_paths.append([DATA_DIR + f"{ds_name}/frames/{ds_name}/"]) # 3 channels (RGB)
+        for ds_name, dss_name in zip(dataset_names, data_subset_names):
+            assert os.path.exists(DATA_DIR + f"{ds_name}/frames/{dss_name}/" + "/001.png"), "Dataset not found"
+            list_png_paths.append([DATA_DIR + f"{ds_name}/frames/{dss_name}/"]) # 3 channels (RGB)
 
         train_split = args["training_split"]
         val_split = (1 - train_split) / 2
@@ -275,7 +279,7 @@ def main(args):
         full_train_dataset, full_val_dataset, full_test_dataset = None, None, None
         for png_paths, dataset_name in zip(list_png_paths, dataset_names):
             #  Create and split dataset
-            datasets, ds_len = create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name=dataset_name, im_height=im_shape[0], im_width=im_shape[1],
+            datasets, ds_len = create_dataset_from_generator(data_dirs, pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name=dataset_name, im_height=im_shape[0], im_width=im_shape[1],
                                                                         batch_size=batch_size, nt=nt, train_split=train_split, reserialize=args["reserialize_dataset"], shuffle=True, resize=args["resize_images"], single_channel=False)
             train_dataset, val_dataset, test_dataset = datasets
             full_train_dataset = train_dataset if full_train_dataset is None else full_train_dataset.concatenate(train_dataset)
@@ -288,9 +292,9 @@ def main(args):
         val_size = int(val_split * length)
         test_size = length-train_size-val_size
 
-        full_train_dataset = full_train_dataset.shuffle(train_size).batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat()
-        full_val_dataset = full_val_dataset.shuffle(val_size).batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat()
-        full_test_dataset = full_test_dataset.shuffle(test_size).batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat()
+        full_train_dataset = full_train_dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat() # .shuffle(train_size)
+        full_val_dataset = full_val_dataset.batch(np.minimum(batch_size,4)).prefetch(tf.data.experimental.AUTOTUNE).repeat() # .shuffle(val_size)
+        full_test_dataset = full_test_dataset.batch(np.minimum(batch_size,4)).prefetch(tf.data.experimental.AUTOTUNE).repeat() # .shuffle(test_size)
 
         train_dataset, val_dataset, test_dataset = full_train_dataset, full_val_dataset, full_test_dataset
 
@@ -306,7 +310,7 @@ def main(args):
         train_split = args["training_split"]
         val_split = (1 - train_split) / 2
         #  Create and split dataset
-        datasets, length = create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name=args["data_subset"], im_height=im_shape[0], im_width=im_shape[1],
+        datasets, length = create_dataset_from_serialized_generator(data_dirs, pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name=args["data_subset"], im_height=im_shape[0], im_width=im_shape[1],
                                                                     batch_size=batch_size, nt=nt, train_split=train_split, reserialize=args["reserialize_dataset"], shuffle=False, resize=args["resize_images"], single_channel=False)
         train_dataset, val_dataset, test_dataset = datasets
 
@@ -382,14 +386,14 @@ def main(args):
 
     # start with lr of 0.001 and then drop to 0.0001 after 75 epochs
     def lr_schedule(epoch): 
-        if epoch <= 50:
+        if epoch <= 5:
             return args["learning_rates"][0] 
-        # elif 5 < epoch <= 10:
-        #     return args["learning_rates"][1] 
-        # elif 10 < epoch <= 20:
-        #     return args["learning_rates"][2]
+        elif 5 < epoch <= 50:
+            return args["learning_rates"][1] 
+        elif 50 < epoch <= 100:
+            return args["learning_rates"][2]
         else:
-            return args["learning_rates"][1]
+            return args["learning_rates"][3]
 
     callbacks = [LearningRateScheduler(lr_schedule)]
     if save_model:
@@ -397,7 +401,7 @@ def main(args):
         callbacks.append(ModelCheckpoint(filepath=weights_file, monitor="val_loss", save_best_only=True, save_weights_only=True))
         callbacks.append(ModelCheckpoint(filepath=results_weights_file, monitor="val_loss", save_best_only=True, save_weights_only=True))
     if plot_intermediate:
-            callbacks.append(IntermediateEvaluations(test_dataset, test_size, batch_size=batch_size, nt=nt, output_channels=output_channels, dataset=args["dataset"], model_choice=args["model_choice"]))
+            callbacks.append(IntermediateEvaluations(data_dirs, test_dataset, test_size, batch_size=batch_size, nt=nt, output_channels=output_channels, dataset=args["dataset"], model_choice=args["model_choice"]))
     if tensorboard:
         callbacks.append(TensorBoard(log_dir=LOG_DIR, histogram_freq=1, write_graph=True, write_images=False))
 
@@ -417,9 +421,14 @@ if __name__ == "__main__":
     # Tuning args
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
     parser.add_argument("--nb_epoch", type=int, default=250, help="number of epochs")
-    parser.add_argument("--batch_size", type=int, default=2, help="batch size")
+    parser.add_argument("--batch_size", type=int, default=30, help="batch size")
+    """
+    unser bs 20 x 25 steps = 42 sec -> 11.9 sequences/sec
+    unser bs 30 x 10 steps = 24 sec -> 12.5 sequences/sec ***
+    ser bs 4 x 25 steps = 13 sec -> 6.76 sequences/sec
+    """
     parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels")
-    parser.add_argument("--sequences_per_epoch_train", type=int, default=200, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_train", type=int, default=3, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=None, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
     parser.add_argument("--num_P_CNN", type=int, default=1, help="number of serial Prediction convolutions")
     parser.add_argument("--num_R_CLSTM", type=int, default=1, help="number of hierarchical Representation CLSTMs")
@@ -427,19 +436,22 @@ if __name__ == "__main__":
     parser.add_argument("--pan_hierarchical", type=bool, default=False, help="utilize Pan-Hierarchical Representation")
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor for images prior to training")
     parser.add_argument("--resize_images", type=bool, default=False, help="whether or not to downscale images prior to training")
-    parser.add_argument("--training_split", type=float, default=0.95, help="proportion of data for training (only for monkaa)")
+    parser.add_argument("--training_split", type=float, default=0.99, help="proportion of data for training (only for monkaa)")
 
     # Training args
     parser.add_argument("--seed", type=int, default=666, help="random seed")
     parser.add_argument("--results_subdir", type=str, default=f"{str(datetime.now())}", help="Specify results directory")
-    parser.add_argument("--restart_training", type=bool, default=False, help="whether or not to delete weights and restart")
-    parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-4, 1e-4, 1e-4, 5e-5], help="output channels")
+    parser.add_argument("--restart_training", type=bool, default=True, help="whether or not to delete weights and restart")
+    parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-3, 5e-4, 2e-4, 1e-4], help="output channels")
+    parser.add_argument("--reserialize_dataset", type=bool, default=True, help="reserialize dataset")
+    parser.add_argument("--output_mode", type=str, default="Error", help="Error, Predictions, or Error_Images_and_Prediction. Only trains on Error.")
 
     # Structure args
     parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
     parser.add_argument("--dataset", type=str, default="various", help="kitti, driving, monkaa, rolling_square, or rolling_circle")
     parser.add_argument("--data_subset", type=str, default="gen_ellipseV_crossH", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
+    parser.add_argument("--various_im_shape", nargs="+", type=int, default=[50, 50], help="output channels")
     """
     Avaialble dataset/data_subset arg combinations:
     - kitti / None: Kitti dataset
@@ -454,12 +466,10 @@ if __name__ == "__main__":
     - ball_collisions / two_balls: Two balls colliding animation
     - various / *: Specify within dataset-creation block which datasets to use. arg["data_subset"] can provide descriptive name for results and weights
     """
-    parser.add_argument("--reserialize_dataset", type=bool, default=True, help="reserialize dataset")
-    parser.add_argument("--output_mode", type=str, default="Error", help="Error, Predictions, or Error_Images_and_Prediction. Only trains on Error.")
-    
     args = parser.parse_args().__dict__
 
     update_settings(args["system"], args["dataset"], args["data_subset"], args["results_subdir"])
     DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = get_settings()["dirs"]
+    data_dirs = [DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR]
     
     main(args)

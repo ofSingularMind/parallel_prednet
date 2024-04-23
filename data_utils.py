@@ -31,8 +31,9 @@ import numpy as np
 import hickle as hkl
 from config import update_settings, get_settings
 import flow_vis
+import re
 
-DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = get_settings()["dirs"]
+# DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = get_settings()["dirs"]
 
 
 # Data generator that creates sequences for input into PredNet.
@@ -113,10 +114,12 @@ class SequenceGenerator(Iterator):
 
 
 class IntermediateEvaluations(Callback):
-    def __init__(self, test_dataset, length, batch_size=4, nt=10, output_channels=[3, 48, 96, 192], dataset="kitti", model_choice="baseline"):
+    def __init__(self, data_dirs, test_dataset, length, batch_size=4, nt=10, output_channels=[3, 48, 96, 192], dataset="kitti", model_choice="baseline"):
+        self.DATA_DIR, self.WEIGHTS_DIR, self.RESULTS_SAVE_DIR, self.LOG_DIR = data_dirs
         super(IntermediateEvaluations, self).__init__()
         self.test_dataset = test_dataset
         self.dataset_iterator = iter(self.test_dataset)
+        batch_size = np.minimum(batch_size, 4)
         self.n_plot = batch_size  # 40
         self.batch_size = batch_size
         self.nt = nt
@@ -163,8 +166,8 @@ class IntermediateEvaluations(Callback):
                     self.X_test[b, t, ..., 1:4] = flow_vis.flow_to_color(self.X_test[b, t, ..., 1:3], convert_to_bgr=False).astype(np.float32) // 255.0
             # self.X_test_mot = self.X_test[..., 6]
 
-        if not os.path.exists(RESULTS_SAVE_DIR):
-            os.makedirs(RESULTS_SAVE_DIR, exist_ok=True)
+        if not os.path.exists(self.RESULTS_SAVE_DIR):
+            os.makedirs(self.RESULTS_SAVE_DIR, exist_ok=True)
 
     def on_epoch_end(self, epoch, logs=None):
         if epoch % 1 == 0 or epoch == 1:
@@ -212,7 +215,7 @@ class IntermediateEvaluations(Callback):
         # look at all timesteps except the first
         mse_model = np.mean((self.X_test[:, 1:, ..., -self.Xtc:] - X_hat[:, 1:, ..., -self.Xtc:]) ** 2)
         mse_prev = np.mean((self.X_test[:, :-1, ..., -self.Xtc:] - self.X_test[:, 1:, ..., -self.Xtc:]) ** 2)
-        f = open(RESULTS_SAVE_DIR + "training_scores.txt", "a+")
+        f = open(self.RESULTS_SAVE_DIR + "training_scores.txt", "a+")
         f.write("======================= %i : Epoch\n" % epoch)
         f.write("%f : Model MSE\n" % mse_model)
         f.write("%f : Previous Frame MSE\n" % mse_prev)
@@ -230,7 +233,7 @@ class IntermediateEvaluations(Callback):
             gs = gridspec.GridSpec(7, self.plot_nt) # 13 for all modalities
             plt.figure(figsize=(3 * self.plot_nt, 20 * aspect_ratio), layout="constrained")
         gs.update(wspace=0.0, hspace=0.0)
-        plot_save_dir = os.path.join(RESULTS_SAVE_DIR, "training_plots/")
+        plot_save_dir = os.path.join(self.RESULTS_SAVE_DIR, "training_plots/")
         if not os.path.exists(plot_save_dir):
             os.makedirs(plot_save_dir, exist_ok=True)
         plot_idx = np.random.permutation(self.X_test.shape[0])[: self.n_plot]
@@ -443,11 +446,25 @@ def readPFM(file):
     return data
 
 
+# def sort_files_by_name(files):
+#     return sorted(files, key=lambda x: os.path.basename(x))
+
 def sort_files_by_name(files):
-    return sorted(files, key=lambda x: os.path.basename(x))
+    return sorted(files, key=lambda x: int(os.path.basename(x).split('.')[0]))
+
+# def sort_files_by_name(files):
+#     def extract_number(filename):
+#         # Regular expression to find one or more digits
+#         match = re.search(r'\d+', os.path.basename(filename))
+#         if match:
+#             return int(match.group()) 
+#         else: raise ValueError(f"Could not extract number from {filename}")
+
+#     return sorted(files, key=extract_number)
 
 
-def serialize_dataset(pfm_paths, pgm_paths, png_paths, dataset_name="driving", start_time=time.perf_counter(), single_channel=False):
+def serialize_dataset(data_dirs, pfm_paths, pgm_paths, png_paths, dataset_name="driving", test_data=False, start_time=time.perf_counter(), single_channel=False):
+    DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = data_dirs
     print(f"Start to serialize at {time.perf_counter() - start_time} seconds.")
     pfm_sources = []
     pgm_sources = []
@@ -459,6 +476,10 @@ def serialize_dataset(pfm_paths, pgm_paths, png_paths, dataset_name="driving", s
         pgm_sources += [sort_files_by_name(glob.glob(pgm_path + "/*.pgm"))]
     for png_path in png_paths:
         png_sources += [sort_files_by_name(glob.glob(png_path + "/*.png"))]
+
+    # with open("/home/evalexii/Documents/Thesis/code/parallel_prednet/filenames.txt", "w+") as f:
+    #     for str in png_sources[0]:
+    #         f.write(str + "\n")
 
     if single_channel:
         assert len(png_sources) > 0, "Single channel requires at least one PNG source."
@@ -477,7 +498,7 @@ def serialize_dataset(pfm_paths, pgm_paths, png_paths, dataset_name="driving", s
     if dataset_name == "driving":
         temp = np.minimum(length, 200)
     else:    
-        temp = np.minimum(length, 5000)
+        temp = np.minimum(length, 10000)
     print(f"Start to load images at {time.perf_counter() - start_time} seconds.")
 
     for j in range(len(pfm_paths)):
@@ -529,6 +550,15 @@ def serialize_dataset(pfm_paths, pgm_paths, png_paths, dataset_name="driving", s
         dataset[j + len(pfm_paths) + len(pgm_paths)] = np.array(l)
         print(f"PNG source {j+1} of {len(png_paths)} done at {time.perf_counter() - start_time} seconds.")
 
+        # idx = 100
+        # # plot the next ten frames starting from idx
+        # fig, axs = plt.subplots(5, 10, figsize=(20, 4))
+        # for i in range(5):
+        #     for j in range(10):
+        #         axs[i, j].axis("off")
+        #         axs[i, j].imshow(np.array(l)[idx+j+i*10])
+        # plt.show()
+
     # # normalize all image data to float between 0..1
     # for source in dataset:
     #     s_min = np.min(source)
@@ -544,7 +574,10 @@ def serialize_dataset(pfm_paths, pgm_paths, png_paths, dataset_name="driving", s
     if not os.path.exists(DATA_DIR):
         os.makedirs(DATA_DIR, exist_ok=True)
     # where weights are loaded prior to training
-    dataset_file = os.path.join(DATA_DIR, f"{dataset_name}_train.hkl")
+    dataset_file = os.path.join(DATA_DIR, f"{dataset_name}_train.hkl") if not test_data else os.path.join(DATA_DIR, f"{dataset_name}_test.hkl")
+
+    if os.path.exists(dataset_file):
+        os.remove(dataset_file)
 
     hkl.dump(dataset, dataset_file, mode="w")
     print(f"HKL dump done at {time.perf_counter() - start_time} seconds.")
@@ -596,11 +629,102 @@ def create_dataset_from_generator(pfm_paths, pgm_paths, png_paths, im_height=540
 
     return dataset, length
 
+def create_dataset_from_generator(data_dirs, pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name="driving", im_height=540, im_width=960, batch_size=4, nt=10, train_split=0.7, reserialize=False, shuffle=True, resize=False, single_channel=False):
+    DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = data_dirs
+    start_time = time.perf_counter()
+    print(f"Begin tf.data.Dataset creation at {time.perf_counter() - start_time} seconds.")
 
-def create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name="driving", im_height=540, im_width=960, batch_size=4, nt=10, train_split=0.7, reserialize=False, shuffle=True, resize=False, single_channel=False):
+    num_pfm_paths = len(pfm_paths)
+    num_pgm_paths = len(pgm_paths)
+    num_png_paths = len(png_paths)
+    num_total_paths = num_pfm_paths + num_pgm_paths + num_png_paths
+
+    pfm_sources = []
+    pgm_sources = []
+    png_sources = []
+
+    for pfm_path in pfm_paths:
+        pfm_sources += [sort_files_by_name(glob.glob(pfm_path + "/*.pfm"))]
+    for pgm_path in pgm_paths:
+        pgm_sources += [sort_files_by_name(glob.glob(pgm_path + "/*.pgm"))]
+    for png_path in png_paths:
+        png_sources += [sort_files_by_name(glob.glob(png_path + "/*.png"))]
+
+    all_files = np.array(list(zip(*pfm_sources, *pgm_sources, *png_sources)))
+    num_samples = all_files.shape[0]
+    assert (nt <= all_files.shape[0]), "nt must be less than or equal to the number of files in the dataset"
+    assert all([all_files[:,i].shape[0] == num_samples for i in range(num_total_paths)]), "All sources must have the same number of samples"
+
+    # list of numpy arrays, one for each source
+    # all_files = hkl.load(os.path.join(DATA_DIR, f"{dataset_name}_train.hkl"))
+
+    # Get the length of the dataset (number of unique sequences, nus)
+    nus = num_samples + 1 - nt
+    length = nus
+    train_samples = int(train_split * nus)
+    val_samples = int((1 - train_split) / 2 * nus)
+    test_samples = int((1 - train_split) / 2 * nus)
+    all_details = [(0, train_samples, train_samples), 
+                   (train_samples, train_samples + val_samples, val_samples), 
+                   (train_samples + val_samples, train_samples + val_samples + test_samples, test_samples)]
+
+    def create_generator(details, shuffle):
+        def generator():
+            start, stop, num_samples = details
+            iterator = (random.sample(range(start, stop), num_samples) if shuffle else range(num_samples + 1 - nt))
+            for it, i in enumerate(iterator):
+                nt_outs = []
+                for j in range(num_pfm_paths):
+                    nt_outs.append([readPFM(all_files[i + k, j]) for k in range(nt)])
+                for j in range(num_pgm_paths):
+                    nt_outs.append([np.array(Image.open(all_files[i + k, j + num_pfm_paths])) / 255.0 for k in range(nt)])
+                for j in range(num_png_paths):
+                    nt_outs.append([np.array(Image.open(all_files[i + k, j + num_pfm_paths + num_pgm_paths])) / 255.0 for k in range(nt)])
+
+                batch_x = tuple(nt_outs) if len(nt_outs) > 1 else tuple(nt_outs)[0] 
+                if output_mode == "Error":
+                    batch_y = [0.0]
+                    yield (batch_x, batch_y)
+                elif output_mode == "Prediction":
+                    raise NotImplementedError
+                    yield (batch_x, batch_x)
+
+        return generator
+
+    datasets = []
+    for details in all_details:
+        gen = create_generator(details, shuffle)
+        if dataset_name == "monkaa":
+            dataset = tf.data.Dataset.from_generator(gen, output_signature=((tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32)), tf.TensorSpec(shape=(1), dtype=tf.float32)))
+        elif dataset_name == "driving":
+            dataset = tf.data.Dataset.from_generator(gen, output_signature=((tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32)), tf.TensorSpec(shape=(1), dtype=tf.float32)))
+        elif dataset_name not in ["all_rolling", "various"]:
+            if single_channel:
+                dataset = tf.data.Dataset.from_generator(gen, output_signature=(tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(1), dtype=tf.float32)))
+            else:
+                dataset = tf.data.Dataset.from_generator(gen, output_signature=(tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32), tf.TensorSpec(shape=(1), dtype=tf.float32)))
+            # dataset = (dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat())
+        else:
+            if single_channel:
+                dataset = tf.data.Dataset.from_generator(gen, output_signature=(tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(1), dtype=tf.float32)))
+            else:
+                dataset = tf.data.Dataset.from_generator(gen, output_signature=(tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32), tf.TensorSpec(shape=(1), dtype=tf.float32)))
+        # Batch and prefetch the dataset, and ensure infinite dataset
+        # if shuffle: dataset = dataset.shuffle(dataset.cardinality(), reshuffle_each_iteration=True)
+        # dataset = (dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat())
+        datasets.append(dataset)
+
+    print(f"{len(datasets)} datasets created.")
+    print(f"End tf.data.Dataset creation at {time.perf_counter() - start_time} seconds.")
+
+    return datasets, length
+
+
+def create_dataset_from_serialized_generator(data_dirs, pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name="driving", im_height=540, im_width=960, batch_size=4, nt=10, train_split=0.7, reserialize=False, shuffle=True, resize=False, single_channel=False):
+    DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = data_dirs
     start_time = time.perf_counter()
     if reserialize:
-        serialize_dataset(pfm_paths, pgm_paths, png_paths, dataset_name=dataset_name, start_time=start_time, single_channel=single_channel)
+        serialize_dataset(data_dirs, pfm_paths, pgm_paths, png_paths, dataset_name=dataset_name, start_time=start_time, single_channel=single_channel)
         print("Reserialized dataset.")
     else:
         print("Using previously serialized dataset.")

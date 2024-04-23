@@ -5,7 +5,7 @@ import tensorflow as tf
 import numpy as np
 import os
 import warnings
-from PPN_models.PPN_Common import Target, Prediction, Error, Representation, PanRepresentation
+from PPN_models.PPN_Common import Target, Prediction, Error, Representation, PanRepresentation, MotionMaskPrediction
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -28,9 +28,10 @@ class PredLayer(keras.layers.Layer):
         self.bottom_layer = bottom_layer
         self.top_layer = top_layer
         # R = Representation, P = Prediction, T = Target, E = Error, and P == A_hat and T == A
-        self.states = {"R": None, "P": None, "T": None, "E": None, "TD_inp": None, "L_inp": None}
+        self.states = {"R": None, "P": None, "PM": None, "T": None, "E": None, "TD_inp": None, "L_inp": None}
         self.representation = Representation(output_channels, num_R_CLSTM, layer_num=self.layer_num, name=f"Representation_Layer{self.layer_num}")
         self.prediction = Prediction(output_channels, num_P_CNN, layer_num=self.layer_num, name=f"Prediction_Layer{self.layer_num}")
+        # self.predicted_motion_mask = MotionMaskPrediction(output_channels, layer_num=self.layer_num, name=f"MotionMaskPrediction_Layer{self.layer_num}")
         if not self.bottom_layer:
             self.target = Target(output_channels, layer_num=self.layer_num, name=f"Target_Layer{self.layer_num}")
         self.error = Error(layer_num=self.layer_num, name=f"Error_Layer{self.layer_num}")
@@ -39,6 +40,7 @@ class PredLayer(keras.layers.Layer):
     def initialize_states(self, batch_size):
         # Initialize internal layer states
         self.states["R"] = tf.zeros((batch_size, self.im_height, self.im_width, self.num_R_CLSTM * self.output_channels))
+        self.states["P_M"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
         self.states["P"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
         self.states["T"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
         self.states["E"] = tf.zeros((batch_size, self.im_height, self.im_width, 2 * self.output_channels)) # double for the pos/neg concatenated error
@@ -52,6 +54,7 @@ class PredLayer(keras.layers.Layer):
         # Clear internal layer states
         self.states["R"] = None
         self.states["P"] = None
+        self.states["P_M"] = None
         self.states["T"] = None
         self.states["E"] = None
         
@@ -90,6 +93,8 @@ class PredLayer(keras.layers.Layer):
 
             # FORM PREDICTION(S)
             self.states["P"] = K.minimum(self.prediction(self.states["R"]), self.pixel_max) if self.bottom_layer else self.prediction(self.states["R"])
+            # motion_mask_input = keras.layers.Concatenate()([self.states["R"], self.states["P"]])
+            # self.states["P_M"] = K.minimum(self.predicted_motion_mask(motion_mask_input), self.pixel_max) if self.bottom_layer else self.predicted_motion_mask(motion_mask_input)
 
             # RE-COMPUTE TARGET ERROR (this only matters when PredNet num_passes > 1, otherwise is overwritten)
             self.states["E"] = self.error(self.states["P"], self.states["T"])

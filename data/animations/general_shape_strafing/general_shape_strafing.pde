@@ -1,16 +1,19 @@
 float window_scale = 1.0;
 float posX;
 float posY;
-float theta = 0; // Rotation angle of the cross
-float r_len; // length of the cross
-float r_th; // thickness of the cross
-float thickness = 3; // stroke thickness of the cross
-color e_color = color(0, 0, 0); // Color of the cross
+float theta = 0; // Rotation angle of the shape
+float gamma = 0; // Rotation angle of the motion
+String shape = "rectangle"; // Shape to be drawn, can be "cross", "rectangle", or "ellipse"
+String mot_dir; // Motion direction, filled in automatically based on shape 
+float traj_len; // Length of the trajectory
+float s_len, s_wid, old_s_len; // length and width of the shape
+float thickness = 3; // stroke thickness of the shape
+color e_color = color(0, 0, 0); // Color of the shape
 float speed; // Speed of vertical movement
 int frame_rate; //<>//
 int num_frames;
 PImage[] images;
-float d, r_th_divisor; // Random size value
+float d, s_wid_divisor; // Random size value
 float a, b, c; // Random color values
 float thk; // Random thickness value
 float th; // Random rotation value
@@ -22,8 +25,7 @@ float[] occlusionHeight = new float[num_occlusions];
 color[] occ_colors = new color[num_occlusions];
 float[] occ_rot = new float[num_occlusions];
 int randomizationRate;
-int h = 50;
-int w = 50;
+int ws = 50;
 boolean rand_size = true;
 boolean rand_color = true;
 boolean rand_thickness = true;
@@ -37,69 +39,64 @@ boolean save_frames = false;
 boolean train_mode = true; // just flip this one to switch between train and test modes
 boolean test_mode = !train_mode;
 
-// String save_dir = ;
-// if (train_mode == true) {String save_dir = "/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/general_cross_horizontal/frames/general_cross_horizontal/";}
-// else if (test_mode == true) {String save_dir = "/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/general_cross_horizontal/frames/general_cross_horizontal_test/";}
-// else {println("Error: train_mode and test_mode not defined."); exit();}
-
 boolean exec_randomize = true;
 boolean flip = false;
 
 import gifAnimation.*;
-// import org.apache.commons.io.FileUtils;
-// import java.io.File;
 
 GifMaker gifExport;
 
-// void deleteDirectory(File dir) {
-//   // Get all files in the directory
-//   File[] files = dir.listFiles();
-//   if (files != null) { // Some JVMs return null for empty dirs
-//     for (File f : files) {
-//       if (f.isDirectory()) {
-//         deleteDirectory(f); // Recursively delete subdirectories
-//       } else {
-//         f.delete(); // Delete files
-//       }
-//     }
-//   }
-//   dir.delete(); // Delete the directory itself
-// }
-
 public void settings() {
   if ((save_gif == false) && (save_frames == false)) {size(500, 500);} // Set the size of the window, w, h
-  else {size(w, h);} // Set the size of the window, w, h
+  else {size(ws, ws);} // Set the size of the window, w, h
 }
 
 void setup() {
   // Set the frame rate and the number of frames to be saved per mode
   if (save_gif && save_frames) {println("Error: save_gif and save_frames cannot both be true."); exit();}
   if (save_gif == true) {num_frames = 150; frame_rate = 1000;}
-  else if (save_frames == true) {num_frames = 5000; frame_rate = 1000;} // deleteDirectory(new File(save_dir));}
-  else {num_frames = 1000; frame_rate = 5;}
+  else if (save_frames == true) {num_frames = 50000; frame_rate = 50000;} // deleteDirectory(new File(save_dir));}
+  else {num_frames = 1000; frame_rate = 2;}
   images = new PImage[num_frames];
   
-  r_len = height / 3; // Initial length of the cross
-  r_th = r_len / 4; // Initial thickness of the cross
+  s_len = sqrt(2) * height / 3; // Initial length of the cross
+  s_wid = s_len / 4; // Initial thickness of the cross
   speed = width / 8; // Initial speed of vertical movement
   randomizationRate = (int) (height / speed);
-  posX = width / 2; // Initial X position
-  posY = height / 2; // Initial Y position
+  posX = 4 * width / 8; // Initial X position
+  posY = 4 * height / 8; // Initial Y position
   fill(e_color); // Set the inital fill color to black
+  stroke(0); // Set the initial stroke color to white
   strokeWeight(thickness);  // Set the initial stroke thickness
   rectMode(CENTER);
+
+  // Set motion direction
+  if (shape == "cross") {
+    gamma = 0;
+    mot_dir = "R";
+  } else if (shape == "rectangle") {
+    gamma = -PI/4;
+    mot_dir = "RD";
+  } else if (shape == "ellipse") {
+    gamma = -PI/2;
+    mot_dir = "D";
+  } else {
+    println("Error: shape not defined.");
+  }
+  // define length of trajectory as a function of window size, ws, and motion direction, gamma
+  traj_len = sqrt(width*width + height*height) * cos(PI/4 + gamma);
   
   frameRate(frame_rate);
   if (save_gif == true) {
-    if (train_mode) {gifExport = new GifMaker(this, "general_cross_horizontal_train.gif");}
-    else if (test_mode) {gifExport = new GifMaker(this, "general_cross_horizontal_test.gif");}
+    if (train_mode) {gifExport = new GifMaker(this, "general_" + shape + "_" + mot_dir + "_train.gif");}
+    else if (test_mode) {gifExport = new GifMaker(this, "general_" + shape + "_" + mot_dir + "_test.gif");}
     else {println("Error: train_mode and test_mode not defined."); exit();}
     gifExport.setRepeat(0); // make it an "endless" animation
     gifExport.setTransparent(255); // make white the transparent color -- match browser bg color
     gifExport.setDelay(1000/frame_rate);  //12fps in ms
   }
   for (int i = 0; i < num_frames; i++) {
-    images[i] = loadImage("/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/backgrounds/"+nf(h)+"x"+nf(w)+"/" + nf(i%1000, 3) + ".png");
+    images[i] = loadImage("/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/backgrounds/"+nf(ws)+"x"+nf(ws)+"/" + nf(i%1000, 3) + ".png");
   }
 }
 
@@ -131,6 +128,16 @@ void draw() {
     background(255);
   }
 
+  // Update position
+  posX += speed * cos(abs(gamma)); // Move the shape horizontally
+  posY += speed * sin(abs(gamma)); // Move the shape vertically
+
+  if ((posX * cos(abs(gamma)) + posY * sin(abs(gamma))) - (s_len / 2) > traj_len) { // Reset position when it goes beyond the screen
+    old_s_len = s_len;
+    flip = true;
+    exec_randomize = true;
+  }
+
   // Adjust size randomly
   if (rand_size && exec_randomize) {
     // original min = height/3 = 16.7, max = height/1.2 = 41.7
@@ -144,18 +151,19 @@ void draw() {
     } else {
       println("Error: train_mode and test_mode not defined."); exit();
     }
-    r_th_divisor = random(3, 5);
+    s_wid_divisor = random(2, 4);
     if (train_mode == true) {
-      while (r_th_divisor >= 4 && r_th_divisor <= 4.25) {r_th_divisor = random(3, 5);}
+      while (s_wid_divisor >= 3 && s_wid_divisor <= 3.75) {s_wid_divisor = random(2, 4);}
     } else if (test_mode == true) {
-      while (r_th_divisor < 4 || r_th_divisor > 4.25) {r_th_divisor = random(4, 4.25);}
+      while (s_wid_divisor < 3.25 || s_wid_divisor > 3.5) {s_wid_divisor = random(3.25, 3.5);}
     } else {
       println("Error: train_mode and test_mode not defined."); exit();
     }
+    if ((shape == "cross") || (shape == "rectangle")) {s_wid_divisor = s_wid_divisor * 1.5;} 
     // for debug with window_size != 50
     if (width != 50.0) {d = d * (width / 50.0);}
-    r_len = d;
-    r_th = r_len / r_th_divisor;
+    s_len = d;
+    s_wid = s_len / s_wid_divisor;
   }
 
   // Adjust color randomly
@@ -202,7 +210,7 @@ void draw() {
     // original thickness = random(1, 5)
     // new thickness = random(1, 5), if val between 2.5 and 3.5, randomize again
     // leave out test thicknesses == random(1, 5), if val NOT between 2.5 and 3.5, randomize again
-    thk = random(1, 5);
+    thk = random(1, s_wid/3);
     // if (train_mode == true) {
     //   while (thk >= 2.5 && thk <= 3.5) {thk = random(1, 5);}
     // } else if (test_mode == true) {
@@ -219,20 +227,32 @@ void draw() {
     exec_randomize = false;
   }
 
-  // Update position
-  posX += speed;
-  if (posX - (r_len / 2) > width) { // Reset position when it goes beyond the screen
-    posX = -(r_len / 2);
-    exec_randomize = true;
+  // reset position when shape goes beyond the screen, accounting for the shape in shape size
+  if (flip) { // Reset position when it goes beyond the screen
+    posX = posX + (s_len - old_s_len) * cos(abs(gamma));
+    posY = posY + (s_len - old_s_len) * sin(abs(gamma));
+    posX = posX - (posX + (s_len / 2)) * cos(abs(gamma)) * sqrt(2) * cos(PI/4 + gamma);
+    posY = posY - (posY + (s_len / 2)) * sin(abs(gamma)) * sqrt(2) * cos(PI/4 + gamma);
+    flip = false;
   }
 
   pushMatrix(); // Save the current drawing style settings and transformations
   translate(posX, posY); // Move the origin to the new position
   rotate(theta); // Rotate the cross
 
-  // Draw the cross lines
-  rect(0, 0, r_th, r_len); // Vertical line
-  rect(0, 0, r_len, r_th); // Horizontal line
+  if (shape == "cross") {
+    // Draw the cross lines
+    rect(0, 0, s_wid, s_len); // Vertical line
+    rect(0, 0, s_len, s_wid); // Horizontal line
+  } else if (shape == "rectangle") {
+    // Draw the rectangle
+    rect(0, 0, s_len, s_wid);
+  } else if (shape == "ellipse") {
+    // Draw the ellipse
+    ellipse(0, 0, s_wid, s_len);
+  } else {
+    println("Error: shape not defined.");
+  }
   
   popMatrix(); // Restore the original drawing style settings and transformations
 
@@ -251,6 +271,8 @@ void draw() {
   }
 
   if (rand_occlusions) {
+    // int n = 30;
+    // display_circles(n, n, width/(n*3)); // Display a grid of circles
     for (int i = 0; i < num_occlusions; i++) {
       pushMatrix();
       translate(width/2, height/2);
@@ -275,12 +297,116 @@ void draw() {
     }
   }
   
-  if (save_frames == true) {
-    if (train_mode) {saveFrame("frames/general_cross_horizontal/###.png");}
-    else if (test_mode) {saveFrame("frames/general_cross_horizontal_test/###.png");}
+  else if (save_frames == true) {
+    if (train_mode) {saveFrame("frames/general_" + shape + "_" + mot_dir + "/###.png");}
+    else if (test_mode) {saveFrame("frames/general_" + shape + "_" + mot_dir + "_test/###.png");}
     else {println("Error: train_mode and test_mode not defined."); exit();}
     if (frameCount == num_frames) {
       exit();
     }
   }
+
+  else {
+    if (frameCount == num_frames) {
+      exit();
+    }
+  }
+  
 }
+
+void display_circles (int n, int m, float s) {
+  // a processing animation language function to display n x m circles of size s equally distributed over the screen height and width
+  pushMatrix();
+  float x, y;
+  for (int i = 0; i < n + 1; i++) {
+    for (int j = 0; j < m + 1; j++) {
+      x = (i) * width / (n);
+      y = (j) * height / (m);
+      fill(color(random(255), random(255), random(255)));
+      strokeWeight(s/5);
+      ellipse(x, y, s, s);
+    }
+  }
+  popMatrix();
+  fill(e_color); // Reset fill color
+  strokeWeight(thickness);  // Reset stroke thickness
+}
+
+// class Occ_array2D {
+//     float[][] distances;
+//     float maxDistance;
+//     int spacer;
+//     int w, h;
+
+//     Occ_array2D (int width, int height) {
+//         w = width;
+//         h = height;
+//         maxDistance = dist(w/2, h/2, w, h);
+//         distances = new float[w][h];
+//         for (int y = 0; y < h; y++) {
+//             for (int x = 0; x < w; x++) {
+//             float distance = dist(w/2, h/2, x, y);
+//             distances[x][y] = distance/maxDistance * 255;
+//             }
+//         }
+//         spacer = 10;
+//         // noLoop();  // Run once and stop
+//     }
+
+//     void display() {
+//         //   background(0);
+//         // This embedded loop skips over values in the arrays based on
+//         // the spacer variable, so there are more values in the array
+//         // than are drawn here. Change the value of the spacer variable
+//         // to change the density of the points
+//         pushMatrix();
+//         strokeWeight(6);
+//         for (int y = 0; y < h; y += spacer) {
+//             for (int x = 0; x < w; x += spacer) {
+//             stroke(distances[x][y]);
+//             point(x + spacer/2, y + spacer/2);
+//             }
+//         }
+//         popMatrix();
+//     }
+// }
+
+// class HLine { 
+//   float ypos, speed; 
+//   HLine (float y, float s) {  
+//     ypos = y; 
+//     speed = s; 
+//   } 
+//   void update() { 
+//     ypos += speed; 
+//     if (ypos > height) { 
+//       ypos = 0; 
+//     } 
+//     line(0, ypos, width, ypos); 
+//   } 
+// } 
+
+
+
+// import org.apache.commons.io.FileUtils;
+// import java.io.File;
+
+// String save_dir = ;
+// if (train_mode == true) {String save_dir = "/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/general_cross_horizontal/frames/general_cross_horizontal/";}
+// else if (test_mode == true) {String save_dir = "/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/general_cross_horizontal/frames/general_cross_horizontal_test/";}
+// else {println("Error: train_mode and test_mode not defined."); exit();}
+
+// void deleteDirectory(File dir) {
+//   // Get all files in the directory
+//   File[] files = dir.listFiles();
+//   if (files != null) { // Some JVMs return null for empty dirs
+//     for (File f : files) {
+//       if (f.isDirectory()) {
+//         deleteDirectory(f); // Recursively delete subdirectories
+//       } else {
+//         f.delete(); // Delete files
+//       }
+//     }
+//   }
+//   dir.delete(); // Delete the directory itself
+// }
