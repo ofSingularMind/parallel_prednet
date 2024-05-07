@@ -3,7 +3,7 @@ float posX;
 float posY;
 float theta = 0; // Rotation angle of the shape
 float gamma = 0; // Rotation angle of the motion
-String shape = "rectangle"; // Shape to be drawn, can be "cross", "rectangle", or "ellipse"
+String shape = "ellipse"; // Shape to be drawn, can be "cross", "rectangle", or "ellipse"
 String mot_dir; // Motion direction, filled in automatically based on shape 
 float traj_len; // Length of the trajectory
 float s_len, s_wid, old_s_len; // length and width of the shape
@@ -34,9 +34,10 @@ boolean rand_occlusions = true;
 String rand_background = "pixels"; // can be "pixels", "whole", "white"
 
 boolean save_gif = false; // only set save_gif or save_frames to true, not both, or both to false
-boolean save_frames = false;
+boolean save_frames = true;
+boolean second_stage = true; // switches to white background and grey occlusions to sharpen up predictions
 
-boolean train_mode = true; // just flip this one to switch between train and test modes
+boolean train_mode = false; // just flip this one to switch between train and test modes
 boolean test_mode = !train_mode;
 
 boolean exec_randomize = true;
@@ -55,7 +56,8 @@ void setup() {
   // Set the frame rate and the number of frames to be saved per mode
   if (save_gif && save_frames) {println("Error: save_gif and save_frames cannot both be true."); exit();}
   if (save_gif == true) {num_frames = 150; frame_rate = 1000;}
-  else if (save_frames == true) {num_frames = 50000; frame_rate = 50000;} // deleteDirectory(new File(save_dir));}
+  else if (save_frames && train_mode) {num_frames = 5000; frame_rate = 5000;} // deleteDirectory(new File(save_dir));}
+  else if (save_frames && test_mode) {num_frames = 1000; frame_rate = 1000;} // deleteDirectory(new File(save_dir));}
   else {num_frames = 1000; frame_rate = 2;}
   images = new PImage[num_frames];
   
@@ -88,11 +90,13 @@ void setup() {
   
   frameRate(frame_rate);
   if (save_gif == true) {
-    if (train_mode) {gifExport = new GifMaker(this, "general_" + shape + "_" + mot_dir + "_train.gif");}
-    else if (test_mode) {gifExport = new GifMaker(this, "general_" + shape + "_" + mot_dir + "_test.gif");}
+    if (train_mode && !second_stage) {gifExport = new GifMaker(this, "general_" + shape + "_" + mot_dir + "_train.gif");}
+    else if (test_mode && !second_stage) {gifExport = new GifMaker(this, "general_" + shape + "_" + mot_dir + "_test.gif");}
+    else if (train_mode && second_stage) {gifExport = new GifMaker(this, "general_" + shape + "_" + mot_dir + "_train_2nd_Stage.gif");}
+    else if (test_mode && second_stage) {gifExport = new GifMaker(this, "general_" + shape + "_" + mot_dir + "_test_2nd_Stage.gif");}
     else {println("Error: train_mode and test_mode not defined."); exit();}
     gifExport.setRepeat(0); // make it an "endless" animation
-    gifExport.setTransparent(255); // make white the transparent color -- match browser bg color
+    // gifExport.setTransparent(255); // make white the transparent color -- match browser bg color
     gifExport.setDelay(1000/frame_rate);  //12fps in ms
   }
   for (int i = 0; i < num_frames; i++) {
@@ -120,12 +124,14 @@ void draw() {
     // }
 
   // Set the background to random pixels or white:
-  if (rand_background == "pixels") {
+  if ((rand_background == "pixels") && (second_stage == false)) {
     image(images[frameCount-1], 0, 0, width, height);
-  } else if (rand_background == "whole") {
+  } else if ((rand_background == "whole") && (second_stage == false)) {
     background(color(random(100, 200), random(100, 200), random(100, 200)));
-  } else if (rand_background == "white") {
+  } else if ((rand_background == "white") && (second_stage == false)) {
     background(255);
+  } else if (second_stage == true) {
+    background(255); // white anyways
   }
 
   // Update position
@@ -277,7 +283,11 @@ void draw() {
       pushMatrix();
       translate(width/2, height/2);
       rotate(occ_rot[i]);
-      occ_colors[i] = color(random(255), random(255), random(255));
+      if (second_stage == false) {
+        occ_colors[i] = color(random(255), random(255), random(255));
+      } else {
+        occ_colors[i] = color(127, 127, 127); // switch to gray occlusions for second stage
+      }
       fill(occ_colors[i]);
       strokeWeight(1);
       rect(occlusionX[i], occlusionY[i], occlusionWidth[i], occlusionHeight[i]);

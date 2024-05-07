@@ -496,15 +496,20 @@ def serialize_dataset(data_dirs, pfm_paths, pgm_paths, png_paths, dataset_name="
     # data = np.zeros_like(all_files, dtype=np.float32)
 
     if dataset_name == "driving":
-        temp = np.minimum(length, 200)
-    else:    
-        temp = np.minimum(length, 10000)
+        subset_length = np.minimum(length, 200)
+    else:
+        subset_max = 5000
+        subset_length = np.minimum(length, subset_max)
+
+    # Select random offset for dataset
+    offset = np.random.randint(0, length - subset_length) if not (length == subset_length) else 0
+    print(f"Selecting {subset_length} indices {offset} to {offset + subset_length} from dataset of length {length}.")
     print(f"Start to load images at {time.perf_counter() - start_time} seconds.")
 
     for j in range(len(pfm_paths)):
         l = []
         # last = time.perf_counter()
-        for i in range(temp):
+        for i in range(offset, subset_length+offset):
             im = readPFM(all_files[i, j])
             if j == 0:
                 im = np.interp(im, (im.min(), im.max()), (0, 1))
@@ -521,7 +526,7 @@ def serialize_dataset(data_dirs, pfm_paths, pgm_paths, png_paths, dataset_name="
     for j in range(len(pgm_paths)):
         l = []
         # last = time.perf_counter()
-        for i in range(temp):
+        for i in range(offset, subset_length+offset):
             im = np.array(Image.open(all_files[i, j + len(pfm_paths)]), dtype=np.float32) / 255.0
             if len(im.shape) == 2:
                 # expand to include channel dimension
@@ -535,7 +540,7 @@ def serialize_dataset(data_dirs, pfm_paths, pgm_paths, png_paths, dataset_name="
     for j in range(len(png_paths)):
         l = []
         # last = time.perf_counter()
-        for i in range(temp):
+        for i in range(offset, subset_length+offset):
             im = (np.array(Image.open(all_files[i, j + len(pfm_paths) + len(pgm_paths)]), dtype=np.float32)
                 / 255.0)
             if len(im.shape) == 2:
@@ -584,50 +589,50 @@ def serialize_dataset(data_dirs, pfm_paths, pgm_paths, png_paths, dataset_name="
     print(f"Dataset serialization complete at {time.perf_counter() - start_time} seconds.")
 
 
-def create_dataset_from_generator(pfm_paths, pgm_paths, png_paths, im_height=540, im_width=960, batch_size=1, nt=10, shuffle=True, ):
-    num_pfm_paths = len(pfm_paths)
-    num_pgm_paths = len(pgm_paths)
-    num_png_paths = len(png_paths)
-    total_paths = num_pfm_paths + num_pgm_paths + num_png_paths
+# def create_dataset_from_generator(pfm_paths, pgm_paths, png_paths, im_height=540, im_width=960, batch_size=1, nt=10, shuffle=True, ):
+#     num_pfm_paths = len(pfm_paths)
+#     num_pgm_paths = len(pgm_paths)
+#     num_png_paths = len(png_paths)
+#     total_paths = num_pfm_paths + num_pgm_paths + num_png_paths
 
-    def generator():
-        pfm_sources = []
-        pgm_sources = []
-        png_sources = []
+#     def generator():
+#         pfm_sources = []
+#         pgm_sources = []
+#         png_sources = []
 
-        for pfm_path in pfm_paths:
-            pfm_sources += [sort_files_by_name(glob.glob(pfm_path + "/*.pfm"))]
-        for pgm_path in pgm_paths:
-            pgm_sources += [sort_files_by_name(glob.glob(pgm_path + "/*.pgm"))]
-        for png_path in png_paths:
-            png_sources += [sort_files_by_name(glob.glob(png_path + "/*.png"))]
+#         for pfm_path in pfm_paths:
+#             pfm_sources += [sort_files_by_name(glob.glob(pfm_path + "/*.pfm"))]
+#         for pgm_path in pgm_paths:
+#             pgm_sources += [sort_files_by_name(glob.glob(pgm_path + "/*.pgm"))]
+#         for png_path in png_paths:
+#             png_sources += [sort_files_by_name(glob.glob(png_path + "/*.png"))]
 
-        all_files = np.array(list(zip(*pfm_sources, *pgm_sources, *png_sources)))
+#         all_files = np.array(list(zip(*pfm_sources, *pgm_sources, *png_sources)))
 
-        assert (nt <= all_files.shape[0]), "nt must be less than or equal to the number of files in the dataset"
+#         assert (nt <= all_files.shape[0]), "nt must be less than or equal to the number of files in the dataset"
 
-        for i in range(all_files.shape[0] + 1 - nt):
-            nt_outs = []
-            for j in range(num_pfm_paths):
-                nt_outs.append([readPFM(all_files[i + k, j]) for k in range(nt)])
-            for j in range(num_pgm_paths):
-                nt_outs.append([np.array(Image.open(all_files[i + k, j + num_pfm_paths])) / 255.0 for k in range(nt)])
-            for j in range(num_png_paths):
-                nt_outs.append([np.array(Image.open(all_files[i + k, j + num_pfm_paths + num_pgm_paths])) / 255.0 for k in range(nt)])
+#         for i in range(all_files.shape[0] + 1 - nt):
+#             nt_outs = []
+#             for j in range(num_pfm_paths):
+#                 nt_outs.append([readPFM(all_files[i + k, j]) for k in range(nt)])
+#             for j in range(num_pgm_paths):
+#                 nt_outs.append([np.array(Image.open(all_files[i + k, j + num_pfm_paths])) / 255.0 for k in range(nt)])
+#             for j in range(num_png_paths):
+#                 nt_outs.append([np.array(Image.open(all_files[i + k, j + num_pfm_paths + num_pgm_paths])) / 255.0 for k in range(nt)])
 
-            yield tuple(nt_outs)
+#             yield tuple(nt_outs)
 
-    dataset = tf.data.Dataset.from_generator(generator, output_signature=((tf.TensorSpec(shape=(nt, im_height, im_width), dtype=tf.float32)), (tf.TensorSpec(shape=(nt, im_height, im_width), dtype=tf.float32)), (tf.TensorSpec(shape=(nt, im_height, im_width), dtype=tf.float32)), (tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32)), (tf.TensorSpec(shape=(nt, im_height, im_width), dtype=tf.float32)), (tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32)), ), )
+#     dataset = tf.data.Dataset.from_generator(generator, output_signature=((tf.TensorSpec(shape=(nt, im_height, im_width), dtype=tf.float32)), (tf.TensorSpec(shape=(nt, im_height, im_width), dtype=tf.float32)), (tf.TensorSpec(shape=(nt, im_height, im_width), dtype=tf.float32)), (tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32)), (tf.TensorSpec(shape=(nt, im_height, im_width), dtype=tf.float32)), (tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32)), ), )
 
-    # Get the length of the dataset
-    length = len(glob.glob(pfm_paths[0] + "/*.pfm"))
+#     # Get the length of the dataset
+#     length = len(glob.glob(pfm_paths[0] + "/*.pfm"))
 
-    # Shuffle, batch and prefetch the dataset
-    if shuffle:
-        dataset = dataset.shuffle(buffer_size=length, reshuffle_each_iteration=True)
-    dataset = dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
+#     # Shuffle, batch and prefetch the dataset
+#     if shuffle:
+#         dataset = dataset.shuffle(buffer_size=length, reshuffle_each_iteration=True)
+#     dataset = dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
 
-    return dataset, length
+#     return dataset, length
 
 def create_dataset_from_generator(data_dirs, pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name="driving", im_height=540, im_width=960, batch_size=4, nt=10, train_split=0.7, reserialize=False, shuffle=True, resize=False, single_channel=False):
     DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = data_dirs
@@ -983,3 +988,4 @@ def config_gpus():
         except RuntimeError as e:
             # Memory growth must be set before GPUs have been initialized
             print(e)
+
