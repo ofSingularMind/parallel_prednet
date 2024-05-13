@@ -1,180 +1,181 @@
 def main(args):
-    import os
-    import warnings
+    for training_it in range(args["num_dataset_chunks"]):
 
-    # Suppress warnings
-    warnings.filterwarnings("ignore")
-    # or '2' to filter out INFO messages too
-    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+        import os
+        import warnings
 
-    import tensorflow as tf
-    import shutil
-    import keras
-    from data_utils import SequenceGenerator, IntermediateEvaluations, create_dataset_from_generator, create_dataset_from_serialized_generator, config_gpus 
-    from keras.callbacks import LearningRateScheduler, ModelCheckpoint, TensorBoard
+        # Suppress warnings
+        warnings.filterwarnings("ignore")
+        # or '2' to filter out INFO messages too
+        os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
-    # PICK MODEL
-    if args["model_choice"] == "baseline":
-        # Predict next frame along RGB channels only
-        if not args['pan_hierarchical']:
-            from PPN_models.PPN_Baseline import ParaPredNet
+        import tensorflow as tf
+        import shutil
+        import keras
+        from data_utils import SequenceGenerator, IntermediateEvaluations, create_dataset_from_generator, create_dataset_from_serialized_generator, config_gpus 
+        from keras.callbacks import LearningRateScheduler, ModelCheckpoint, TensorBoard
+
+        # PICK MODEL
+        if args["model_choice"] == "baseline":
+            # Predict next frame along RGB channels only
+            if not args['pan_hierarchical']:
+                from PPN_models.PPN_Baseline import ParaPredNet
+            else:
+                from PPN_models.PPN_Baseline import ParaPredNet
+                print("Using Pan-Hierarchical Representation")
+        elif args["model_choice"] == "cl_delta":
+            # Predict next frame and change from current frame
+            from PPN_models.PPN_CompLearning_Delta_Predictions import ParaPredNet
+        elif args["model_choice"] == "cl_recon":
+            # Predict current and next frame
+            from PPN_models.PPN_CompLearning_Recon_Predictions import ParaPredNet
+        elif args["model_choice"] == "multi_channel":
+            # Predict next frame along Disparity, Material Index, Object Index, 
+            # Optical Flow, Motion Boundaries, and RGB channels all stacked together
+            assert args["dataset"] == "monkaa" or args["dataset"] == "driving", "Multi-channel model only works with Monkaa or Driving dataset"
+            from PPN_models.PPN_Multi_Channel import ParaPredNet
+            bottom_layer_output_channels = 7 # 1 Disparity, 3 Optical Flow, 3 RGB
+            args["output_channels"][0] = bottom_layer_output_channels
         else:
-            from PPN_models.PPN_Baseline import ParaPredNet
-            print("Using Pan-Hierarchical Representation")
-    elif args["model_choice"] == "cl_delta":
-        # Predict next frame and change from current frame
-        from PPN_models.PPN_CompLearning_Delta_Predictions import ParaPredNet
-    elif args["model_choice"] == "cl_recon":
-        # Predict current and next frame
-        from PPN_models.PPN_CompLearning_Recon_Predictions import ParaPredNet
-    elif args["model_choice"] == "multi_channel":
-        # Predict next frame along Disparity, Material Index, Object Index, 
-        # Optical Flow, Motion Boundaries, and RGB channels all stacked together
-        assert args["dataset"] == "monkaa" or args["dataset"] == "driving", "Multi-channel model only works with Monkaa or Driving dataset"
-        from PPN_models.PPN_Multi_Channel import ParaPredNet
-        bottom_layer_output_channels = 7 # 1 Disparity, 3 Optical Flow, 3 RGB
-        args["output_channels"][0] = bottom_layer_output_channels
-    else:
-        raise ValueError("Invalid model choice")
+            raise ValueError("Invalid model choice")
 
 
-    # Set the seed using keras.utils.set_random_seed. This will set:
-    # 1) `numpy` seed
-    # 2) backend random seed
-    # 3) `python` random seed
-    keras.utils.set_random_seed(args['seed']) # need keras 3 i think
+        # Set the seed using keras.utils.set_random_seed. This will set:
+        # 1) `numpy` seed
+        # 2) backend random seed
+        # 3) `python` random seed
+        keras.utils.set_random_seed(args['seed']) # need keras 3 i think
 
-    # use mixed precision for faster runtimes and lower memory usage
-    # keras.mixed_precision.set_global_policy("mixed_float16")
-    # config_gpus()
+        # use mixed precision for faster runtimes and lower memory usage
+        # keras.mixed_precision.set_global_policy("mixed_float16")
+        # config_gpus()
 
-    # if results directory already exists, then delete it
-    if os.path.exists(RESULTS_SAVE_DIR):
-        shutil.rmtree(RESULTS_SAVE_DIR)
-    if os.path.exists(LOG_DIR):
-        shutil.rmtree(LOG_DIR)
-    os.makedirs(LOG_DIR, exist_ok=True)
-    os.makedirs(RESULTS_SAVE_DIR, exist_ok=True)
-    # print all args to file
-    with open(os.path.join(RESULTS_SAVE_DIR, "job_args.txt"), "w+") as f:
-        for key, value in args.items():
-            f.write(f"{key}: {value}\n")
+        # if results directory already exists, then delete it
+        if os.path.exists(RESULTS_SAVE_DIR):
+            shutil.rmtree(RESULTS_SAVE_DIR)
+        if os.path.exists(LOG_DIR):
+            shutil.rmtree(LOG_DIR)
+        os.makedirs(LOG_DIR, exist_ok=True)
+        os.makedirs(RESULTS_SAVE_DIR, exist_ok=True)
+        # print all args to file
+        with open(os.path.join(RESULTS_SAVE_DIR, "job_args.txt"), "w+") as f:
+            for key, value in args.items():
+                f.write(f"{key}: {value}\n")
 
-    save_model = True  # if weights will be saved
-    plot_intermediate = True  # if the intermediate model predictions will be plotted
-    tensorboard = True  # if the Tensorboard callback will be used
+        save_model = True  # if weights will be saved
+        plot_intermediate = True  # if the intermediate model predictions will be plotted
+        tensorboard = True  # if the Tensorboard callback will be used
 
-    # Training parameters
-    nt = args["nt"]  # number of time steps
-    nb_epoch = args["nb_epoch"]  # 150
-    batch_size = args["batch_size"]  # 4
-    # the following two will override the defaults of (dataset size / batch size)
-    sequences_per_epoch_train = args["sequences_per_epoch_train"]  # 500
-    sequences_per_epoch_val = args["sequences_per_epoch_val"]  # 500
-    assert sequences_per_epoch_train is None or type(sequences_per_epoch_train) == int
-    assert sequences_per_epoch_val is None or type(sequences_per_epoch_val) == int
-    num_P_CNN = args["num_P_CNN"]
-    num_R_CLSTM = args["num_R_CLSTM"]
-    output_channels = args["output_channels"]
+        # Training parameters
+        nt = args["nt"]  # number of time steps
+        nb_epoch = args["nb_epoch"]  # 150
+        batch_size = args["batch_size"]  # 4
+        # the following two will override the defaults of (dataset size / batch size)
+        sequences_per_epoch_train = args["sequences_per_epoch_train"]  # 500
+        sequences_per_epoch_val = args["sequences_per_epoch_val"]  # 500
+        assert sequences_per_epoch_train is None or type(sequences_per_epoch_train) == int
+        assert sequences_per_epoch_val is None or type(sequences_per_epoch_val) == int
+        num_P_CNN = args["num_P_CNN"]
+        num_R_CLSTM = args["num_R_CLSTM"]
+        output_channels = args["output_channels"]
 
-    # Define image shape
-    if args["dataset"] == "kitti":
-        original_im_shape = (128, 160, 3)
-        im_shape = original_im_shape
-    elif args["dataset"] == "monkaa" or args["dataset"] == "driving":
-        original_im_shape = (540, 960, 3)
-        downscale_factor = args["downscale_factor"]
-        im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3)
-    elif args["dataset"] in ["rolling_square", "rolling_circle", "all_rolling"]:
-        original_im_shape = (50, 100, 3)
-        downscale_factor = args["downscale_factor"]
-        im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3) if args["resize_images"] else original_im_shape
-    elif args["dataset"] in ["ball_collisions", "general_ellipse_vertical", "general_cross_horizontal", "various"]:
-        original_im_shape = (args["various_im_shape"][0], args["various_im_shape"][1], 3)
-        downscale_factor = args["downscale_factor"]
-        im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3) if args["resize_images"] else original_im_shape
+        # Define image shape
+        if args["dataset"] == "kitti":
+            original_im_shape = (128, 160, 3)
+            im_shape = original_im_shape
+        elif args["dataset"] == "monkaa" or args["dataset"] == "driving":
+            original_im_shape = (540, 960, 3)
+            downscale_factor = args["downscale_factor"]
+            im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3)
+        elif args["dataset"] in ["rolling_square", "rolling_circle", "all_rolling"]:
+            original_im_shape = (50, 100, 3)
+            downscale_factor = args["downscale_factor"]
+            im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3) if args["resize_images"] else original_im_shape
+        elif args["dataset"] in ["ball_collisions", "general_ellipse_vertical", "general_cross_horizontal", "various"]:
+            original_im_shape = (args["various_im_shape"][0], args["various_im_shape"][1], 3)
+            downscale_factor = args["downscale_factor"]
+            im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3) if args["resize_images"] else original_im_shape
 
 
-    # Create ParaPredNet
-    if args["dataset"] == "kitti":
-        # These are Kitti specific input shapes
-        inputs = (keras.Input(shape=(nt, im_shape[0], im_shape[1], 3)))
-        PPN = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])  # [3, 48, 96, 192]
-        outputs = PPN(inputs)
-        PPN = keras.Model(inputs=inputs, outputs=outputs)
+        # Create ParaPredNet
+        if args["dataset"] == "kitti":
+            # These are Kitti specific input shapes
+            inputs = (keras.Input(shape=(nt, im_shape[0], im_shape[1], 3)))
+            PPN = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])  # [3, 48, 96, 192]
+            outputs = PPN(inputs)
+            PPN = keras.Model(inputs=inputs, outputs=outputs)
 
-    elif args["dataset"] == "monkaa":
-        # These are Monkaa specific input shapes
-        inputs = (keras.Input(shape=(nt, im_shape[0], im_shape[1], 1)),
-            keras.Input(shape=(nt, im_shape[0], im_shape[1], 1)),
-            keras.Input(shape=(nt, im_shape[0], im_shape[1], 1)),
-            keras.Input(shape=(nt, im_shape[0], im_shape[1], 3)),
-            keras.Input(shape=(nt, im_shape[0], im_shape[1], 1)),
-            keras.Input(shape=(nt, im_shape[0], im_shape[1], 3)),
-        )
-        PPN = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])  # [3, 48, 96, 192]
-        outputs = PPN(inputs)
-        PPN = keras.Model(inputs=inputs, outputs=outputs)
+        elif args["dataset"] == "monkaa":
+            # These are Monkaa specific input shapes
+            inputs = (keras.Input(shape=(nt, im_shape[0], im_shape[1], 1)),
+                keras.Input(shape=(nt, im_shape[0], im_shape[1], 1)),
+                keras.Input(shape=(nt, im_shape[0], im_shape[1], 1)),
+                keras.Input(shape=(nt, im_shape[0], im_shape[1], 3)),
+                keras.Input(shape=(nt, im_shape[0], im_shape[1], 1)),
+                keras.Input(shape=(nt, im_shape[0], im_shape[1], 3)),
+            )
+            PPN = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])  # [3, 48, 96, 192]
+            outputs = PPN(inputs)
+            PPN = keras.Model(inputs=inputs, outputs=outputs)
 
-    elif args["dataset"] == "driving":
-        # These are driving specific input shapes
-        inputs = (keras.Input(shape=(nt, im_shape[0], im_shape[1], 1)),
-            keras.Input(shape=(nt, im_shape[0], im_shape[1], 3)),
-            keras.Input(shape=(nt, im_shape[0], im_shape[1], 3)),
-        )
-        PPN = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])  # [3, 48, 96, 192]
-        outputs = PPN(inputs)
-        PPN = keras.Model(inputs=inputs, outputs=outputs)
+        elif args["dataset"] == "driving":
+            # These are driving specific input shapes
+            inputs = (keras.Input(shape=(nt, im_shape[0], im_shape[1], 1)),
+                keras.Input(shape=(nt, im_shape[0], im_shape[1], 3)),
+                keras.Input(shape=(nt, im_shape[0], im_shape[1], 3)),
+            )
+            PPN = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])  # [3, 48, 96, 192]
+            outputs = PPN(inputs)
+            PPN = keras.Model(inputs=inputs, outputs=outputs)
 
-    elif args["dataset"] in ["rolling_square", "rolling_circle", "all_rolling", "ball_collisions", "general_ellipse_vertical", "general_cross_horizontal", "various"]:
-        # These are animation specific input shapes
-        inputs = keras.Input(shape=(nt, im_shape[0], im_shape[1], 3))
-        PPN = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])
-        outputs = PPN(inputs)
-        PPN = keras.Model(inputs=inputs, outputs=outputs)
-    
-    resos = PPN.layers[-1].resolutions
-    PPN.compile(optimizer="adam", loss="mean_squared_error")
-    print("ParaPredNet compiled...")
-    PPN.build(input_shape=(None, nt) + im_shape)
-    print(PPN.summary())
-    num_layers = len(output_channels)  # number of layers in the architecture
-    print(f"{num_layers} PredNet layers with resolutions:")
-    for i in reversed(range(num_layers)):
-        print(f"Layer {i+1}:  {resos[i][0]} x {resos[i][1]} x {output_channels[i]}")
+        elif args["dataset"] in ["rolling_square", "rolling_circle", "all_rolling", "ball_collisions", "general_ellipse_vertical", "general_cross_horizontal", "various"]:
+            # These are animation specific input shapes
+            inputs = keras.Input(shape=(nt, im_shape[0], im_shape[1], 3))
+            PPN = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])
+            outputs = PPN(inputs)
+            PPN = keras.Model(inputs=inputs, outputs=outputs)
+        
+        resos = PPN.layers[-1].resolutions
+        PPN.compile(optimizer="adam", loss="mean_squared_error")
+        print("ParaPredNet compiled...")
+        PPN.build(input_shape=(None, nt) + im_shape)
+        print(PPN.summary())
+        num_layers = len(output_channels)  # number of layers in the architecture
+        print(f"{num_layers} PredNet layers with resolutions:")
+        for i in reversed(range(num_layers)):
+            print(f"Layer {i+1}:  {resos[i][0]} x {resos[i][1]} x {output_channels[i]}")
 
-    if (args["dataset"], args["data_subset"]) in [
-        ("rolling_square", "single_rolling_square"),
-        ("rolling_circle", "single_rolling_circle"),
-    ]:
-        # where weights will be loaded/saved
-        weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["data_subset"]+"_weights.hdf5")
-        # where weights will be saved with results
-        results_weights_file = os.path.join(RESULTS_SAVE_DIR, f"tensorflow_weights/para_prednet_"+args["data_subset"]+"_weights.hdf5")
-    elif (args["dataset"], args["data_subset"]) in [
-        ("all_rolling", "single"),
-        ("all_rolling", "multi")
-    ]:
-        # where weights will be loaded/saved
-        weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["dataset"]+"_"+args["data_subset"]+"_weights.hdf5")
-        # where weights will be saved with results
-        results_weights_file = os.path.join(RESULTS_SAVE_DIR, f"tensorflow_weights/para_prednet_"+args["dataset"]+"_"+args["data_subset"]+"_weights.hdf5")
-    elif args["dataset"] in ["ball_collisions", "general_ellipse_vertical", "general_cross_horizontal", "various"]:
-        # where weights will be loaded/saved
-        weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["dataset"]+"_"+args["data_subset"]+"_weights.hdf5")
-        # where weights will be saved with results
-        results_weights_file = os.path.join(RESULTS_SAVE_DIR, f"tensorflow_weights/para_prednet_"+args["dataset"]+"_"+args["data_subset"]+"_weights.hdf5")
-    else:
-        # where weights will be loaded/saved
-        weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["dataset"]+"_weights.hdf5")
-        # where weights will be saved with results
-        results_weights_file = os.path.join(RESULTS_SAVE_DIR, f"tensorflow_weights/para_prednet_"+args["dataset"]+"_weights.hdf5")
-    
-    if args["restart_training"]:
-        if os.path.exists(weights_file):
-            os.remove(weights_file)
+        if (args["dataset"], args["data_subset"]) in [
+            ("rolling_square", "single_rolling_square"),
+            ("rolling_circle", "single_rolling_circle"),
+        ]:
+            # where weights will be loaded/saved
+            weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["data_subset"]+"_weights.hdf5")
+            # where weights will be saved with results
+            results_weights_file = os.path.join(RESULTS_SAVE_DIR, f"tensorflow_weights/para_prednet_"+args["data_subset"]+"_weights.hdf5")
+        elif (args["dataset"], args["data_subset"]) in [
+            ("all_rolling", "single"),
+            ("all_rolling", "multi")
+        ]:
+            # where weights will be loaded/saved
+            weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["dataset"]+"_"+args["data_subset"]+"_weights.hdf5")
+            # where weights will be saved with results
+            results_weights_file = os.path.join(RESULTS_SAVE_DIR, f"tensorflow_weights/para_prednet_"+args["dataset"]+"_"+args["data_subset"]+"_weights.hdf5")
+        elif args["dataset"] in ["ball_collisions", "general_ellipse_vertical", "general_cross_horizontal", "various"]:
+            # where weights will be loaded/saved
+            weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["dataset"]+"_"+args["data_subset"]+"_weights.hdf5")
+            # where weights will be saved with results
+            results_weights_file = os.path.join(RESULTS_SAVE_DIR, f"tensorflow_weights/para_prednet_"+args["dataset"]+"_"+args["data_subset"]+"_weights.hdf5")
+        else:
+            # where weights will be loaded/saved
+            weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["dataset"]+"_weights.hdf5")
+            # where weights will be saved with results
+            results_weights_file = os.path.join(RESULTS_SAVE_DIR, f"tensorflow_weights/para_prednet_"+args["dataset"]+"_weights.hdf5")
+        
+        if args["restart_training"] and training_it == 0:
+            if os.path.exists(weights_file):
+                os.remove(weights_file)
 
-    for i in range(args["num_dataset_chunks"]):
         args["seed"] = np.random.randint(0,1000)
         keras.utils.set_random_seed(args['seed'])
  
@@ -304,14 +305,16 @@ def main(args):
             train_dataset, val_dataset, test_dataset = full_train_dataset, full_val_dataset, full_test_dataset
 
         elif args["dataset"] == "various":
-            dataset_names = [
-                "general_shape_strafing", 
-                "general_shape_strafing"
-            ]
-            data_subset_names = [
-                "general_cross_R",
-                "general_ellipse_D",
-            ]
+            # dataset_names = [
+            #     # "general_shape_strafing", 
+            #     # "general_shape_strafing"
+            # ]
+            # data_subset_names = [
+            #     "general_cross_R",
+            #     "general_ellipse_D",
+            # ]
+            dataset_names = ["multi_gen_shape_strafing"]
+            data_subset_names = ["multi_gen_shape_1st_stage" if not args["second_stage"] else "multi_gen_shape_2nd_stage"]
 
             # print dataset names to job details file
             with open(os.path.join(RESULTS_SAVE_DIR, "job_args.txt"), "a+") as f:
@@ -333,7 +336,7 @@ def main(args):
             for png_paths, dataset_name in zip(list_png_paths, dataset_names):
                 #  Create and split dataset
                 datasets, ds_len = create_dataset_from_serialized_generator(data_dirs, pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name=dataset_name, im_height=im_shape[0], im_width=im_shape[1],
-                                                                            batch_size=batch_size, nt=nt, train_split=train_split, reserialize=args["reserialize_dataset"], shuffle=True, resize=args["resize_images"], single_channel=False)
+                                                                            batch_size=batch_size, nt=nt, train_split=train_split, reserialize=args["reserialize_dataset"], shuffle=True, resize=args["resize_images"], single_channel=False, iteration=training_it)
                 train_dataset, val_dataset, test_dataset = datasets
                 full_train_dataset = train_dataset if full_train_dataset is None else full_train_dataset.concatenate(train_dataset)
                 full_val_dataset = val_dataset if full_val_dataset is None else full_val_dataset.concatenate(val_dataset)
@@ -371,7 +374,7 @@ def main(args):
             val_size = int(val_split * length)
             test_size = int(val_split * length)
         
-        print(f"Working on dataset: {args['dataset']}")
+        print(f"Working on dataset: {args['dataset']} - {args['data_subset']} {'1st Stage' if not args['second_stage'] else '2nd Stage'}")
         print(f"Train size: {train_size}")
         print(f"Validation size: {val_size}")
         print(f"Test size: {test_size}")
@@ -427,12 +430,12 @@ def main(args):
 
         # start with lr of 0.001 and then drop to 0.0001 after 75 epochs
         def lr_schedule(epoch): 
-            if epoch <= 10:
+            if (epoch <= 3) and training_it == 0:
                 return args["learning_rates"][0] 
-            elif 10 < epoch <= 50:
-                return args["learning_rates"][1] 
-            elif 50 < epoch <= 100:
-                return args["learning_rates"][2]
+            # elif 3 < epoch <= 50:
+            #     return args["learning_rates"][1] 
+            # elif 50 < epoch <= 100:
+            #     return args["learning_rates"][2]
             else:
                 return args["learning_rates"][3]
 
@@ -463,7 +466,8 @@ if __name__ == "__main__":
     parser.add_argument("--sequences_per_epoch_train", type=int, default=200, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=20, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
     parser.add_argument("--batch_size", type=int, default=2, help="batch size")
-    parser.add_argument("--nb_epoch", type=int, default=120, help="number of epochs")
+    parser.add_argument("--nb_epoch", type=int, default=12, help="number of epochs")
+    parser.add_argument("--second_stage", type=bool, default=True, help="utilize 2nd stage training data")
     """
     unser bs 20 x 25 steps = 42 sec -> 11.9 sequences/sec
     unser bs 30 x 10 steps = 24 sec -> 12.5 sequences/sec ***
@@ -482,7 +486,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=np.random.randint(0,1000), help="random seed")
     parser.add_argument("--results_subdir", type=str, default=f"{str(datetime.now())}", help="Specify results directory")
     parser.add_argument("--restart_training", type=bool, default=False, help="whether or not to delete weights and restart")
-    parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-4, 1e-4, 3e-4, 2e-4], help="output channels")
+    parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-4, 99, 99, 7e-5], help="output channels")
     parser.add_argument("--reserialize_dataset", type=bool, default=True, help="reserialize dataset")
     parser.add_argument("--output_mode", type=str, default="Error", help="Error, Predictions, or Error_Images_and_Prediction. Only trains on Error.")
 
@@ -490,8 +494,8 @@ if __name__ == "__main__":
     parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
     parser.add_argument("--dataset", type=str, default="various", help="kitti, driving, monkaa, rolling_square, or rolling_circle")
-    parser.add_argument("--data_subset", type=str, default="gen_ellipseV_crossH", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
-    parser.add_argument("--num_dataset_chunks", type=int, default=100, help="number of dataset chunks to iterate through")
+    parser.add_argument("--data_subset", type=str, default="central_multi_gen_shape_strafing", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
+    parser.add_argument("--num_dataset_chunks", type=int, default=4, help="number of dataset chunks to iterate through (full DS / 5000)")
     parser.add_argument("--various_im_shape", nargs="+", type=int, default=[50, 50], help="output channels")
     """
     Avaialble dataset/data_subset arg combinations:

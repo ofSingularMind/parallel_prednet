@@ -14,7 +14,7 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 # ,\r?\n
 # ,\s{2,}
 
-class PredLayer(keras.layers.Layer):
+class PredLayer(keras.Model):
     def __init__(self, training_args, im_height, im_width, num_P_CNN, num_R_CLSTM, output_channels, layer_num, bottom_layer=False, top_layer=False, *args, **kwargs):
         super(PredLayer, self).__init__(*args, **kwargs)
         self.training_args = training_args
@@ -264,7 +264,12 @@ class ParaPredNet(keras.Model):
             output = all_predictions
         elif self.output_mode == "Error_Images_and_Prediction":
             output = [all_error_images, all_predictions]
-
+        elif self.output_mode == "Intermediate_Activations":
+            out_dict = {}
+            for predlayer in self.predlayers:
+                out_dict[f"{predlayer.representation.name}"] = predlayer.states["R"]
+                out_dict[f"{predlayer.prediction.name}"] = predlayer.states["P"]
+            output = out_dict
         # Clear states from computation graph
         if not self.continuous_eval: self.clear_layer_states()
 

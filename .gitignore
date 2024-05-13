@@ -21,6 +21,7 @@ model_weights/
 *.png
 *.hkl
 *.gif
+*.tar.xz
 
 # Distribution / packaging
 .Python
