@@ -23,7 +23,7 @@ boolean save_gif = false; // only set save_gif or save_frames to true, not both,
 boolean save_frames = true;
 boolean second_stage = true; // switches to white background and grey occlusions to sharpen up predictions
 
-boolean train_mode = false; // just flip this one to switch between train and test modes
+boolean train_mode = true; // just flip this one to switch between train and test modes
 boolean test_mode = !train_mode;
 
 boolean exec_randomize = true;

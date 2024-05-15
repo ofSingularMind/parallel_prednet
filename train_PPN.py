@@ -1,6 +1,8 @@
 def main(args):
     for training_it in range(args["num_dataset_chunks"]):
 
+        args["results_subdir"] = f"{str(datetime.now())}_{training_it}"
+
         import os
         import warnings
 
@@ -315,6 +317,10 @@ def main(args):
             # ]
             dataset_names = ["multi_gen_shape_strafing"]
             data_subset_names = ["multi_gen_shape_1st_stage" if not args["second_stage"] else "multi_gen_shape_2nd_stage"]
+            # dataset_names = ["class_cond_shape_strafing"]
+            # data_subset_names = ["class_cond_shape_1st_stage" if not args["second_stage"] else "class_cond_shape_2nd_stage"]
+            # dataset_names = ["world_cond_shape_strafing"]
+            # data_subset_names = ["world_cond_shape_1st_stage" if not args["second_stage"] else "world_cond_shape_2nd_stage"]
 
             # print dataset names to job details file
             with open(os.path.join(RESULTS_SAVE_DIR, "job_args.txt"), "a+") as f:
@@ -430,7 +436,7 @@ def main(args):
 
         # start with lr of 0.001 and then drop to 0.0001 after 75 epochs
         def lr_schedule(epoch): 
-            if (epoch <= 3) and training_it == 0:
+            if training_it < 10:#args["num_dataset_chunks"] // 2:
                 return args["learning_rates"][0] 
             # elif 3 < epoch <= 50:
             #     return args["learning_rates"][1] 
@@ -465,30 +471,33 @@ if __name__ == "__main__":
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
     parser.add_argument("--sequences_per_epoch_train", type=int, default=200, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=20, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
-    parser.add_argument("--batch_size", type=int, default=2, help="batch size")
-    parser.add_argument("--nb_epoch", type=int, default=12, help="number of epochs")
+    parser.add_argument("--batch_size", type=int, default=10, help="batch size")
+    parser.add_argument("--nb_epoch", type=int, default=9, help="number of epochs")
     parser.add_argument("--second_stage", type=bool, default=True, help="utilize 2nd stage training data")
     """
     unser bs 20 x 25 steps = 42 sec -> 11.9 sequences/sec
     unser bs 30 x 10 steps = 24 sec -> 12.5 sequences/sec ***
     ser bs 4 x 25 steps = 13 sec -> 6.76 sequences/sec
     """
-    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels")
+    parser.add_argument("--output_channels", nargs="+", type=int, default=[3], help="output channels")
     parser.add_argument("--num_P_CNN", type=int, default=1, help="number of serial Prediction convolutions")
     parser.add_argument("--num_R_CLSTM", type=int, default=1, help="number of hierarchical Representation CLSTMs")
     parser.add_argument("--num_passes", type=int, default=1, help="number of prediction-update cycles per time-step")
     parser.add_argument("--pan_hierarchical", type=bool, default=False, help="utilize Pan-Hierarchical Representation")
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor for images prior to training")
     parser.add_argument("--resize_images", type=bool, default=False, help="whether or not to downscale images prior to training")
-    parser.add_argument("--training_split", type=float, default=0.99, help="proportion of data for training (only for monkaa)")
+    parser.add_argument("--training_split", type=float, default=0.90, help="proportion of data for training (only for monkaa)")
 
     # Training args
     parser.add_argument("--seed", type=int, default=np.random.randint(0,1000), help="random seed")
     parser.add_argument("--results_subdir", type=str, default=f"{str(datetime.now())}", help="Specify results directory")
     parser.add_argument("--restart_training", type=bool, default=False, help="whether or not to delete weights and restart")
-    parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-4, 99, 99, 7e-5], help="output channels")
     parser.add_argument("--reserialize_dataset", type=bool, default=True, help="reserialize dataset")
     parser.add_argument("--output_mode", type=str, default="Error", help="Error, Predictions, or Error_Images_and_Prediction. Only trains on Error.")
+    # first / second stage rates - ~40k samples each:
+    # parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-3, 99, 99, 5e-4], help="output channels")
+    # parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-4, 99, 99, 1e-5], help="output channels")
+    parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-5, 99, 99, 1e-5], help="output channels")
 
     # Structure args
     parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")

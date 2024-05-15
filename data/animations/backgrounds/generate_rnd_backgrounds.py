@@ -5,9 +5,9 @@ import cv2
 
 h = 50
 w = 50
-alpha = 0.3 # percentage of noise
+alpha = 0.5 # percentage of noise
 
-for i in range(1000):
+for i in range(10000):
 
     noise = np.random.uniform(0, 1, (h, w, 3)) * 255
     grey = np.ones((h, w, 3)) * 128
