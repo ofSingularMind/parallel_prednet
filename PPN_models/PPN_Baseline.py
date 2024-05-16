@@ -45,7 +45,7 @@ class PredLayer(keras.Model):
 
     def initialize_states(self, batch_size):
         # Initialize internal layer states
-        self.states["R"] = tf.zeros((batch_size, self.im_height, self.im_width, 339))#self.num_R_CLSTM * self.output_channels))
+        self.states["R"] = tf.zeros((batch_size, self.im_height, self.im_width, self.num_R_CLSTM * self.output_channels))
         self.states["P_M"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
         self.states["P"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
         self.states["T"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))

@@ -62,7 +62,6 @@ class Representation(keras.layers.Layer):
     def __init__(self, output_channels, num_R_CLSTM, layer_num, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Add ConvLSTM, being sure to pass previous states in OR use stateful=True
-        output_channels = 339
         self.num_R_CLSTM = num_R_CLSTM
         self.conv_lstm_layers = []
         for i in range(num_R_CLSTM):

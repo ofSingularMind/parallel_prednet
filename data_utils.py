@@ -948,3 +948,14 @@ def config_gpus():
             # Memory growth must be set before GPUs have been initialized
             print(e)
 
+def plot_video_sequences(data_path, save_path, num_samples=10):
+    assert os.path.exists(data_path), "Path does not exist."
+    files = sort_files_by_name(glob.glob(data_path + "/*.png"))
+    start = np.random.randint(0, len(files) - num_samples)
+    print(f"Start index: {start}")
+    fig, axes = plt.subplots(1, num_samples, figsize=(10, 10))
+    for i in range(num_samples):
+        axes[i].imshow(np.array(Image.open(files[start + i])))
+        axes[i].axis("off")
+    plt.show()
+    plt.savefig(save_path)
