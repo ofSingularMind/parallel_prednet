@@ -14,6 +14,12 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 # ,\r?\n
 # ,\s{2,}
 
+# for the ablation study:
+# 1 layer with representation channels [3-in, 339-out], prediction channels [339-in, 3-out]
+    # edits:
+    # in PPN_Baseline, PredLayer, self.states["R"] = tf.zeros((batch_size, self.im_height, self.im_width, 339))
+    # in PPN_Common, Representation, add line: output_channels = 339 - so representation outputs 339 channels
+
 class PredLayer(keras.Model):
     def __init__(self, training_args, im_height, im_width, num_P_CNN, num_R_CLSTM, output_channels, layer_num, bottom_layer=False, top_layer=False, *args, **kwargs):
         super(PredLayer, self).__init__(*args, **kwargs)
@@ -39,7 +45,7 @@ class PredLayer(keras.Model):
 
     def initialize_states(self, batch_size):
         # Initialize internal layer states
-        self.states["R"] = tf.zeros((batch_size, self.im_height, self.im_width, self.num_R_CLSTM * self.output_channels))
+        self.states["R"] = tf.zeros((batch_size, self.im_height, self.im_width, 339))#self.num_R_CLSTM * self.output_channels))
         self.states["P_M"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
         self.states["P"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
         self.states["T"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))

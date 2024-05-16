@@ -471,7 +471,7 @@ if __name__ == "__main__":
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
     parser.add_argument("--sequences_per_epoch_train", type=int, default=200, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=20, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
-    parser.add_argument("--batch_size", type=int, default=10, help="batch size")
+    parser.add_argument("--batch_size", type=int, default=3, help="batch size")
     parser.add_argument("--nb_epoch", type=int, default=9, help="number of epochs")
     parser.add_argument("--second_stage", type=bool, default=True, help="utilize 2nd stage training data")
     """
@@ -491,20 +491,20 @@ if __name__ == "__main__":
     # Training args
     parser.add_argument("--seed", type=int, default=np.random.randint(0,1000), help="random seed")
     parser.add_argument("--results_subdir", type=str, default=f"{str(datetime.now())}", help="Specify results directory")
-    parser.add_argument("--restart_training", type=bool, default=False, help="whether or not to delete weights and restart")
+    parser.add_argument("--restart_training", type=bool, default=True, help="whether or not to delete weights and restart")
     parser.add_argument("--reserialize_dataset", type=bool, default=True, help="reserialize dataset")
     parser.add_argument("--output_mode", type=str, default="Error", help="Error, Predictions, or Error_Images_and_Prediction. Only trains on Error.")
     # first / second stage rates - ~40k samples each:
     # parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-3, 99, 99, 5e-4], help="output channels")
-    # parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-4, 99, 99, 1e-5], help="output channels")
-    parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-5, 99, 99, 1e-5], help="output channels")
+    parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-4, 99, 99, 1e-5], help="output channels")
+    # parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-5, 99, 99, 1e-5], help="output channels")
 
     # Structure args
     parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
     parser.add_argument("--dataset", type=str, default="various", help="kitti, driving, monkaa, rolling_square, or rolling_circle")
     parser.add_argument("--data_subset", type=str, default="central_multi_gen_shape_strafing", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
-    parser.add_argument("--num_dataset_chunks", type=int, default=4, help="number of dataset chunks to iterate through (full DS / 5000)")
+    parser.add_argument("--num_dataset_chunks", type=int, default=8, help="number of dataset chunks to iterate through (full DS / 5000)")
     parser.add_argument("--various_im_shape", nargs="+", type=int, default=[50, 50], help="output channels")
     """
     Avaialble dataset/data_subset arg combinations:
