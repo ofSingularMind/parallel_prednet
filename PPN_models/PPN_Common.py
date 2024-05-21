@@ -1,6 +1,7 @@
 from keras import layers
 from keras import backend as K
 import keras
+import keras_cv
 import tensorflow as tf
 import numpy as np
 import os
@@ -63,6 +64,11 @@ class Representation(keras.layers.Layer):
         super().__init__(*args, **kwargs)
         # Add ConvLSTM, being sure to pass previous states in OR use stateful=True
         self.num_R_CLSTM = num_R_CLSTM
+        if num_R_CLSTM > 1:
+            self.eca_conv1D = layers.Conv1D(1, 3, padding="same", name=f"Representation_ECA_Conv1D_Layer{layer_num}")
+        #     self.eca_dense_avg = layers.Dense(output_channels, name=f"Representation_ECA_Dense_Avg_Layer{layer_num}")
+        #     self.eca_dense_max = layers.Dense(output_channels, name=f"Representation_ECA_Dense_Max_Layer{layer_num}")
+        #     self.s_and_e = keras_cv.layers.SqueezeAndExcite2D(num_R_CLSTM * output_channels, name=f"Representation_SqueezeAndExcite_Layer{layer_num}")
         self.conv_lstm_layers = []
         for i in range(num_R_CLSTM):
             conv_i = layers.Conv2D(output_channels, (3, 3), padding="same", activation="hard_sigmoid", name=f"Representation_Conv_i_{i}_Layer{layer_num}")
@@ -84,7 +90,23 @@ class Representation(keras.layers.Layer):
             h = o * keras.activations.tanh(c)
             outs.append(h)
             states.append([h, c])
+            inputs = h # enable the upwards flow of information in the hierarchical ConvLSTM block
         output = keras.layers.Concatenate(axis=-1)(outs) if self.num_R_CLSTM > 1 else outs[0]
+        if self.num_R_CLSTM > 1:
+            # Pick one:
+            
+            # # Apply ECA to the output of the hierarchical ConvLSTM block
+            weights = keras.layers.GlobalAveragePooling2D(keepdims=True)(output) + keras.layers.GlobalMaxPool2D(keepdims=True)(output) # Global Average Pooling, output shape: (batch_size, 1, 1, output_channels)
+            weights = tf.squeeze(weights, axis=[1]) # output shape: (batch_size, 1, output_channels)
+            weights = self.eca_conv1D(weights)
+            weights = tf.expand_dims(weights, axis=1) # output shape: (batch_size, 1, 1, output_channels)
+            weights = keras.layers.Activation("sigmoid")(weights)
+            output = output * weights
+
+            # Or,
+            # Apply Squeeze-and-Excitation to the output of the hierarchical ConvLSTM block
+            # output = self.s_and_e(output)
+
         return output, states
 
 class PanRepresentation(keras.layers.Layer):

@@ -5,8 +5,8 @@ float diameter; // Diameter of the circle
 float angle = 0; // Initial rotation angle
 float rotationRate = PI/10; // Rotation rate in radians per frame
 float speed; // Speed of horizontal movement
-int frame_rate = 1000; //<>//
-boolean save_gif = true;
+int frame_rate = 100; //<>//
+boolean save_gif = false;
 boolean save_frames = true;
 boolean rand_background = true;
 int num_frames = frame_rate * 10;
@@ -39,9 +39,9 @@ void setup() {
 
 void draw() {
   if (frameCount % 100 == 0) {
-    diameter = height/random(1.1, 5);
-    speed = rotationRate * (diameter/2); // Speed of horizontal movement
-    posY = 0.9*height - diameter/2; // Y position
+    // diameter = height/random(1.1, 5);
+    // speed = rotationRate * (diameter/2); // Speed of horizontal movement
+    // posY = 0.9*height - diameter/2; // Y position
   }
   
   // Set the background to random pixels or white:
@@ -91,7 +91,7 @@ void draw() {
   }
   
   if (save_frames == true) {
-    saveFrame("frames/multi_rolling_circle/###.png");
+    saveFrame("frames/single_rolling_circle/###.png");
     if (frameCount == num_frames) {
       exit();
     }

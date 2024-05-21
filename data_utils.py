@@ -114,8 +114,9 @@ class SequenceGenerator(Iterator):
 
 
 class IntermediateEvaluations(Callback):
-    def __init__(self, data_dirs, test_dataset, length, batch_size=4, nt=10, output_channels=[3, 48, 96, 192], dataset="kitti", model_choice="baseline"):
+    def __init__(self, data_dirs, test_dataset, length, batch_size=4, nt=10, output_channels=[3, 48, 96, 192], dataset="kitti", model_choice="baseline", iteration=0):
         self.DATA_DIR, self.WEIGHTS_DIR, self.RESULTS_SAVE_DIR, self.LOG_DIR = data_dirs
+        self.RESULTS_SAVE_DIR = os.path.join(self.RESULTS_SAVE_DIR, f"it#{iteration}/")
         super(IntermediateEvaluations, self).__init__()
         self.test_dataset = test_dataset
         self.dataset_iterator = iter(self.test_dataset)
@@ -500,7 +501,7 @@ def serialize_dataset(data_dirs, pfm_paths, pgm_paths, png_paths, dataset_name="
     else:
         nms = 5000 # nominal_subset_max
         subset_max = np.minimum(nms, length - (iteration) * nms)
-        assert subset_max > 1000, "Subset max is less than 1000 - create new data and restart training"
+        assert subset_max >= 1000, "Subset max is less than 1000 - create new data and restart training"
         subset_length = np.minimum(nms, length - (iteration) * nms)
 
     # Select random offset for dataset

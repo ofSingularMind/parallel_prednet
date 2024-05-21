@@ -1,5 +1,5 @@
 ArrayList<Shape> shapes;
-int num_shapes = 2;
+int num_shapes = 1;
 float x, y;
 int lastAddedFrame = 0;
 int addInterval = 900; // Time in milliseconds to add new shape
@@ -21,9 +21,9 @@ String rand_background = "pixels"; // can be "pixels", "whole", "white"
 
 boolean save_gif = false; // only set save_gif or save_frames to true, not both, or both to false
 boolean save_frames = true;
-boolean second_stage = false; // switches to white background and grey occlusions to sharpen up predictions
+boolean second_stage = true; // switches to white background and grey occlusions to sharpen up predictions
 
-boolean train_mode = true; // just flip this one to switch between train and test modes
+boolean train_mode = false; // just flip this one to switch between train and test modes
 boolean test_mode = !train_mode;
 
 boolean exec_randomize = true;
@@ -46,9 +46,9 @@ void setup() {
   if (save_gif && save_frames) {println("Error: save_gif and save_frames cannot both be true."); exit();}
   if (test_mode && !second_stage) {println("Error: test mode must be second stage"); exit();}
   if (save_gif) {num_frames = 150; frame_rate = 200;}
-  else if (save_frames && train_mode) {num_frames = 15000; frame_rate = 5000;} // deleteDirectory(new File(save_dir));}
+  else if (save_frames && train_mode) {num_frames = 40000; frame_rate = 5000;} // deleteDirectory(new File(save_dir));}
   else if (save_frames && test_mode) {num_frames = 1200; frame_rate = 1000;} // deleteDirectory(new File(save_dir));}
-  else {num_frames = 1000; frame_rate = 2;}
+  else {num_frames = 1000; frame_rate = 20;}
   images = new PImage[num_frames];
 
   frameRate(frame_rate);
@@ -83,19 +83,21 @@ void draw() {
 
   // Manage the shapes
 
-  while (frameCount - lastAddedFrame > random(1) && shapes.size() < num_shapes) {
+  while (shapes.size() < num_shapes) { // frameCount - lastAddedFrame > random(1) && 
     color c = color(random(255), random(255), random(255));
     float rot = random(PI);
-    float stroke = random(0.1, 2) * (width / ws);
+    float stroke = random(1.5, 3) * (width / ws);
     if (flip) { //(random(1) < 0.5) {
       float[] len_wid = get_len_wid(1.5);
       float len = len_wid[0];
       float wid = len_wid[1];
       // crosses go down (x,y)
-      for (int i = 0; i < int(random(5)); i++) {
-        x = random(width*0.1, width*0.9);
-        y = random(height*0.1, height*0.4);
-      }
+      // for (int i = 0; i < int(random(5)); i++) {
+        // x = random(width*0.1, width*0.9);
+        // y = random(height*0.1, height*0.4);
+      x = width*0.5;
+      y = -len/2;
+      // }
       shapes.add(new Cross(x, y, len, wid, rot, c, stroke));
       flip = false;
     } else {
@@ -103,10 +105,12 @@ void draw() {
       float len = len_wid[0];
       float wid = len_wid[1];
       // ellipses go right (x,y)
-      for (int i = 0; i < int(random(5)); i++) {
-        x = random(width*0.1, width*0.4);
-        y = random(height*0.1, height*0.9);
-      }
+      // for (int i = 0; i < int(random(5)); i++) {
+        // x = random(width*0.1, width*0.4);
+        // y = random(height*0.1, height*0.9);
+      x = -len/2;
+      y = height*0.5;
+      // }
       shapes.add(new Ellipse(x, y, len, wid, rot, c, stroke));
       flip = true;
     }
@@ -287,7 +291,7 @@ public float[] get_len_wid(float multiplier) {
     // if ((shape == "cross") || (shape == "rectangle")) {s_wid_divisor = s_wid_divisor * 1.5;} 
     // for debug with window_size != 50
     if (width != 50.0) {d = d * (width / 50.0);}
-    float s_len = d/2;
+    float s_len = d/1.5;
     float s_wid = s_len / (s_wid_divisor*multiplier);
     return new float[] {s_len, s_wid};
 }

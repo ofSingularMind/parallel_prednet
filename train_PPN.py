@@ -1,9 +1,7 @@
 def main(args):
     for training_it in range(args["num_dataset_chunks"]):
         # uncomment to resume training at a specific iteration
-        if (training_it+1) < 6: continue
-
-        args["results_subdir"] = f"{str(datetime.now())}_{training_it}"
+        # if (training_it+1) < 8: continue
 
         import os
         import warnings
@@ -54,11 +52,11 @@ def main(args):
         # keras.mixed_precision.set_global_policy("mixed_float16")
         # config_gpus()
 
-        # if results directory already exists, then delete it
-        if os.path.exists(RESULTS_SAVE_DIR):
-            shutil.rmtree(RESULTS_SAVE_DIR)
-        if os.path.exists(LOG_DIR):
-            shutil.rmtree(LOG_DIR)
+        # # if results directory already exists, then delete it
+        # if os.path.exists(RESULTS_SAVE_DIR):
+        #     shutil.rmtree(RESULTS_SAVE_DIR)
+        # if os.path.exists(LOG_DIR):
+        #     shutil.rmtree(LOG_DIR)
         os.makedirs(LOG_DIR, exist_ok=True)
         os.makedirs(RESULTS_SAVE_DIR, exist_ok=True)
         # print all args to file
@@ -440,10 +438,10 @@ def main(args):
         
         # start with lr of 0.001 and then drop to 0.0001 after 75 epochs
         def lr_schedule(epoch): 
-            if training_it < args["num_dataset_chunks"] // 2:
-                return args["learning_rates"][0] 
-            # elif 3 < epoch <= 50:
-            #     return args["learning_rates"][1] 
+            if training_it == 0:
+                return args["learning_rates"][0]
+            elif 0 < training_it and training_it < args["num_dataset_chunks"] // 2:
+                return args["learning_rates"][1] 
             # elif 50 < epoch <= 100:
             #     return args["learning_rates"][2]
             else:
@@ -455,7 +453,7 @@ def main(args):
             callbacks.append(ModelCheckpoint(filepath=weights_file, monitor="val_loss", save_best_only=True, save_weights_only=True))
             callbacks.append(ModelCheckpoint(filepath=results_weights_file, monitor="val_loss", save_best_only=True, save_weights_only=True))
         if plot_intermediate:
-                callbacks.append(IntermediateEvaluations(data_dirs, test_dataset, test_size, batch_size=batch_size, nt=nt, output_channels=output_channels, dataset=args["dataset"], model_choice=args["model_choice"]))
+                callbacks.append(IntermediateEvaluations(data_dirs, test_dataset, test_size, batch_size=batch_size, nt=nt, output_channels=output_channels, dataset=args["dataset"], model_choice=args["model_choice"], iteration=training_it+1))
         if tensorboard:
             callbacks.append(TensorBoard(log_dir=LOG_DIR, histogram_freq=1, write_graph=True, write_images=False))
 
@@ -473,40 +471,40 @@ if __name__ == "__main__":
 
     # Tuning args
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
-    parser.add_argument("--sequences_per_epoch_train", type=int, default=200, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_train", type=int, default=50, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=20, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
     parser.add_argument("--batch_size", type=int, default=2, help="batch size")
-    parser.add_argument("--nb_epoch", type=int, default=12, help="number of epochs")
+    parser.add_argument("--nb_epoch", type=int, default=9, help="number of epochs")
     parser.add_argument("--second_stage", type=bool, default=True, help="utilize 2nd stage training data")
     """
     unser bs 20 x 25 steps = 42 sec -> 11.9 sequences/sec
     unser bs 30 x 10 steps = 24 sec -> 12.5 sequences/sec ***
     ser bs 4 x 25 steps = 13 sec -> 6.76 sequences/sec
     """
-    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 336], help="output channels")
+    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels")
     parser.add_argument("--num_P_CNN", type=int, default=1, help="number of serial Prediction convolutions")
     parser.add_argument("--num_R_CLSTM", type=int, default=1, help="number of hierarchical Representation CLSTMs")
     parser.add_argument("--num_passes", type=int, default=1, help="number of prediction-update cycles per time-step")
     parser.add_argument("--pan_hierarchical", type=bool, default=False, help="utilize Pan-Hierarchical Representation")
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor for images prior to training")
     parser.add_argument("--resize_images", type=bool, default=False, help="whether or not to downscale images prior to training")
-    parser.add_argument("--training_split", type=float, default=0.99, help="proportion of data for training (only for monkaa)")
+    parser.add_argument("--training_split", type=float, default=0.7, help="proportion of data for training (only for monkaa)")
 
     # Training args
-    parser.add_argument("--seed", type=int, default=np.random.randint(0,1000), help="random seed")
+    parser.add_argument("--seed", type=int, default=47, help="random seed") # np.random.randint(0,1000)
     parser.add_argument("--results_subdir", type=str, default=f"{str(datetime.now())}", help="Specify results directory")
     parser.add_argument("--restart_training", type=bool, default=False, help="whether or not to delete weights and restart")
     parser.add_argument("--reserialize_dataset", type=bool, default=True, help="reserialize dataset")
     parser.add_argument("--output_mode", type=str, default="Error", help="Error, Predictions, or Error_Images_and_Prediction. Only trains on Error.")
     # first / second stage rates - ~40k samples each:
-    # parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-3, 99, 99, 5e-4], help="output channels")
-    parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-4, 99, 99, 1e-5], help="output channels")
+    # parser.add_argument("--learning_rates", nargs="+", type=int, default=[5e-4, 5e-4, 99, 5e-4], help="output channels")
+    parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-5, 1e-5, 99, 1e-5], help="output channels")
 
     # Structure args
     parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
-    parser.add_argument("--dataset", type=str, default="various", help="kitti, driving, monkaa, rolling_square, or rolling_circle")
-    parser.add_argument("--data_subset", type=str, default="central_multi_gen_shape_strafing", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
+    parser.add_argument("--dataset", type=str, default="all_rolling", help="kitti, driving, monkaa, rolling_square, or rolling_circle")
+    parser.add_argument("--data_subset", type=str, default="single", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
     parser.add_argument("--num_dataset_chunks", type=int, default=8, help="number of dataset chunks to iterate through (full DS / 5000)")
     parser.add_argument("--various_im_shape", nargs="+", type=int, default=[50, 50], help="output channels")
     """
