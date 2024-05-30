@@ -1,7 +1,7 @@
 def main(args):
     for training_it in range(args["num_dataset_chunks"]):
         # uncomment to resume training at a specific iteration
-        # if (training_it+1) < 8: continue
+        if (training_it+1) < 7: continue
 
         import os
         import warnings
@@ -471,24 +471,24 @@ if __name__ == "__main__":
 
     # Tuning args
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
-    parser.add_argument("--sequences_per_epoch_train", type=int, default=50, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_train", type=int, default=1000, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=20, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
     parser.add_argument("--batch_size", type=int, default=2, help="batch size")
-    parser.add_argument("--nb_epoch", type=int, default=9, help="number of epochs")
+    parser.add_argument("--nb_epoch", type=int, default=3, help="number of epochs")
     parser.add_argument("--second_stage", type=bool, default=True, help="utilize 2nd stage training data")
     """
     unser bs 20 x 25 steps = 42 sec -> 11.9 sequences/sec
     unser bs 30 x 10 steps = 24 sec -> 12.5 sequences/sec ***
     ser bs 4 x 25 steps = 13 sec -> 6.76 sequences/sec
     """
-    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels")
+    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 12, 24, 48], help="output channels")
     parser.add_argument("--num_P_CNN", type=int, default=1, help="number of serial Prediction convolutions")
-    parser.add_argument("--num_R_CLSTM", type=int, default=1, help="number of hierarchical Representation CLSTMs")
+    parser.add_argument("--num_R_CLSTM", type=int, default=3, help="number of hierarchical Representation CLSTMs")
     parser.add_argument("--num_passes", type=int, default=1, help="number of prediction-update cycles per time-step")
     parser.add_argument("--pan_hierarchical", type=bool, default=False, help="utilize Pan-Hierarchical Representation")
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor for images prior to training")
     parser.add_argument("--resize_images", type=bool, default=False, help="whether or not to downscale images prior to training")
-    parser.add_argument("--training_split", type=float, default=0.7, help="proportion of data for training (only for monkaa)")
+    parser.add_argument("--training_split", type=float, default=0.96, help="proportion of data for training (only for monkaa)")
 
     # Training args
     parser.add_argument("--seed", type=int, default=47, help="random seed") # np.random.randint(0,1000)
@@ -497,14 +497,16 @@ if __name__ == "__main__":
     parser.add_argument("--reserialize_dataset", type=bool, default=True, help="reserialize dataset")
     parser.add_argument("--output_mode", type=str, default="Error", help="Error, Predictions, or Error_Images_and_Prediction. Only trains on Error.")
     # first / second stage rates - ~40k samples each:
-    # parser.add_argument("--learning_rates", nargs="+", type=int, default=[5e-4, 5e-4, 99, 5e-4], help="output channels")
-    parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-5, 1e-5, 99, 1e-5], help="output channels")
+    # parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-2, 1e-3, 99, 5e-4], help="output channels")
+    parser.add_argument("--learning_rates", nargs="+", type=int, default=[5e-4, 3e-4, 99, 1e-4], help="output channels")
+    # parser.add_argument("--learning_rates", nargs="+", type=int, default=[2e-4, 2e-4, 99, 2e-4], help="output channels")
+    # parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-4, 1e-4, 99, 1e-4], help="output channels")
 
     # Structure args
     parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
-    parser.add_argument("--dataset", type=str, default="all_rolling", help="kitti, driving, monkaa, rolling_square, or rolling_circle")
-    parser.add_argument("--data_subset", type=str, default="single", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
+    parser.add_argument("--dataset", type=str, default="various", help="kitti, driving, monkaa, rolling_square, or rolling_circle")
+    parser.add_argument("--data_subset", type=str, default="central_multi_gen_shape_strafing", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
     parser.add_argument("--num_dataset_chunks", type=int, default=8, help="number of dataset chunks to iterate through (full DS / 5000)")
     parser.add_argument("--various_im_shape", nargs="+", type=int, default=[50, 50], help="output channels")
     """
@@ -527,6 +529,6 @@ if __name__ == "__main__":
     DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = get_settings()["dirs"]
     data_dirs = [DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR]
 
-    # Iterate randomly through chunks (len 5000) of full dataset (len 50000)
+    # Iterate randomly through chunks (len 5000) of full dataset (len 40000)
 
     main(args)

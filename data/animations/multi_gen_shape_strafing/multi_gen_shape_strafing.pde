@@ -23,7 +23,7 @@ boolean save_gif = false; // only set save_gif or save_frames to true, not both,
 boolean save_frames = true;
 boolean second_stage = true; // switches to white background and grey occlusions to sharpen up predictions
 
-boolean train_mode = false; // just flip this one to switch between train and test modes
+boolean train_mode = true; // just flip this one to switch between train and test modes
 boolean test_mode = !train_mode;
 
 boolean exec_randomize = true;
@@ -46,8 +46,8 @@ void setup() {
   if (save_gif && save_frames) {println("Error: save_gif and save_frames cannot both be true."); exit();}
   if (test_mode && !second_stage) {println("Error: test mode must be second stage"); exit();}
   if (save_gif) {num_frames = 150; frame_rate = 200;}
-  else if (save_frames && train_mode) {num_frames = 40000; frame_rate = 5000;} // deleteDirectory(new File(save_dir));}
-  else if (save_frames && test_mode) {num_frames = 1200; frame_rate = 1000;} // deleteDirectory(new File(save_dir));}
+  else if (save_frames && train_mode) {num_frames = 400; frame_rate = 5000;} // deleteDirectory(new File(save_dir));}
+  else if (save_frames && test_mode) {num_frames = 400; frame_rate = 1000;} // deleteDirectory(new File(save_dir));}
   else {num_frames = 1000; frame_rate = 20;}
   images = new PImage[num_frames];
 
@@ -92,12 +92,12 @@ void draw() {
       float len = len_wid[0];
       float wid = len_wid[1];
       // crosses go down (x,y)
-      // for (int i = 0; i < int(random(5)); i++) {
-        // x = random(width*0.1, width*0.9);
-        // y = random(height*0.1, height*0.4);
-      x = width*0.5;
-      y = -len/2;
-      // }
+      for (int i = 0; i < int(random(5)); i++) {
+        x = random(width*0.1, width*0.9);
+        y = random(height*0.1, height*0.4);
+      }
+      // x = width/2;
+      // y = height/2;
       shapes.add(new Cross(x, y, len, wid, rot, c, stroke));
       flip = false;
     } else {
@@ -105,12 +105,12 @@ void draw() {
       float len = len_wid[0];
       float wid = len_wid[1];
       // ellipses go right (x,y)
-      // for (int i = 0; i < int(random(5)); i++) {
-        // x = random(width*0.1, width*0.4);
-        // y = random(height*0.1, height*0.9);
-      x = -len/2;
-      y = height*0.5;
-      // }
+      for (int i = 0; i < int(random(5)); i++) {
+        x = random(width*0.1, width*0.4);
+        y = random(height*0.1, height*0.9);
+      }
+      // x = width/2;
+      // y = height/2;
       shapes.add(new Ellipse(x, y, len, wid, rot, c, stroke));
       flip = true;
     }
@@ -273,17 +273,17 @@ class Ellipse extends Shape {
 
 public float[] get_len_wid(float multiplier) {
     float d = random(40, 70);
-    if (train_mode || test_mode) {
+    if (train_mode) {
       while (d >= 50 && d <= 60) {d = random(40, 70);}
-    } else if (test_mode == true) {
+    } else if (test_mode) {
       while (!(d > 52 && d < 58) && !(d > 73 && d < 90)) {d = random(53, 90);}
     } else {
       println("Error: train_mode and test_mode not defined."); exit();
     }
     float s_wid_divisor = random(2, 4);
-    if (train_mode || test_mode) {
+    if (train_mode) {
       while (s_wid_divisor >= 3 && s_wid_divisor <= 3.75) {s_wid_divisor = random(2, 4);}
-    } else if (test_mode == true) {
+    } else if (test_mode) {
       while (!(s_wid_divisor > 3.25 && s_wid_divisor < 3.5) && !(s_wid_divisor > 3.5 && s_wid_divisor < 5)) {s_wid_divisor = random(3.25, 5);}
     } else {
       println("Error: train_mode and test_mode not defined."); exit();
@@ -291,7 +291,7 @@ public float[] get_len_wid(float multiplier) {
     // if ((shape == "cross") || (shape == "rectangle")) {s_wid_divisor = s_wid_divisor * 1.5;} 
     // for debug with window_size != 50
     if (width != 50.0) {d = d * (width / 50.0);}
-    float s_len = d/1.5;
+    float s_len = d/2;
     float s_wid = s_len / (s_wid_divisor*multiplier);
     return new float[] {s_len, s_wid};
 }
