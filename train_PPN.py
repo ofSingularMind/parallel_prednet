@@ -1,7 +1,7 @@
 def main(args):
     for training_it in range(args["num_dataset_chunks"]):
         # uncomment to resume training at a specific iteration
-        if (training_it+1) < 7: continue
+        # if (training_it+1) < 7: continue
 
         import os
         import warnings
@@ -481,9 +481,9 @@ if __name__ == "__main__":
     unser bs 30 x 10 steps = 24 sec -> 12.5 sequences/sec ***
     ser bs 4 x 25 steps = 13 sec -> 6.76 sequences/sec
     """
-    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 12, 24, 48], help="output channels")
+    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels")
     parser.add_argument("--num_P_CNN", type=int, default=1, help="number of serial Prediction convolutions")
-    parser.add_argument("--num_R_CLSTM", type=int, default=3, help="number of hierarchical Representation CLSTMs")
+    parser.add_argument("--num_R_CLSTM", type=int, default=1, help="number of hierarchical Representation CLSTMs")
     parser.add_argument("--num_passes", type=int, default=1, help="number of prediction-update cycles per time-step")
     parser.add_argument("--pan_hierarchical", type=bool, default=False, help="utilize Pan-Hierarchical Representation")
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor for images prior to training")

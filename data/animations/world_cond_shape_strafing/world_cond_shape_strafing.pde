@@ -21,8 +21,8 @@ int ws = 50;
 
 String rand_background = "pixels"; // can be "pixels", "whole", "white"
 
-boolean save_gif = true; // only set save_gif or save_frames to true, not both, or both to false
-boolean save_frames = false;
+boolean save_gif = false; // only set save_gif or save_frames to true, not both, or both to false
+boolean save_frames = true;
 boolean second_stage = true; // switches to white background and grey occlusions to sharpen up predictions
 
 boolean train_mode = false; // just flip this one to switch between train and test modes
@@ -48,7 +48,7 @@ void setup() {
   if (save_gif && save_frames) {println("Error: save_gif and save_frames cannot both be true."); exit();}
   if (save_gif) {num_frames = 150; frame_rate = 200;}
   else if (save_frames && train_mode) {num_frames = 30000; frame_rate = 5000;} // deleteDirectory(new File(save_dir));}
-  else if (save_frames && test_mode) {num_frames = 1000; frame_rate = 1000;} // deleteDirectory(new File(save_dir));}
+  else if (save_frames && test_mode) {num_frames = 1200; frame_rate = 1000;} // deleteDirectory(new File(save_dir));}
   else {num_frames = 1000; frame_rate = 10;}
   images = new PImage[num_frames];
 
@@ -197,9 +197,7 @@ class World {
         }
         strokeWeight(1);
         // Left column
-        // rect(1*width/5, 1*height/5, width/7, height/7);
         rect(1*width/5, height/2, width/7, height/7);
-        // rect(1*width/5, 4*height/5, width/7, height/7);
         
         // Middle column
         rect(width/2, 1*height/5, width/7, height/7);
@@ -207,11 +205,7 @@ class World {
         rect(width/2, 4*height/5, width/7, height/7);
         
         // Right column
-        // rect(4*width/5, 1*height/5, width/7, height/7);
         rect(4*width/5, height/2, width/7, height/7);
-        // rect(4*width/5, 4*height/5, width/7, height/7);
-        // rectMode(CENTER);
-        // stroke(0);
     }
 }
 
