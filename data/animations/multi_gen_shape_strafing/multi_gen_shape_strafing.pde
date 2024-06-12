@@ -1,5 +1,5 @@
 ArrayList<Shape> shapes;
-int num_shapes = 1;
+int num_shapes = 2;
 float x, y;
 int lastAddedFrame = 0;
 int addInterval = 900; // Time in milliseconds to add new shape
@@ -46,8 +46,8 @@ void setup() {
   if (save_gif && save_frames) {println("Error: save_gif and save_frames cannot both be true."); exit();}
   if (test_mode && !second_stage) {println("Error: test mode must be second stage"); exit();}
   if (save_gif) {num_frames = 150; frame_rate = 200;}
-  else if (save_frames && train_mode) {num_frames = 5000; frame_rate = 5000;} // deleteDirectory(new File(save_dir));}
-  else if (save_frames && test_mode) {num_frames = 400; frame_rate = 1000;} // deleteDirectory(new File(save_dir));}
+  else if (save_frames && train_mode) {num_frames = 20000; frame_rate = 5000;} // deleteDirectory(new File(save_dir));}
+  else if (save_frames && test_mode) {num_frames = 2000; frame_rate = 1000;} // deleteDirectory(new File(save_dir));}
   else {num_frames = 1000; frame_rate = 20;}
   images = new PImage[num_frames];
 
@@ -82,7 +82,6 @@ void draw() {
   }
 
   // Manage the shapes
-
   while (shapes.size() < num_shapes) { // frameCount - lastAddedFrame > random(1) && 
     color c = color(random(255), random(255), random(255));
     float rot = random(PI);
@@ -185,11 +184,12 @@ void draw() {
   else if (save_frames == true) {
     if (!second_stage) {
       if (train_mode) {saveFrame("frames/multi_gen_shape_1st_stage/###.png");}
-      else if (test_mode) {saveFrame("frames/multi_gen_shape_test_1st_stage/###.png");}
+      else if (test_mode) {println("Error: test_mode should be used with second stage"); exit();}
     }
     else if (second_stage) {
       if (train_mode) {saveFrame("frames/multi_gen_shape_2nd_stage/###.png");}
-      else if (test_mode) {saveFrame("frames/multi_gen_shape_test/###.png");}
+      else if (test_mode && (num_shapes == 1)) {saveFrame("frames/multi_gen_shape_test_1shape/###.png");}
+      else if (test_mode && (num_shapes == 2)) {saveFrame("frames/multi_gen_shape_test/###.png");}
     }
     else {println("Error: train_mode and test_mode not defined."); exit();}
     if (frameCount == num_frames) {
@@ -200,6 +200,14 @@ void draw() {
   else {
     if (frameCount == num_frames) {
       exit();
+    }
+  }
+
+  // Here, for testing, we create just two-frame pairs by clearing the shapes arrayList after every other frame
+  if (test_mode) {
+    if (frameCount % 2 == 0) {
+      // println("Frame count is " + frameCount);
+      shapes.clear();
     }
   }
 }
