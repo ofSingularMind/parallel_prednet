@@ -10,7 +10,7 @@ import numpy as np
 
 # Model evaluation script
 loadModel = True
-WEIGHTS_PATH = "/home/evalexii/Documents/Thesis/code/MONet-pytorch/alex/model_weights/"
+WEIGHTS_PATH = "/home/evalexii/Documents/Thesis/code/parallel_prednet/MONet-pytorch/alex/model_weights/"
 DATASET_PATH = "/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/multi_gen_shape_strafing/frames/multi_gen_shape_2nd_stage_for_objects/"
 
 # Load datset and create dataloader

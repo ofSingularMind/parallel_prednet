@@ -2,12 +2,14 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torchvision import transforms
-from dataset import UnsupervisedImageDataset
-from monet_pytorch import Monet
+from alex.dataset import UnsupervisedImageDataset
+# from monet_pytorch import Monet
+from model import Monet
 import torch
+# from multi_object_datasets import multi_dsprites
 
 loadModel = True
-WEIGHTS_PATH = "/home/evalexii/Documents/Thesis/code/MONet-pytorch/alex/model_weights/"
+WEIGHTS_PATH = "/home/evalexii/Documents/Thesis/code/parallel_prednet/MONet-pytorch/alex/model_weights/"
 DATASET_PATH = "/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/multi_gen_shape_strafing/frames/multi_gen_shape_2nd_stage_for_objects/"
 
 # Load datset and create dataloader
@@ -32,7 +34,7 @@ else:
     best_loss = float('inf')
 
 # criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(monet.parameters(), lr=0.01)
+optimizer = optim.Adam(monet.parameters(), lr=0.0001)
 
 # Training loop
 num_epochs = 10
