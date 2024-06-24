@@ -15,7 +15,7 @@ if delftblue:
     WEIGHTS_PATH = "/home/aledbetter/parallel_prednet/monet_pytorch_GH@michedev/model_weights/delftblue/"
     DATASET_PATH = "/scratch/aledbetter/multi_gen_shape_2nd_stage_for_objects/"
 else:
-    WEIGHTS_PATH = "/home/evalexii/Documents/Thesis/code/parallel_prednet/monet_pytorch_GH@michedev/alex/model_weights/laptop/"
+    WEIGHTS_PATH = "/home/evalexii/Documents/Thesis/code/parallel_prednet/monet_pytorch_GH@michedev/model_weights/laptop/"
     DATASET_PATH = "/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/multi_gen_shape_strafing/frames/multi_gen_shape_2nd_stage_for_objects/"
 
 # Load datset and create dataloader
