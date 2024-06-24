@@ -1,4 +1,4 @@
-<mxfile host="app.diagrams.net" modified="2024-06-06T15:13:57.127Z" agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36" etag="wa4MfyUmf_uB1kIMvc7w" version="24.4.14" type="device">
+<mxfile host="app.diagrams.net" modified="2024-06-18T13:34:08.134Z" agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36" etag="wMTUhJcwCy01xFP67kSD" version="24.5.4" type="device" pages="2">
   <diagram name="Page-1" id="6cNu2CN48wHHCkyAZtRg">
     <mxGraphModel dx="4708" dy="3038" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
@@ -18,6 +18,38 @@
         </mxCell>
         <mxCell id="N8B7E-WO26ojiVmC6M4k-3" value="" style="shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;image=https://upload.wikimedia.org/wikipedia/commons/0/00/Cortical_Columns.jpg;" vertex="1" parent="1">
           <mxGeometry x="-1470" y="150" width="1200" height="938" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="8Oo5fWXLrFIakDxFniQC" name="Page-2">
+    <mxGraphModel dx="1504" dy="969" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="FbArr7alg8pOHTU0VgJX-1" value="R_Inp" style="whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="380" y="460" width="80" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="FbArr7alg8pOHTU0VgJX-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="FbArr7alg8pOHTU0VgJX-2" target="FbArr7alg8pOHTU0VgJX-1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="FbArr7alg8pOHTU0VgJX-2" value="MONet" style="whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="130" y="460" width="80" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="FbArr7alg8pOHTU0VgJX-6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="FbArr7alg8pOHTU0VgJX-3" target="FbArr7alg8pOHTU0VgJX-1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="FbArr7alg8pOHTU0VgJX-3" value="MFA Decomposition" style="whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="130" y="580" width="80" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="FbArr7alg8pOHTU0VgJX-4" value="Target" style="whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="510" y="570" width="80" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="FbArr7alg8pOHTU0VgJX-7" value="Pred" style="whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="510" y="460" width="80" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="FbArr7alg8pOHTU0VgJX-8" value="Error" style="whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="640" y="460" width="80" height="80" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

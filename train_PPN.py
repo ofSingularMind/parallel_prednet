@@ -315,12 +315,12 @@ def main(args):
             #     "general_cross_R",
             #     "general_ellipse_D",
             # ]
-            dataset_names = ["multi_gen_shape_strafing"]
-            data_subset_names = ["multi_gen_shape_1st_stage" if not args["second_stage"] else "multi_gen_shape_2nd_stage"]
+            # dataset_names = ["multi_gen_shape_strafing"]
+            # data_subset_names = ["multi_gen_shape_1st_stage" if not args["second_stage"] else "multi_gen_shape_2nd_stage"]
             # dataset_names = ["class_cond_shape_strafing"]
             # data_subset_names = ["class_cond_shape_1st_stage" if not args["second_stage"] else "class_cond_shape_2nd_stage"]
-            # dataset_names = ["world_cond_shape_strafing"]
-            # data_subset_names = ["world_cond_shape_1st_stage" if not args["second_stage"] else "world_cond_shape_2nd_stage"]
+            dataset_names = ["world_cond_shape_strafing"]
+            data_subset_names = ["world_cond_shape_1st_stage" if not args["second_stage"] else "world_cond_shape_2nd_stage"]
 
             # print dataset names to job details file
             with open(os.path.join(RESULTS_SAVE_DIR, "job_args.txt"), "a+") as f:
@@ -481,9 +481,9 @@ if __name__ == "__main__":
     unser bs 30 x 10 steps = 24 sec -> 12.5 sequences/sec ***
     ser bs 4 x 25 steps = 13 sec -> 6.76 sequences/sec
     """
-    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 12, 24, 48], help="output channels")
+    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels")
     parser.add_argument("--num_P_CNN", type=int, default=1, help="number of serial Prediction convolutions")
-    parser.add_argument("--num_R_CLSTM", type=int, default=3, help="number of hierarchical Representation CLSTMs")
+    parser.add_argument("--num_R_CLSTM", type=int, default=1, help="number of hierarchical Representation CLSTMs")
     parser.add_argument("--num_passes", type=int, default=1, help="number of prediction-update cycles per time-step")
     parser.add_argument("--pan_hierarchical", type=bool, default=False, help="utilize Pan-Hierarchical Representation")
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor for images prior to training")
@@ -506,7 +506,7 @@ if __name__ == "__main__":
     parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, cl_delta, cl_recon, multi_channel")
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
     parser.add_argument("--dataset", type=str, default="various", help="kitti, driving, monkaa, rolling_square, or rolling_circle")
-    parser.add_argument("--data_subset", type=str, default="central_multi_gen_shape_strafing", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
+    parser.add_argument("--data_subset", type=str, default="world_cond_shape_strafing", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
     parser.add_argument("--num_dataset_chunks", type=int, default=4, help="number of dataset chunks to iterate through (full DS / 5000)")
     parser.add_argument("--various_im_shape", nargs="+", type=int, default=[50, 50], help="output channels")
     """

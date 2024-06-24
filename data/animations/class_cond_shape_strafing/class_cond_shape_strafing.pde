@@ -23,7 +23,7 @@ boolean save_gif = false; // only set save_gif or save_frames to true, not both,
 boolean save_frames = true;
 boolean second_stage = true; // switches to white background and grey occlusions to sharpen up predictions
 
-boolean train_mode = false; // just flip this one to switch between train and test modes
+boolean train_mode = true; // just flip this one to switch between train and test modes
 boolean test_mode = !train_mode;
 
 boolean exec_randomize = true;
@@ -46,7 +46,7 @@ void setup() {
   if (save_gif && save_frames) {println("Error: save_gif and save_frames cannot both be true."); exit();}
   if (save_gif) {num_frames = 150; frame_rate = 200;}
   else if (save_frames && train_mode) {num_frames = 20000; frame_rate = 5000;} // deleteDirectory(new File(save_dir));}
-  else if (save_frames && test_mode) {num_frames = 1200; frame_rate = 1000;} // deleteDirectory(new File(save_dir));}
+  else if (save_frames && test_mode) {num_frames = 2000; frame_rate = 1000;} // deleteDirectory(new File(save_dir));}
   else {num_frames = 1000; frame_rate = 1;}
   images = new PImage[num_frames];
 
@@ -154,6 +154,15 @@ void draw() {
       exit();
     }
   }
+
+  // Here, for testing, we create just two-frame pairs by clearing the shapes arrayList after every other frame
+  if (test_mode) {
+    if (frameCount % 2 == 0) {
+      // println("Frame count is " + frameCount);
+      shapes.clear();
+    }
+  }
+
 }
 
 abstract class Shape {

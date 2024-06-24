@@ -15,7 +15,7 @@ float[] occlusionHeight = new float[num_occlusions];
 color[] occ_colors = new color[num_occlusions];
 float[] occ_rot = new float[num_occlusions];
 boolean rand_occlusions = true;
-int ws = 50;
+int ws = 64;
 
 String rand_background = "pixels"; // can be "pixels", "whole", "white"
 
@@ -25,6 +25,7 @@ boolean second_stage = true; // switches to white background and grey occlusions
 
 boolean train_mode = true; // just flip this one to switch between train and test modes
 boolean test_mode = !train_mode;
+boolean image_pairs = true; // if true, only two frames are generated before new shapes
 
 boolean exec_randomize = true;
 boolean flip = false;
@@ -48,7 +49,7 @@ void setup() {
   if (save_gif) {num_frames = 150; frame_rate = 200;}
   else if (save_frames && train_mode) {num_frames = 20000; frame_rate = 5000;} // deleteDirectory(new File(save_dir));}
   else if (save_frames && test_mode) {num_frames = 2000; frame_rate = 1000;} // deleteDirectory(new File(save_dir));}
-  else {num_frames = 1000; frame_rate = 20;}
+  else {num_frames = 1000; frame_rate = 5;}
   images = new PImage[num_frames];
 
   frameRate(frame_rate);
@@ -83,6 +84,8 @@ void draw() {
 
   // Manage the shapes
   while (shapes.size() < num_shapes) { // frameCount - lastAddedFrame > random(1) && 
+    //float a = random(100);
+    //if (a > 25) {break;} //<>//
     color c = color(random(255), random(255), random(255));
     float rot = random(PI);
     float stroke = random(1.5, 3) * (width / ws);
@@ -91,9 +94,9 @@ void draw() {
       float len = len_wid[0];
       float wid = len_wid[1];
       // crosses go down (x,y)
-      for (int i = 0; i < int(random(5)); i++) {
-        x = random(width*0.1, width*0.9);
-        y = random(height*0.1, height*0.4);
+      for (int i = 0; i < int(random(1,5)); i++) {
+        x = random(width*0.01, width*0.99);
+        y = random(height*0.01, height*0.99);
       }
       // x = width/2;
       // y = height/2;
@@ -104,9 +107,9 @@ void draw() {
       float len = len_wid[0];
       float wid = len_wid[1];
       // ellipses go right (x,y)
-      for (int i = 0; i < int(random(5)); i++) {
-        x = random(width*0.1, width*0.4);
-        y = random(height*0.1, height*0.9);
+      for (int i = 0; i < int(random(1,5)); i++) {
+        x = random(width*0.01, width*0.99);
+        y = random(height*0.01, height*0.99);
       }
       // x = width/2;
       // y = height/2;
@@ -187,7 +190,7 @@ void draw() {
       else if (test_mode) {println("Error: test_mode should be used with second stage"); exit();}
     }
     else if (second_stage) {
-      if (train_mode) {saveFrame("frames/multi_gen_shape_2nd_stage/###.png");}
+      if (train_mode) {saveFrame("frames/multi_gen_shape_2nd_stage_for_objects/###.png");}
       else if (test_mode && (num_shapes == 1)) {saveFrame("frames/multi_gen_shape_test_1shape/###.png");}
       else if (test_mode && (num_shapes == 2)) {saveFrame("frames/multi_gen_shape_test/###.png");}
     }
@@ -204,8 +207,8 @@ void draw() {
   }
 
   // Here, for testing, we create just two-frame pairs by clearing the shapes arrayList after every other frame
-  if (test_mode) {
-    if (frameCount % 2 == 0) {
+  if (image_pairs) {
+    if (frameCount % 1 == 0) {
       // println("Frame count is " + frameCount);
       shapes.clear();
     }
