@@ -1,6 +1,6 @@
 from math import prod
 
-from monet_pytorch.model import Monet
+from model import Monet
 import omegaconf
 
 omegaconf.OmegaConf.register_new_resolver('prod', lambda *numbers: int(prod(float(x) for x in numbers)))

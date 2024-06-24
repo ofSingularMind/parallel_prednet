@@ -57,7 +57,7 @@ Lastly, you can make your custom MONet by input your custom configuration as Ome
       height: 44
       max_num_objects: 10
     model:  #this config file follows MONet implementation from IODINE paper
-      _target_: monet_pytorch.model.Monet
+      _target_: model.Monet
       height: ${dataset.height}
       width: ${dataset.width}
       num_slots: ${dataset.max_num_objects}
@@ -71,7 +71,7 @@ Lastly, you can make your custom MONet by input your custom configuration as Ome
       encoder:
         _target_: torch.nn.Sequential
         _args_:
-          - _target_: monet_pytorch.template.sequential_cnn.make_sequential_cnn_from_config
+          - _target_: template.sequential_cnn.make_sequential_cnn_from_config
             channels: [44, 44, 32, 14]
             kernels: 3
             strides: 2
@@ -90,11 +90,11 @@ Lastly, you can make your custom MONet by input your custom configuration as Ome
             in_features: 256
             out_features: ${prod:${model.latent_size},2}
       decoder:
-        _target_: monet_pytorch.template.encoder_decoder.BroadcastDecoderNet
+        _target_: template.encoder_decoder.BroadcastDecoderNet
         w_broadcast: ${sum:${dataset.width},8}
         h_broadcast: ${sum:${dataset.height},8}
         net:
-          _target_: monet_pytorch.template.sequential_cnn.make_sequential_cnn_from_config
+          _target_: template.sequential_cnn.make_sequential_cnn_from_config
           input_channels: ${sum:${model.latent_size},2} # latent size + 2
           channels: [32, 32, 64, 64, 4]  # last is 4 channels because rgb (3) + mask (1)
           kernels: [3, 3, 3, 3, 1]
@@ -103,7 +103,7 @@ Lastly, you can make your custom MONet by input your custom configuration as Ome
           batchnorms: [true, true, true, true, false]
           bn_affines: [false, false, false, false, false]
       unet:
-        _target_: monet_pytorch.unet.UNet
+        _target_: unet.UNet
         input_channels: ${model.input_channels}
         num_blocks: 5
         filter_start: 16

@@ -2,15 +2,33 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torchvision import transforms
-from alex.dataset import UnsupervisedImageDataset
+from dataset import UnsupervisedImageDataset
 # from monet_pytorch import Monet
 from model import Monet
 import torch
 # from multi_object_datasets import multi_dsprites
 
+# Do init stuff
+from math import prod
+
+from model import Monet
+import omegaconf
+
+omegaconf.OmegaConf.register_new_resolver('prod', lambda *numbers: int(prod(float(x) for x in numbers)))
+omegaconf.OmegaConf.register_new_resolver('sum', lambda *numbers: int(sum(float(x) for x in numbers)))
+
+
+__all__ = ['Monet']
+
+
 loadModel = True
-WEIGHTS_PATH = "/home/evalexii/Documents/Thesis/code/parallel_prednet/MONet-pytorch/alex/model_weights/"
-DATASET_PATH = "/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/multi_gen_shape_strafing/frames/multi_gen_shape_2nd_stage_for_objects/"
+delftblue = False
+if delftblue:
+    WEIGHTS_PATH = "/home/aledbetter/parallel_prednet/MONet-pytorch/delftblue/model_weights/"
+    DATASET_PATH = "/scratch/aledbetter/multi_gen_shape_2nd_stage_for_objects/"
+else:
+    WEIGHTS_PATH = "/home/evalexii/Documents/Thesis/code/parallel_prednet/MONet-pytorch/alex/model_weights/"
+    DATASET_PATH = "/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/multi_gen_shape_strafing/frames/multi_gen_shape_2nd_stage_for_objects/"
 
 # Load datset and create dataloader
 transform = transforms.Compose([

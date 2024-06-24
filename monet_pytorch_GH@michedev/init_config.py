@@ -5,7 +5,7 @@ import hydra.utils
 from omegaconf import OmegaConf, omegaconf
 
 from monet_pytorch import Monet
-from monet_pytorch.paths import CONFIG_MODEL, CONFIG_SPECIAL_CASES, CONFIG_DATASET
+from paths import CONFIG_MODEL, CONFIG_SPECIAL_CASES, CONFIG_DATASET
 
 # Register resolvers if not already registered
 if 'prod' not in OmegaConf.resolvers:

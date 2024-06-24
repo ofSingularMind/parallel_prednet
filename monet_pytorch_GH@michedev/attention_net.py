@@ -4,7 +4,7 @@ import torch
 from torch import nn as nn
 from torch.nn import LogSoftmax
 
-from monet_pytorch.unet import UNet
+from unet import UNet
 
 
 class AttentionNet(nn.Module):

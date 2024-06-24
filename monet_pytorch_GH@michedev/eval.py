@@ -10,8 +10,13 @@ import numpy as np
 
 # Model evaluation script
 loadModel = True
-WEIGHTS_PATH = "/home/evalexii/Documents/Thesis/code/parallel_prednet/MONet-pytorch/alex/model_weights/"
-DATASET_PATH = "/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/multi_gen_shape_strafing/frames/multi_gen_shape_2nd_stage_for_objects/"
+delftblue = False
+if delftblue:
+    WEIGHTS_PATH = "/home/aledbetter/parallel_prednet/MONet-pytorch/delftblue/model_weights/"
+    DATASET_PATH = "/scratch/aledbetter/multi_gen_shape_2nd_stage_for_objects/"
+else:
+    WEIGHTS_PATH = "/home/evalexii/Documents/Thesis/code/parallel_prednet/MONet-pytorch/alex/model_weights/"
+    DATASET_PATH = "/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/multi_gen_shape_strafing/frames/multi_gen_shape_2nd_stage_for_objects/"
 
 # Load datset and create dataloader
 transform = transforms.Compose([
@@ -45,7 +50,7 @@ for batch_idx, images in enumerate(dataloader):
         mask = outputs['mask'][0, i].detach().numpy()
         recon = np.moveaxis(outputs['slot'][0, i].detach().numpy(), 0, -1)
         masked_recon = np.expand_dims(mask, -1) * recon
-        axs[0, i].imshow(mask)
+        axs[0, i].imshow(mask, cmap=plt.colormaps['Greys'])
         axs[1, i].imshow(recon)
         axs[2, i].imshow(masked_recon)
     plt.show()

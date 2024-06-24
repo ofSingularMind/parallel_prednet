@@ -4,7 +4,7 @@ import torch.nn
 from omegaconf import ListConfig
 from torch import nn as nn
 
-from monet_pytorch.nn_utils import get_activation_module, ActivationFunctionEnum
+from nn_utils import get_activation_module, ActivationFunctionEnum
 
 def _scalars_to_list(params: dict):
     param_names = list(params.keys())
