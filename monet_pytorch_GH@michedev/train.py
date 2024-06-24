@@ -19,7 +19,7 @@ __all__ = ['Monet']
 
 
 loadModel = True
-delftblue = True
+delftblue = False
 if delftblue:
     WEIGHTS_PATH = "/home/aledbetter/parallel_prednet/monet_pytorch_GH@michedev/model_weights/delftblue/"
     DATASET_PATH = "/scratch/aledbetter/multi_gen_shape_2nd_stage_for_objects/"
@@ -45,11 +45,15 @@ dataloader = DataLoader(dataset, batch_size=64, shuffle=True)
 # Initialize model, loss function, and optimizer. Load saved weights if resuming training.
 monet = Monet.from_config(model='monet', dataset_width=64, dataset_height=64)
 if loadModel:
-    monet.load_state_dict(torch.load(WEIGHTS_PATH + 'monet_weights.pth'))
-    print('Successfully loaded model weights, resuming training...')
-    monet.eval()
-    with open(WEIGHTS_PATH + 'loss.txt', 'r') as f:
-        best_loss = float(f.read())
+    try:
+        monet.load_state_dict(torch.load(WEIGHTS_PATH + 'monet_weights.pth'))
+        print('Successfully loaded model weights, resuming training...')
+        monet.eval()
+        with open(WEIGHTS_PATH + 'loss.txt', 'r') as f:
+            best_loss = float(f.read())
+    except FileNotFoundError:
+        print('Model weights not found, beginning training from scratch...')
+        best_loss = float('inf')
 else:
     best_loss = float('inf')
 
