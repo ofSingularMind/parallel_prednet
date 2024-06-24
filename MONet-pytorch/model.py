@@ -8,10 +8,10 @@ from omegaconf import DictConfig, OmegaConf
 from torch import nn
 from torch.nn import functional as F
 
-from monet_pytorch.attention_net import AttentionNet
-from monet_pytorch.template.encoder_decoder import BroadcastDecoderNet
-from monet_pytorch.paths import CONFIG_MODEL, CONFIG_DATASET, CONFIG_SPECIAL_CASES
-from monet_pytorch.unet import UNet
+from attention_net import AttentionNet
+from template.encoder_decoder import BroadcastDecoderNet
+from paths import CONFIG_MODEL, CONFIG_DATASET, CONFIG_SPECIAL_CASES
+from unet import UNet
 
 _MODEL_CONFIG_VALUES = ['monet', 'monet-iodine', 'monet-lightweight']
 _DATASET_CONFIG_VALUES = ['clevr_6', 'multidsprites_colored_on_grayscale',

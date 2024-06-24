@@ -22,7 +22,8 @@ model_weights/
 *.hkl
 *.gif
 *.tar.xz
-
+*.tfrecords
+MONet-pytorch/data/
 # Distribution / packaging
 .Python
 env/
