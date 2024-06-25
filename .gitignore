@@ -23,7 +23,9 @@ model_weights/
 *.gif
 *.tar.xz
 *.tfrecords
-MONet-pytorch/data/
+monet_pytorch_GH@michedev/data/
+
+
 # Distribution / packaging
 .Python
 env/

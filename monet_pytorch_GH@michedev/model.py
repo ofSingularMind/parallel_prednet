@@ -94,7 +94,7 @@ class Monet(nn.Module):
 
     def forward_vae_slots(self, log_masks, slots, x):
         masks_pred = []
-        neg_log_p_xs = []
+        log_p_xs = []
         kl_zs = 0.0
         num_slots = log_masks.shape[1]
         zs = torch.zeros(x.size(0), num_slots, self.latent_size)
@@ -102,13 +102,13 @@ class Monet(nn.Module):
             log_mask = log_masks[:, i].unsqueeze(1)
             z, kl_z = self._encode(x, log_mask)
             sigma = self.bg_sigma if i == 0 else self.fg_sigma
-            neg_log_p_x_masked, x_recon, mask_pred = self._decode(x, z, log_mask, sigma)
-            neg_log_p_xs.append(neg_log_p_x_masked.unsqueeze(1))
+            log_p_x_masked, x_recon, mask_pred = self._decode(x, z, log_mask, sigma)
+            log_p_xs.append(log_p_x_masked.unsqueeze(1))
             kl_zs += kl_z.mean(dim=0)
             masks_pred.append(mask_pred)
             slots[:, i] = x_recon
             zs[:, i, :] = z
-        return kl_zs, masks_pred, neg_log_p_xs, zs
+        return kl_zs, masks_pred, log_p_xs, zs
 
     # def _calc_loss(self, kl_zs, masks, masks_pred, neg_log_p_xs):
     #     loss = 0.0
@@ -118,16 +118,16 @@ class Monet(nn.Module):
     #     loss += self.gamma * kl_masks
     #     return kl_masks, loss, neg_log_p_xs
 
-    def _calc_loss(self, kl_zs, masks, masks_pred, neg_log_p_xs):
+    def _calc_loss(self, kl_zs, masks, masks_pred, log_p_xs):
         # Calculate negative log-likelihood
         # here we aggregate the log probabilities of the input given the latent sample, weighted by masks
         # then we average over the batch and sum over the spatial dimensions
         # the point is to get a scalar value for the loss that is minimized in order to maximize all the slot likelihoods
-        neg_log_p_xs = -neg_log_p_xs.logsumexp(dim=1).mean(dim=0).sum() 
+        neg_log_p_xs = -log_p_xs.logsumexp(dim=1).mean(dim=0).sum() 
         
         # Print debugging information
-        print(f"neg_log_p_xs: {neg_log_p_xs.item()}")
-        print(f"kl_zs: {kl_zs.item()}")
+        # print(f"neg_log_p_xs: {neg_log_p_xs.item()}")
+        # print(f"kl_zs: {kl_zs.item()}")
 
         # Ensure KL divergence is non-negative
         if kl_zs < 0:
@@ -147,8 +147,8 @@ class Monet(nn.Module):
         loss += self.gamma * kl_masks
 
         # Check for negative loss
-        if loss < 0:
-            print(f"Warning: Negative loss encountered: {loss.item()}")
+        # if loss < 0:
+        #     print(f"Warning: Negative loss encountered: {loss.item()}")
 
         return kl_masks, loss, neg_log_p_xs
 
@@ -207,8 +207,8 @@ class Monet(nn.Module):
         x_recon = decoder_output[:, :3].sigmoid()
         mask_pred = decoder_output[:, 3].unsqueeze(1)
         dist = dists.Normal(x_recon, sigma)
-        neg_log_p_x_masked = log_mask + dist.log_prob(x)
-        return neg_log_p_x_masked, x_recon, mask_pred
+        log_p_x_masked = log_mask + dist.log_prob(x)
+        return log_p_x_masked, x_recon, mask_pred
 
     @classmethod
     def from_config(cls, model: Literal['monet', 'monet-iodine', 'monet-lightweight'] = 'monet',

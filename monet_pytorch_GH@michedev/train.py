@@ -18,6 +18,7 @@ omegaconf.OmegaConf.register_new_resolver('sum', lambda *numbers: int(sum(float(
 __all__ = ['Monet']
 
 
+# Set paths
 loadModel = True
 delftblue = False
 if delftblue:
@@ -31,6 +32,10 @@ if not os.path.exists(WEIGHTS_PATH):
     loadModel = False
     print('Model weights directory not found, beginning training from scratch...')
 
+# set device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
+
 
 # Load datset and create dataloader
 transform = transforms.Compose([
@@ -39,11 +44,13 @@ transform = transforms.Compose([
 ])
 
 # Create dataset and dataloader
-dataset = UnsupervisedImageDataset(root_dir=DATASET_PATH, transform=transform)
+
+
+dataset = UnsupervisedImageDataset(DATASET_PATH, transform=transform)
 dataloader = DataLoader(dataset, batch_size=64, shuffle=True)
 
 # Initialize model, loss function, and optimizer. Load saved weights if resuming training.
-monet = Monet.from_config(model='monet', dataset_width=64, dataset_height=64)
+monet = Monet.from_config(model='monet', dataset_width=64, dataset_height=64).to(device)
 if loadModel:
     try:
         monet.load_state_dict(torch.load(WEIGHTS_PATH + 'monet_weights.pth'))
@@ -51,18 +58,26 @@ if loadModel:
         monet.eval()
         with open(WEIGHTS_PATH + 'loss.txt', 'r') as f:
             best_loss = float(f.read())
+        with open(WEIGHTS_PATH + 'log.txt', 'a+') as f:
+            f.write(f'Resuming training with best loss: {best_loss}\n')
     except FileNotFoundError:
         print('Model weights not found, beginning training from scratch...')
         best_loss = float('inf')
 else:
     best_loss = float('inf')
+    if os.path.exists(WEIGHTS_PATH + 'log.txt'):
+        os.remove(WEIGHTS_PATH + 'log.txt')
+    if os.path.exists(WEIGHTS_PATH + 'loss.txt'):
+        os.remove(WEIGHTS_PATH + 'loss.txt')
+    if os.path.exists(WEIGHTS_PATH + 'monet_weights.pth'):
+        os.remove(WEIGHTS_PATH + 'monet_weights.pth')
 
 # criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(monet.parameters(), lr=0.0001)
+optimizer = optim.RMSprop(monet.parameters(), lr=0.0001)
 
 # Training loop
 num_epochs = 10
-save_interval = 10
+save_interval = 3
 
 print("Begin training:")
 print(f'Epoch [{1}/{num_epochs}], Step [{1}/{len(dataloader)}], Loss: {best_loss:.4f}')
@@ -71,6 +86,8 @@ for epoch in range(num_epochs):
     steps = 0
     # Iterate over the DataLoader
     for batch_idx, images in enumerate(dataloader):
+        images = images.to(device)
+
         # Zero the parameter gradients
         optimizer.zero_grad()
         
@@ -86,7 +103,7 @@ for epoch in range(num_epochs):
         steps += 1
         if steps == save_interval:  # Print every 10 mini-batches
             avg_loss = running_loss / save_interval
-            print(f'Epoch [{epoch + 1}/{num_epochs}], Step [{batch_idx + 1}/{len(dataloader)}], Loss: {avg_loss:.4f}')
+            print(f'Epoch [{epoch + 1}/{num_epochs}], Step [{batch_idx + 1}/{len(dataloader)}], Loss: {avg_loss:.4f}, Neg Log P(x): {outputs["neg_log_p_x"]:.4f}, KL Mask: {outputs["kl_mask"]:.4f}, KL Latent: {outputs["kl_latent"]:.4f}')
             running_loss = 0.0
             steps = 0
             if avg_loss < best_loss:
@@ -96,5 +113,8 @@ for epoch in range(num_epochs):
                 # Save loss value to file
                 with open(WEIGHTS_PATH + 'loss.txt', 'w') as f:
                     f.write(str(avg_loss))
+            with open(WEIGHTS_PATH + 'log.txt', 'a+') as f:
+                f.write(f'Epoch [{epoch + 1}/{num_epochs}], Step [{batch_idx + 1}/{len(dataloader)}], Loss: {avg_loss:.4f}, Neg Log P(x): {outputs["neg_log_p_x"]:.4f}, KL Mask: {outputs["kl_mask"]:.4f}, KL Latent: {outputs["kl_latent"]:.4f}')
+                f.write(' - new best loss\n' if avg_loss < best_loss else '\n')
 
 print('Finished Training')

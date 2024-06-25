@@ -10,7 +10,7 @@ import numpy as np
 
 # Model evaluation script
 loadModel = True
-delftblue = True
+delftblue = False
 if delftblue:
     WEIGHTS_PATH = "/home/aledbetter/parallel_prednet/monet_pytorch_GH@michedev/model_weights/delftblue/"
     DATASET_PATH = "/scratch/aledbetter/multi_gen_shape_2nd_stage_for_objects/"
