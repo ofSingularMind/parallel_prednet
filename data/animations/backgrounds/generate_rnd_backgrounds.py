@@ -3,11 +3,11 @@ from PIL import Image
 import numpy as np
 import cv2
 
-h = 50
-w = 50
+h = 64
+w = 64
 alpha = 1 # percentage of noise
 
-for i in range(10000):
+for i in range(100000):
 
     # noise = np.random.uniform(0, 1, (h, w, 3)) * 255
     noise = np.random.normal(0, 1, (h, w, 3))

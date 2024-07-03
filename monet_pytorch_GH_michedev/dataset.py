@@ -11,6 +11,7 @@ class UnsupervisedImageDataset(Dataset):
         self.image_paths = []
 
         for root, _, files in os.walk(root_dir):
+            files.sort()  # Sort the files to ensure consistent order
             for file in files:
                 if file.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif')):
                     self.image_paths.append(os.path.join(root, file))

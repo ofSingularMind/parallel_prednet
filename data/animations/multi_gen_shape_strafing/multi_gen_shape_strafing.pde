@@ -16,8 +16,9 @@ color[] occ_colors = new color[num_occlusions];
 float[] occ_rot = new float[num_occlusions];
 boolean rand_occlusions = true;
 int ws = 64;
+int image_pairs_interval = 1;
 
-String rand_background = "pixels"; // can be "pixels", "whole", "white"
+String rand_background = "whole"; // can be "pixels", "whole", "white"
 
 boolean save_gif = false; // only set save_gif or save_frames to true, not both, or both to false
 boolean save_frames = true;
@@ -47,9 +48,9 @@ void setup() {
   if (save_gif && save_frames) {println("Error: save_gif and save_frames cannot both be true."); exit();}
   if (test_mode && !second_stage) {println("Error: test mode must be second stage"); exit();}
   if (save_gif) {num_frames = 150; frame_rate = 200;}
-  else if (save_frames && train_mode) {num_frames = 20000; frame_rate = 5000;} // deleteDirectory(new File(save_dir));}
+  else if (save_frames && train_mode) {num_frames = 100000; frame_rate = 10000;} // deleteDirectory(new File(save_dir));}
   else if (save_frames && test_mode) {num_frames = 2000; frame_rate = 1000;} // deleteDirectory(new File(save_dir));}
-  else {num_frames = 1000; frame_rate = 5;}
+  else {num_frames = 1000; frame_rate = 2;}
   images = new PImage[num_frames];
 
   frameRate(frame_rate);
@@ -74,8 +75,8 @@ void draw() {
   // Set the background to random pixels or white:
   if ((rand_background == "pixels") && (second_stage == false)) {
     image(images[frameCount-1], 0, 0, width, height);
-  } else if ((rand_background == "whole") && (second_stage == false)) {
-    background(color(random(100, 200), random(100, 200), random(100, 200)));
+  } else if ((rand_background == "whole")) {
+    background(color(random(0, 255), random(0, 255), random(0, 255)));
   } else if ((rand_background == "white") && (second_stage == false)) {
     background(255);
   } else if (second_stage == true) {
@@ -88,15 +89,15 @@ void draw() {
     //if (a > 25) {break;} //<>//
     color c = color(random(255), random(255), random(255));
     float rot = random(PI);
-    float stroke = random(1.5, 3) * (width / ws);
+    float stroke = 0; //random(1.5, 3) * (width / ws);
     if (flip) { //(random(1) < 0.5) {
       float[] len_wid = get_len_wid(1.5);
       float len = len_wid[0];
       float wid = len_wid[1];
       // crosses go down (x,y)
       for (int i = 0; i < int(random(1,5)); i++) {
-        x = random(width*0.01, width*0.99);
-        y = random(height*0.01, height*0.99);
+        x = random(width*0.05, width*0.95);
+        y = random(height*0.05, height*0.95);
       }
       // x = width/2;
       // y = height/2;
@@ -108,8 +109,8 @@ void draw() {
       float wid = len_wid[1];
       // ellipses go right (x,y)
       for (int i = 0; i < int(random(1,5)); i++) {
-        x = random(width*0.01, width*0.99);
-        y = random(height*0.01, height*0.99);
+        x = random(width*0.05, width*0.95);
+        y = random(height*0.05, height*0.95);
       }
       // x = width/2;
       // y = height/2;
@@ -190,7 +191,8 @@ void draw() {
       else if (test_mode) {println("Error: test_mode should be used with second stage"); exit();}
     }
     else if (second_stage) {
-      if (train_mode) {saveFrame("frames/multi_gen_shape_2nd_stage_for_objects/###.png");}
+      if (train_mode && !image_pairs) {saveFrame("frames/multi_gen_shape_2nd_stage/###.png");}
+      else if (train_mode && image_pairs) {saveFrame("frames/multi_gen_shape_2nd_stage_for_objects/###.png");}
       else if (test_mode && (num_shapes == 1)) {saveFrame("frames/multi_gen_shape_test_1shape/###.png");}
       else if (test_mode && (num_shapes == 2)) {saveFrame("frames/multi_gen_shape_test/###.png");}
     }
@@ -208,7 +210,7 @@ void draw() {
 
   // Here, for testing, we create just two-frame pairs by clearing the shapes arrayList after every other frame
   if (image_pairs) {
-    if (frameCount % 1 == 0) {
+    if (frameCount % image_pairs_interval == 0) {
       // println("Frame count is " + frameCount);
       shapes.clear();
     }
@@ -245,7 +247,7 @@ class Cross extends Shape {
   
   void display() {
     fill(c);
-    strokeWeight(stroke);
+    if (stroke == 0) {noStroke();} else {strokeWeight(stroke);}
     pushMatrix();
     translate(x, y);
     rotate(rotation);
@@ -273,7 +275,7 @@ class Ellipse extends Shape {
   
   void display() {
     fill(c);
-    strokeWeight(stroke);
+    if (stroke == 0) {noStroke();} else {strokeWeight(stroke);}
     pushMatrix();
     translate(x, y);
     rotate(rotation);

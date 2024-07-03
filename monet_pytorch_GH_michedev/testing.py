@@ -26,7 +26,7 @@
 #     return parsed_dataset
 
 # # Example usage
-# tfrecords_file = '/home/evalexii/Documents/Thesis/code/parallel_prednet/monet_pytorch_GH@michedev/data/multi_dsprites_colored_on_colored.tfrecords'
+# tfrecords_file = '/home/evalexii/Documents/Thesis/code/parallel_prednet/monet_pytorch_GH_michedev/data/multi_dsprites_colored_on_colored.tfrecords'
 # parsed_dataset = load_tfrecords(tfrecords_file)
 
 # from torch.utils.data import Dataset
@@ -50,7 +50,7 @@
 
 # print("ho")
 
-# tf_records_path = '/home/evalexii/Documents/Thesis/code/parallel_prednet/monet_pytorch_GH@michedev/data/multi_dsprites_colored_on_colored.tfrecords'
+# tf_records_path = '/home/evalexii/Documents/Thesis/code/parallel_prednet/monet_pytorch_GH_michedev/data/multi_dsprites_colored_on_colored.tfrecords'
 # batch_size = 32
 
 # dataset = multi_dsprites.dataset(tf_records_path, 'colored_on_colored')
@@ -62,7 +62,7 @@
 #     # d = sess.run(data)
 
 # from torchdata.datapipes.iter import FileLister, FileOpener
-# datapipe1 = FileLister("/home/evalexii/Documents/Thesis/code/parallel_prednet/monet_pytorch_GH@michedev/data", "*.tfrecords", recursive=True)
+# datapipe1 = FileLister("/home/evalexii/Documents/Thesis/code/parallel_prednet/monet_pytorch_GH_michedev/data", "*.tfrecords", recursive=True)
 # print(datapipe1.length)
 # datapipe2 = FileOpener(datapipe1, mode="b")
 # tfrecord_loader_dp = datapipe2.load_from_tfrecord()

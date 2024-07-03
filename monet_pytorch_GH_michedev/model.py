@@ -13,7 +13,7 @@ from template.encoder_decoder import BroadcastDecoderNet
 from paths import CONFIG_MODEL, CONFIG_DATASET, CONFIG_SPECIAL_CASES
 from unet import UNet
 
-_MODEL_CONFIG_VALUES = ['monet', 'monet-iodine', 'monet-lightweight']
+_MODEL_CONFIG_VALUES = ['monet', 'monet-iodine', 'monet-lightweight', 'monet-SSM']
 _DATASET_CONFIG_VALUES = ['clevr_6', 'multidsprites_colored_on_grayscale',
                           'tetrominoes', 'multidsprites_colored_on_colored']
 
@@ -69,22 +69,25 @@ class Monet(nn.Module):
             log_masks.append(log_mask)
         log_masks.append(log_scope)
         log_masks = torch.cat(log_masks, dim=1)
+        if torch.isnan(log_masks).any():
+            print("NaNs detected in means")
 
         slots_shape = list(x.shape)
         slots_shape.insert(1, self.num_slots)
         slots = torch.zeros(slots_shape, device=x.device)
 
-        kl_zs, masks_pred, neg_log_p_xs, zs = self.forward_vae_slots(log_masks, slots, x)
+        kl_zs, masks_pred, neg_log_p_xs, zs = self.forward_vae_slots(log_masks, slots, x) # slots filled here, too
         log_masks_pred = torch.cat(masks_pred, dim=1).log_softmax(dim=1)
         masks = log_masks.exp()
         neg_log_p_xs = torch.cat(neg_log_p_xs, dim=1)
         masks_pred = log_masks_pred.exp()
 
-        kl_masks, loss, neg_log_p_xs = self._calc_loss(kl_zs, masks, masks_pred, neg_log_p_xs)
+        kl_masks, loss, neg_log_p_xs, mse_loss = self._calc_loss(kl_zs, masks, masks_pred, neg_log_p_xs, slots, x)
         return {'loss': loss,
              'neg_log_p_x': neg_log_p_xs,
              'kl_mask': kl_masks,
              'kl_latent': kl_zs,
+             'mse_loss': mse_loss,
              'z': zs,
              'mask': masks,
              'slot': slots,
@@ -110,28 +113,12 @@ class Monet(nn.Module):
             zs[:, i, :] = z
         return kl_zs, masks_pred, log_p_xs, zs
 
-    # def _calc_loss(self, kl_zs, masks, masks_pred, neg_log_p_xs):
-    #     loss = 0.0
-    #     neg_log_p_xs = - neg_log_p_xs.logsumexp(dim=1).mean(dim=0).sum()
-    #     loss += neg_log_p_xs + self.beta_kl * kl_zs
-    #     kl_masks = self._calc_kl_mask(masks, masks_pred)
-    #     loss += self.gamma * kl_masks
-    #     return kl_masks, loss, neg_log_p_xs
-
-    def _calc_loss(self, kl_zs, masks, masks_pred, log_p_xs):
+    def _calc_loss(self, kl_zs, masks, masks_pred, log_p_xs, slots, x):
         # Calculate negative log-likelihood
         # here we aggregate the log probabilities of the input given the latent sample, weighted by masks
         # then we average over the batch and sum over the spatial dimensions
         # the point is to get a scalar value for the loss that is minimized in order to maximize all the slot likelihoods
         neg_log_p_xs = -log_p_xs.logsumexp(dim=1).mean(dim=0).sum() 
-        
-        # Print debugging information
-        # print(f"neg_log_p_xs: {neg_log_p_xs.item()}")
-        # print(f"kl_zs: {kl_zs.item()}")
-
-        # Ensure KL divergence is non-negative
-        if kl_zs < 0:
-            print(f"Warning: Negative KL divergence encountered: {kl_zs.item()}")
         
         # Calculate total loss
         loss = neg_log_p_xs + self.beta_kl * kl_zs
@@ -139,34 +126,16 @@ class Monet(nn.Module):
         # Calculate KL divergence for masks
         kl_masks = self._calc_kl_mask(masks, masks_pred)
         
-        # Ensure KL divergence for masks is non-negative
-        if kl_masks < 0:
-            print(f"Warning: Negative KL divergence for masks encountered: {kl_masks.item()}")
-        
         # Add KL divergence for masks to the loss
         loss += self.gamma * kl_masks
 
-        # Check for negative loss
-        # if loss < 0:
-        #     print(f"Warning: Negative loss encountered: {loss.item()}")
+        # # Add MSE loss for summed masked reconstructions
+        reconstructed_image = torch.sum(masks.unsqueeze(2) * slots, dim=1)
+        mse_loss = F.mse_loss(reconstructed_image, x)
+        # loss += mse_loss
+        # mse_loss = -1
 
-        return kl_masks, loss, neg_log_p_xs
-
-
-    # def _calc_kl_mask(self, masks, masks_pred):
-    #     bs = len(masks)
-    #     flat_masks = masks.permute(0, 2, 3, 1)
-    #     nrows = prod(flat_masks.shape[:-1])
-    #     flat_masks = flat_masks.reshape(nrows, -1)
-    #     flat_masks_pred = masks_pred.permute(0, 2, 3, 1)
-    #     flat_masks_pred = flat_masks_pred.reshape(nrows, -1)
-    #     flat_masks = flat_masks.clamp_min(1e-5)
-    #     flat_masks_pred = flat_masks_pred.clamp_min(1e-5)
-    #     d_masks = dists.Categorical(probs=flat_masks)
-    #     d_masks_pred = dists.Categorical(probs=flat_masks_pred)
-    #     kl_masks = dists.kl_divergence(d_masks, d_masks_pred)
-    #     kl_masks = kl_masks.sum() / bs
-    #     return kl_masks
+        return kl_masks, loss, neg_log_p_xs, mse_loss
 
     def _calc_kl_mask(self, masks, masks_pred):
         bs = len(masks)
@@ -183,10 +152,6 @@ class Monet(nn.Module):
         # Calculate KL divergence
         kl_masks = dists.kl_divergence(d_masks, d_masks_pred)
         kl_masks = kl_masks.sum() / bs
-
-        # Ensure KL divergence is non-negative
-        if kl_masks < 0:
-            print(f"Warning: Negative KL divergence encountered in _calc_kl_mask: {kl_masks.item()}")
         
         return kl_masks
 
@@ -196,6 +161,19 @@ class Monet(nn.Module):
         q_params = self.encoder(encoder_input)
         means = q_params[:, :self.latent_size]
         sigmas = F.softplus(q_params[:, self.latent_size:])
+        
+        # Log the values to check for NaNs
+        if torch.isnan(means).any():
+            print("NaNs detected in means")
+            print(means)
+        if torch.isnan(sigmas).any():
+            print("NaNs detected in sigmas")
+            print(sigmas)
+
+        # Add assertions to catch NaNs early
+        assert not torch.isnan(means).any(), "NaNs found in means"
+        assert not torch.isnan(sigmas).any(), "NaNs found in sigmas"
+
         latent_normal = dists.Normal(means, sigmas)
         kl_z = dists.kl_divergence(latent_normal, self.prior_dist)
         kl_z = kl_z.sum(dim=1)
@@ -211,7 +189,7 @@ class Monet(nn.Module):
         return log_p_x_masked, x_recon, mask_pred
 
     @classmethod
-    def from_config(cls, model: Literal['monet', 'monet-iodine', 'monet-lightweight'] = 'monet',
+    def from_config(cls, model: Literal['monet', 'monet-iodine', 'monet-lightweight', 'monet-SSM'] = 'monet',
                dataset: Optional[Literal['clevr_6', 'multidsprites_colored_on_grayscale',
                                          'tetrominoes', 'multidsprites_colored_on_colored']] = None,
                scene_max_objects: int = 5, dataset_width: int = 64, dataset_height: int = 64) -> 'Monet':
