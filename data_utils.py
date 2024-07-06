@@ -32,6 +32,7 @@ import hickle as hkl
 from config import update_settings, get_settings
 import flow_vis
 import re
+from data.animations.decompose_images.decomposer import SceneDecomposer
 
 # DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = get_settings()["dirs"]
 
@@ -203,7 +204,10 @@ class IntermediateEvaluations(Callback):
                     X_hat[b, t, ..., 1:4] = flow_vis.flow_to_color(X_hat[b, t, ..., 1:3], convert_to_bgr=False).astype(np.float32) // 255.0
             # X_hat_mot = X_hat[..., 6]
 
-        error_images_gray = np.mean(error_images, axis=-1)
+        if self.Xtc == 3:
+            error_images_gray = np.mean(error_images, axis=-1)
+        else:
+            error_images_gray = np.concatenate([np.expand_dims(np.mean(error_images[..., 3*i:3*(i+1)], axis=-1), axis=-1) for i in range(self.Xtc//3)], axis=-1)
         self.model.layers[-1].output_mode = "Error"
         
         # for c in range(X_test.shape[-1]):
@@ -225,8 +229,11 @@ class IntermediateEvaluations(Callback):
         # Plot some training predictions
         aspect_ratio = float(X_hat.shape[2]) / X_hat.shape[3]
         if self.model_choice=="baseline":
-            gs = gridspec.GridSpec(3, self.plot_nt)
+            gs = gridspec.GridSpec(self.Xtc, self.plot_nt)
             plt.figure(figsize=(3 * self.plot_nt, 10 * aspect_ratio), layout="constrained")
+        # elif self.model_choice=="baseline" and self.Xtc != 3:
+        #     gs = gridspec.GridSpec(3*oc, self.plot_nt)
+        #     plt.figure(figsize=(3*oc * self.plot_nt, 10 * aspect_ratio), layout="constrained")
         elif self.model_choice=="cl_delta" or self.model_choice=="cl_recon":
             gs = gridspec.GridSpec(5, self.plot_nt)
             plt.figure(figsize=(3 * self.plot_nt, 15 * aspect_ratio), layout="constrained")
@@ -238,127 +245,151 @@ class IntermediateEvaluations(Callback):
         if not os.path.exists(plot_save_dir):
             os.makedirs(plot_save_dir, exist_ok=True)
         plot_idx = np.random.permutation(self.X_test.shape[0])[: self.n_plot]
-        for i in plot_idx:
-            X_test_last = tf.zeros_like(self.X_test[i, -1])
-            for t in range(self.plot_nt):
-                plt.subplot(gs[t])
-                plt.imshow(X_hat[i, t, ..., -self.Xtc:], interpolation="none")
-                plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                if t == 0:
-                    plt.ylabel("Predicted", fontsize=10)
+        if self.Xtc > 3:
+            for i in plot_idx:
+                for j in range(self.Xtc//3):
+                    for t in range(self.plot_nt):
+                        plt.subplot(gs[t + (3*j)*self.plot_nt])
+                        plt.imshow(X_hat[i, t, ..., 3*j:3*(j+1)], interpolation="none")
+                        plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                        if t == 0:
+                            plt.ylabel("Predicted", fontsize=10)
 
-                plt.subplot(gs[t + self.plot_nt])
-                plt.imshow(self.X_test[i, t, ..., -self.Xtc:], interpolation="none")
-                plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                if t == 0:
-                    plt.ylabel("Actual", fontsize=10)
+                        plt.subplot(gs[t + (3*j+1)*self.plot_nt])
+                        plt.imshow(self.X_test[i, t, ..., 3*j:3*(j+1)], interpolation="none")
+                        plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                        if t == 0:
+                            plt.ylabel("Actual", fontsize=10)
 
-                plt.subplot(gs[t + 2 * self.plot_nt])
-                plt.imshow(error_images_gray[i, t], cmap=self.rg_colormap)
-                plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                if t == 0:
-                    plt.ylabel("Error", fontsize=10)
-                
-                # Composite Learning Delta Images
-                if self.model_choice == "cl_delta":
-                    plt.subplot(gs[t + 3 * self.plot_nt])
-                    plt.imshow(X_delta_hat_gray[i, t], cmap=self.rg_colormap)
+                        plt.subplot(gs[t + (3*j+2) * self.plot_nt])
+                        plt.imshow(error_images_gray[i, t, ..., j:j+1], cmap=self.rg_colormap)
+                        plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                        if t == 0:
+                            plt.ylabel("Error", fontsize=10)
+            plt.savefig(plot_save_dir + "e" + str(epoch) + "_plot_" + str(i) + ".png")
+            plt.clf()
+        else:
+            for i in plot_idx:
+                X_test_last = tf.zeros_like(self.X_test[i, -1])
+                for t in range(self.plot_nt):
+                    plt.subplot(gs[t])
+                    plt.imshow(X_hat[i, t, ..., -self.Xtc:], interpolation="none")
                     plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
                     if t == 0:
-                        plt.ylabel("Predicted Delta", fontsize=10)
+                        plt.ylabel("Predicted", fontsize=10)
 
-                    plt.subplot(gs[t + 4 * self.plot_nt])
-                    if t > 0:
-                        plt.imshow(np.mean((self.X_test[i, t] - X_test_last), axis=-1), cmap=self.rg_colormap)
-                    else:
-                        plt.imshow(np.mean((self.X_test[i, t] - self.X_test[i, t]), axis=-1), cmap=self.rg_colormap)
+                    plt.subplot(gs[t + self.plot_nt])
+                    plt.imshow(self.X_test[i, t, ..., -self.Xtc:], interpolation="none")
                     plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
                     if t == 0:
-                        plt.ylabel("Actual Delta", fontsize=10)
-                    X_test_last = self.X_test[i, t]
-                
-                # Composite Learning Reconstructed Images
-                elif self.model_choice == "cl_recon":
-                    plt.subplot(gs[t + 3 * self.plot_nt])
-                    plt.imshow(X_recon_hat[i, t], interpolation="none")
-                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                    if t == 0:
-                        plt.ylabel("Predicted Recon", fontsize=10) 
+                        plt.ylabel("Actual", fontsize=10)
 
-                    plt.subplot(gs[t + 4 * self.plot_nt])
-                    plt.imshow(X_test_last, interpolation="none")
+                    plt.subplot(gs[t + 2 * self.plot_nt])
+                    plt.imshow(error_images_gray[i, t], cmap=self.rg_colormap)
                     plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
                     if t == 0:
-                        plt.ylabel("Actual Recon", fontsize=10) 
-                    X_test_last = self.X_test[i, t]
-
-                # Multi Channel Images
-                elif self.model_choice == "multi_channel":
-                    # DISPARITY
-                    plt.subplot(gs[t + 3 * self.plot_nt])
-                    plt.imshow(X_hat[i, t, ..., 0], interpolation="none")
-                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                    if t == 0:
-                        plt.ylabel("Predicted Disp", fontsize=10)
-
-                    plt.subplot(gs[t + 4 * self.plot_nt])
-                    plt.imshow(self.X_test[i, t, ..., 0], interpolation="none")
-                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                    if t == 0:
-                        plt.ylabel("Actual Disp", fontsize=10)
+                        plt.ylabel("Error", fontsize=10)
                     
-                    # # MATERIAL SEGMENTATION
-                    # plt.subplot(gs[t + 5 * self.plot_nt])
-                    # plt.imshow(X_hat_mat[i, t, ...], interpolation="none")
-                    # plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                    # if t == 0:
-                    #     plt.ylabel("Predicted Mat", fontsize=10)
+                    # Composite Learning Delta Images
+                    if self.model_choice == "cl_delta":
+                        plt.subplot(gs[t + 3 * self.plot_nt])
+                        plt.imshow(X_delta_hat_gray[i, t], cmap=self.rg_colormap)
+                        plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                        if t == 0:
+                            plt.ylabel("Predicted Delta", fontsize=10)
 
-                    # plt.subplot(gs[t + 6 * self.plot_nt])
-                    # plt.imshow(self.X_test_mat[i, t, ...], interpolation="none")
-                    # plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                    # if t == 0:
-                    #     plt.ylabel("Actual Mat", fontsize=10)
+                        plt.subplot(gs[t + 4 * self.plot_nt])
+                        if t > 0:
+                            plt.imshow(np.mean((self.X_test[i, t] - X_test_last), axis=-1), cmap=self.rg_colormap)
+                        else:
+                            plt.imshow(np.mean((self.X_test[i, t] - self.X_test[i, t]), axis=-1), cmap=self.rg_colormap)
+                        plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                        if t == 0:
+                            plt.ylabel("Actual Delta", fontsize=10)
+                        X_test_last = self.X_test[i, t]
                     
-                    # # OBJECT SEGMENTATION
-                    # plt.subplot(gs[t + 7 * self.plot_nt])
-                    # plt.imshow(X_hat_obj[i, t, ...], interpolation="none")
-                    # plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                    # if t == 0:
-                    #     plt.ylabel("Predicted Obj", fontsize=10)
+                    # Composite Learning Reconstructed Images
+                    elif self.model_choice == "cl_recon":
+                        plt.subplot(gs[t + 3 * self.plot_nt])
+                        plt.imshow(X_recon_hat[i, t], interpolation="none")
+                        plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                        if t == 0:
+                            plt.ylabel("Predicted Recon", fontsize=10) 
 
-                    # plt.subplot(gs[t + 8 * self.plot_nt])
-                    # plt.imshow(self.X_test_obj[i, t, ...], interpolation="none")
-                    # plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                    # if t == 0:
-                    #     plt.ylabel("Actual Obj", fontsize=10)
-                    
-                    # OPTICAL FLOW
-                    plt.subplot(gs[t + 5 * self.plot_nt])
-                    plt.imshow(X_hat[i, t, ..., 1:4], interpolation="none")
-                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                    if t == 0:
-                        plt.ylabel("Predicted Opt", fontsize=10)
+                        plt.subplot(gs[t + 4 * self.plot_nt])
+                        plt.imshow(X_test_last, interpolation="none")
+                        plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                        if t == 0:
+                            plt.ylabel("Actual Recon", fontsize=10) 
+                        X_test_last = self.X_test[i, t]
 
-                    plt.subplot(gs[t + 6 * self.plot_nt])
-                    plt.imshow(self.X_test[i, t, ..., 1:4], interpolation="none")
-                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                    if t == 0:
-                        plt.ylabel("Actual Opt", fontsize=10)
-                    
-                    # # MOTION BOUNDARIES
-                    # plt.subplot(gs[t + 11 * self.plot_nt])
-                    # plt.imshow(X_hat_mot[i, t], interpolation="none", cmap="gray")
-                    # plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                    # if t == 0:
-                    #     plt.ylabel("Predicted Mot", fontsize=10)
+                    # Multi Channel Images
+                    elif self.model_choice == "multi_channel":
+                        # DISPARITY
+                        plt.subplot(gs[t + 3 * self.plot_nt])
+                        plt.imshow(X_hat[i, t, ..., 0], interpolation="none")
+                        plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                        if t == 0:
+                            plt.ylabel("Predicted Disp", fontsize=10)
 
-                    # plt.subplot(gs[t + 12 * self.plot_nt])
-                    # plt.imshow(self.X_test_mot[i, t], interpolation="none", cmap="gray")
-                    # plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                    # if t == 0:
-                    #     plt.ylabel("Actual Mot", fontsize=10)
-                    
+                        plt.subplot(gs[t + 4 * self.plot_nt])
+                        plt.imshow(self.X_test[i, t, ..., 0], interpolation="none")
+                        plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                        if t == 0:
+                            plt.ylabel("Actual Disp", fontsize=10)
+                        
+                        # # MATERIAL SEGMENTATION
+                        # plt.subplot(gs[t + 5 * self.plot_nt])
+                        # plt.imshow(X_hat_mat[i, t, ...], interpolation="none")
+                        # plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                        # if t == 0:
+                        #     plt.ylabel("Predicted Mat", fontsize=10)
+
+                        # plt.subplot(gs[t + 6 * self.plot_nt])
+                        # plt.imshow(self.X_test_mat[i, t, ...], interpolation="none")
+                        # plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                        # if t == 0:
+                        #     plt.ylabel("Actual Mat", fontsize=10)
+                        
+                        # # OBJECT SEGMENTATION
+                        # plt.subplot(gs[t + 7 * self.plot_nt])
+                        # plt.imshow(X_hat_obj[i, t, ...], interpolation="none")
+                        # plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                        # if t == 0:
+                        #     plt.ylabel("Predicted Obj", fontsize=10)
+
+                        # plt.subplot(gs[t + 8 * self.plot_nt])
+                        # plt.imshow(self.X_test_obj[i, t, ...], interpolation="none")
+                        # plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                        # if t == 0:
+                        #     plt.ylabel("Actual Obj", fontsize=10)
+                        
+                        # OPTICAL FLOW
+                        plt.subplot(gs[t + 5 * self.plot_nt])
+                        plt.imshow(X_hat[i, t, ..., 1:4], interpolation="none")
+                        plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                        if t == 0:
+                            plt.ylabel("Predicted Opt", fontsize=10)
+
+                        plt.subplot(gs[t + 6 * self.plot_nt])
+                        plt.imshow(self.X_test[i, t, ..., 1:4], interpolation="none")
+                        plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                        if t == 0:
+                            plt.ylabel("Actual Opt", fontsize=10)
+                        
+                        # # MOTION BOUNDARIES
+                        # plt.subplot(gs[t + 11 * self.plot_nt])
+                        # plt.imshow(X_hat_mot[i, t], interpolation="none", cmap="gray")
+                        # plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                        # if t == 0:
+                        #     plt.ylabel("Predicted Mot", fontsize=10)
+
+                        # plt.subplot(gs[t + 12 * self.plot_nt])
+                        # plt.imshow(self.X_test_mot[i, t], interpolation="none", cmap="gray")
+                        # plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                        # if t == 0:
+                        #     plt.ylabel("Actual Mot", fontsize=10)
+                        
 
             plt.savefig(plot_save_dir + "e" + str(epoch) + "_plot_" + str(i) + ".png")
             plt.clf()
@@ -499,7 +530,7 @@ def serialize_dataset(data_dirs, pfm_paths, pgm_paths, png_paths, dataset_name="
     if dataset_name == "driving":
         subset_length = np.minimum(length, 200)
     else:
-        nms = 5000 # nominal_subset_max
+        nms = 2000 # nominal_subset_max
         subset_max = np.minimum(nms, length - (iteration) * nms)
         assert subset_max >= 1000, "Subset max is less than 1000 - create new data and restart training"
         subset_length = np.minimum(nms, length - (iteration) * nms)
@@ -594,6 +625,93 @@ def serialize_dataset(data_dirs, pfm_paths, pgm_paths, png_paths, dataset_name="
     print(f"Dataset serialization complete at {time.perf_counter() - start_time} seconds.")
 
 
+def create_dataset_from_serialized_generator(data_dirs, pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name="driving", im_height=540, im_width=960, output_channels=3, batch_size=4, nt=10, train_split=0.7, reserialize=False, shuffle=True, resize=False, single_channel=False, iteration=0, decompose=False):
+    DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = data_dirs
+    start_time = time.perf_counter()
+    if decompose: sceneDecomposer = SceneDecomposer()
+    if reserialize:
+        serialize_dataset(data_dirs, pfm_paths, pgm_paths, png_paths, dataset_name=dataset_name, start_time=start_time, single_channel=single_channel, iteration=iteration)
+        print("Reserialized dataset.")
+    else:
+        print("Using previously serialized dataset.")
+    print(f"Begin tf.data.Dataset creation at {time.perf_counter() - start_time} seconds.")
+
+    num_pfm_paths = len(pfm_paths)
+    num_pgm_paths = len(pgm_paths)
+    num_png_paths = len(png_paths)
+    num_total_paths = num_pfm_paths + num_pgm_paths + num_png_paths
+
+    # list of numpy arrays, one for each source
+    all_files = hkl.load(os.path.join(DATA_DIR, f"{dataset_name}_train.hkl"))
+    print(f"Data files loaded at {time.perf_counter() - start_time} seconds.")
+    num_samples = all_files[0].shape[0]
+    assert all([all_files[i].shape[0] == num_samples for i in range(num_total_paths)]), "All sources must have the same number of samples"
+
+    all_files = [sceneDecomposer.process_dataset(all_files[i]) for i in range(num_total_paths)] if decompose else all_files
+    # Get the length of the dataset (number of unique sequences, nus)
+    nus = num_samples + 1 - nt
+    length = nus
+    train_samples = int(train_split * nus)
+    val_samples = int((1 - train_split) / 2 * nus)
+    test_samples = int((1 - train_split) / 2 * nus)
+    all_details = [(0, train_samples, train_samples), 
+                   (train_samples, train_samples + val_samples, val_samples), 
+                   (train_samples + val_samples, train_samples + val_samples + test_samples, test_samples)]
+
+    def create_generator(details, shuffle):
+        def generator():
+            fake = 0
+            start, stop, num_samples = details
+            iterator = (random.sample(range(start, stop), num_samples) if shuffle else range(num_samples + 1 - nt))
+            for it, i in enumerate(iterator):
+                # print(f"{it}, {i}")
+                nt_outs = []
+                for j in range(num_total_paths):
+                    if resize:
+                        # nt_outs.append([tf.image.resize(all_files[j][i + k], (im_height, im_width)) for k in range(nt)])
+                        nt_out = [tf.image.resize(all_files[j][i + k], (im_height, im_width)) for k in range(nt)]
+                    else:
+                        # nt_outs.append([all_files[j][i + k] for k in range(nt)])
+                        nt_out = [all_files[j][i + k] for k in range(nt)]
+                    # if decompose:
+                    #     nt_out = sceneDecomposer.process_list(nt_out)
+                        # print("fake")
+                    # nt_out = [np.random.rand(im_height, im_width, output_channels) for _ in range(nt)]
+                    nt_outs.append(nt_out)
+                # fake += 1
+                # print(f"Num fake: {fake}, also, it: {it}, i: {i}")
+                batch_x = tuple(nt_outs) if len(nt_outs) > 1 else tuple(nt_outs)[0] 
+                if output_mode == "Error":
+                    batch_y = [0.0]
+                    yield (batch_x, batch_y)
+                elif output_mode == "Prediction":
+                    raise NotImplementedError
+                    yield (batch_x, batch_x)
+
+        return generator
+
+    datasets = []
+    for details in all_details:
+        gen = create_generator(details, shuffle)
+        if dataset_name == "monkaa":
+            dataset = tf.data.Dataset.from_generator(gen, output_signature=((tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32)), tf.TensorSpec(shape=(1), dtype=tf.float32)))
+        elif dataset_name == "driving":
+            dataset = tf.data.Dataset.from_generator(gen, output_signature=((tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32)), tf.TensorSpec(shape=(1), dtype=tf.float32)))
+        else:
+            if single_channel:
+                dataset = tf.data.Dataset.from_generator(gen, output_signature=(tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(1), dtype=tf.float32)))
+            else:
+                dataset = tf.data.Dataset.from_generator(gen, output_signature=(tf.TensorSpec(shape=(nt, im_height, im_width, output_channels), dtype=tf.float32), tf.TensorSpec(shape=(1), dtype=tf.float32)))
+        # Batch and prefetch the dataset, and ensure infinite dataset
+        # if shuffle: dataset = dataset.shuffle(dataset.cardinality(), reshuffle_each_iteration=True)
+        # dataset = (dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat())
+        datasets.append(dataset)
+
+    print(f"{len(datasets)} datasets created.")
+    print(f"End tf.data.Dataset creation at {time.perf_counter() - start_time} seconds.")
+
+    return datasets, length
+
 def create_dataset_from_generator(data_dirs, pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name="driving", im_height=540, im_width=960, batch_size=4, nt=10, train_split=0.7, reserialize=False, shuffle=True, resize=False, single_channel=False):
     DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = data_dirs
     start_time = time.perf_counter()
@@ -683,88 +801,6 @@ def create_dataset_from_generator(data_dirs, pfm_paths, pgm_paths, png_paths, ou
     print(f"End tf.data.Dataset creation at {time.perf_counter() - start_time} seconds.")
 
     return datasets, length
-
-
-def create_dataset_from_serialized_generator(data_dirs, pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name="driving", im_height=540, im_width=960, batch_size=4, nt=10, train_split=0.7, reserialize=False, shuffle=True, resize=False, single_channel=False, iteration=0):
-    DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = data_dirs
-    start_time = time.perf_counter()
-    if reserialize:
-        serialize_dataset(data_dirs, pfm_paths, pgm_paths, png_paths, dataset_name=dataset_name, start_time=start_time, single_channel=single_channel, iteration=iteration)
-        print("Reserialized dataset.")
-    else:
-        print("Using previously serialized dataset.")
-    print(f"Begin tf.data.Dataset creation at {time.perf_counter() - start_time} seconds.")
-
-    num_pfm_paths = len(pfm_paths)
-    num_pgm_paths = len(pgm_paths)
-    num_png_paths = len(png_paths)
-    num_total_paths = num_pfm_paths + num_pgm_paths + num_png_paths
-
-    # list of numpy arrays, one for each source
-    all_files = hkl.load(os.path.join(DATA_DIR, f"{dataset_name}_train.hkl"))
-    num_samples = all_files[0].shape[0]
-    assert all([all_files[i].shape[0] == num_samples for i in range(num_total_paths)]), "All sources must have the same number of samples"
-
-    # Get the length of the dataset (number of unique sequences, nus)
-    nus = num_samples + 1 - nt
-    length = nus
-    train_samples = int(train_split * nus)
-    val_samples = int((1 - train_split) / 2 * nus)
-    test_samples = int((1 - train_split) / 2 * nus)
-    all_details = [(0, train_samples, train_samples), 
-                   (train_samples, train_samples + val_samples, val_samples), 
-                   (train_samples + val_samples, train_samples + val_samples + test_samples, test_samples)]
-
-    def create_generator(details, shuffle):
-        def generator():
-            start, stop, num_samples = details
-            iterator = (random.sample(range(start, stop), num_samples) if shuffle else range(num_samples + 1 - nt))
-            for it, i in enumerate(iterator):
-                # print(f"{it}, {i}")
-                nt_outs = []
-                for j in range(num_total_paths):
-                    if resize:
-                        nt_outs.append([tf.image.resize(all_files[j][i + k], (im_height, im_width)) for k in range(nt)])
-                    else:
-                        nt_outs.append([all_files[j][i + k] for k in range(nt)])
-                batch_x = tuple(nt_outs) if len(nt_outs) > 1 else tuple(nt_outs)[0] 
-                if output_mode == "Error":
-                    batch_y = [0.0]
-                    yield (batch_x, batch_y)
-                elif output_mode == "Prediction":
-                    raise NotImplementedError
-                    yield (batch_x, batch_x)
-
-        return generator
-
-    datasets = []
-    for details in all_details:
-        gen = create_generator(details, shuffle)
-        if dataset_name == "monkaa":
-            dataset = tf.data.Dataset.from_generator(gen, output_signature=((tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32)), tf.TensorSpec(shape=(1), dtype=tf.float32)))
-        elif dataset_name == "driving":
-            dataset = tf.data.Dataset.from_generator(gen, output_signature=((tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32)), tf.TensorSpec(shape=(1), dtype=tf.float32)))
-        elif dataset_name not in ["all_rolling", "various"]:
-            if single_channel:
-                dataset = tf.data.Dataset.from_generator(gen, output_signature=(tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(1), dtype=tf.float32)))
-            else:
-                dataset = tf.data.Dataset.from_generator(gen, output_signature=(tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32), tf.TensorSpec(shape=(1), dtype=tf.float32)))
-            # dataset = (dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat())
-        else:
-            if single_channel:
-                dataset = tf.data.Dataset.from_generator(gen, output_signature=(tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(1), dtype=tf.float32)))
-            else:
-                dataset = tf.data.Dataset.from_generator(gen, output_signature=(tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32), tf.TensorSpec(shape=(1), dtype=tf.float32)))
-        # Batch and prefetch the dataset, and ensure infinite dataset
-        # if shuffle: dataset = dataset.shuffle(dataset.cardinality(), reshuffle_each_iteration=True)
-        # dataset = (dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat())
-        datasets.append(dataset)
-
-    print(f"{len(datasets)} datasets created.")
-    print(f"End tf.data.Dataset creation at {time.perf_counter() - start_time} seconds.")
-
-    return datasets, length
-
 
 def analyze_dataset(path):
     dataset = hkl.load(path)

@@ -1,7 +1,7 @@
 def main(args):
     for training_it in range(args["num_dataset_chunks"]):
-        # uncomment to resume training at a specific iteration
-        # if (training_it+1) < 7: continue
+        # uncomment to resume training at a specific iteration, because it crashes
+        if (training_it+1) <= 5: continue
 
         import os
         import warnings
@@ -25,9 +25,9 @@ def main(args):
             else:
                 from PPN_models.PPN_Baseline import ParaPredNet
                 print("Using Pan-Hierarchical Representation")
-        elif args["model_choice"] == "baseline_plus_monet":
-            from PPN_models.PPN_Baseline_plusMONet import ParaPredNet
-            print("Using MONet Inputs")
+        elif args["model_choice"] == "baseline_SceneDecomp":
+            from PPN_models.PPN_Baseline_SceneDecomp import ParaPredNet
+            print("Using Decomposed Inputs")
         elif args["model_choice"] == "cl_delta":
             # Predict next frame and change from current frame
             from PPN_models.PPN_CompLearning_Delta_Predictions import ParaPredNet
@@ -82,6 +82,8 @@ def main(args):
         assert sequences_per_epoch_val is None or type(sequences_per_epoch_val) == int
         num_P_CNN = args["num_P_CNN"]
         num_R_CLSTM = args["num_R_CLSTM"]
+        if args["decompose_images"]:
+            args["output_channels"][0] = 12
         output_channels = args["output_channels"]
 
         # Define image shape
@@ -97,9 +99,9 @@ def main(args):
             downscale_factor = args["downscale_factor"]
             im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3) if args["resize_images"] else original_im_shape
         elif args["dataset"] in ["ball_collisions", "general_ellipse_vertical", "general_cross_horizontal", "various"]:
-            original_im_shape = (args["various_im_shape"][0], args["various_im_shape"][1], 3)
+            original_im_shape = (args["various_im_shape"][0], args["various_im_shape"][1], args["output_channels"][0])
             downscale_factor = args["downscale_factor"]
-            im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3) if args["resize_images"] else original_im_shape
+            im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, args["output_channels"][0]) if args["resize_images"] else original_im_shape
 
 
         # Create ParaPredNet
@@ -135,7 +137,7 @@ def main(args):
 
         elif args["dataset"] in ["rolling_square", "rolling_circle", "all_rolling", "ball_collisions", "general_ellipse_vertical", "general_cross_horizontal", "various"]:
             # These are animation specific input shapes
-            inputs = keras.Input(shape=(nt, im_shape[0], im_shape[1], 3))
+            inputs = keras.Input(shape=(nt, im_shape[0], im_shape[1], im_shape[2]))
             PPN = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])
             outputs = PPN(inputs)
             PPN = keras.Model(inputs=inputs, outputs=outputs)
@@ -345,7 +347,8 @@ def main(args):
             for png_paths, dataset_name in zip(list_png_paths, dataset_names):
                 #  Create and split dataset
                 datasets, ds_len = create_dataset_from_serialized_generator(data_dirs, pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name=dataset_name, im_height=im_shape[0], im_width=im_shape[1],
-                                                                            batch_size=batch_size, nt=nt, train_split=train_split, reserialize=args["reserialize_dataset"], shuffle=True, resize=args["resize_images"], single_channel=False, iteration=training_it)
+                                                                            output_channels=im_shape[2], batch_size=batch_size, nt=nt, train_split=train_split, reserialize=args["reserialize_dataset"], 
+                                                                            shuffle=True, resize=args["resize_images"], single_channel=False, iteration=training_it, decompose=args["decompose_images"])
                 train_dataset, val_dataset, test_dataset = datasets
                 full_train_dataset = train_dataset if full_train_dataset is None else full_train_dataset.concatenate(train_dataset)
                 full_val_dataset = val_dataset if full_val_dataset is None else full_val_dataset.concatenate(val_dataset)
@@ -357,9 +360,9 @@ def main(args):
             val_size = int(val_split * length)
             test_size = length-train_size-val_size
 
-            full_train_dataset = full_train_dataset.shuffle(train_size, reshuffle_each_iteration=True).batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat() # .shuffle(train_size)
-            full_val_dataset = full_val_dataset.shuffle(val_size, reshuffle_each_iteration=True).batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat() # .shuffle(val_size)
-            full_test_dataset = full_test_dataset.shuffle(test_size, reshuffle_each_iteration=True).batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE).repeat() # .shuffle(test_size)
+            full_train_dataset = full_train_dataset.shuffle(train_size, reshuffle_each_iteration=True).batch(batch_size).repeat() #prefetch(tf.data.experimental.AUTOTUNE).repeat() # .shuffle(train_size)
+            full_val_dataset = full_val_dataset.shuffle(val_size, reshuffle_each_iteration=True).batch(batch_size).repeat() #.prefetch(tf.data.experimental.AUTOTUNE).repeat() # .shuffle(val_size)
+            full_test_dataset = full_test_dataset.shuffle(test_size, reshuffle_each_iteration=True).batch(batch_size).repeat() #.prefetch(tf.data.experimental.AUTOTUNE).repeat() # .shuffle(test_size)
 
             train_dataset, val_dataset, test_dataset = full_train_dataset, full_val_dataset, full_test_dataset
 
@@ -390,11 +393,11 @@ def main(args):
         print("All datasets created successfully")
 
         # viter = iter(full_train_dataset)
-        # while True:
-        #     a = next(viter)
-        #     b = next(viter)
-        #     c = next(viter)
-        #     d = next(viter)
+        # # while True:
+        # a = next(viter)
+        # b = next(viter)
+        # c = next(viter)
+        # d = next(viter)
 
         #     import matplotlib.pyplot as plt
         #     # Sequences are maintained and sequences in a batch, and between batches, are shuffled
@@ -474,29 +477,30 @@ if __name__ == "__main__":
 
     # Tuning args
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
-    parser.add_argument("--sequences_per_epoch_train", type=int, default=100, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
-    parser.add_argument("--sequences_per_epoch_val", type=int, default=20, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
-    parser.add_argument("--batch_size", type=int, default=2, help="batch size")
-    parser.add_argument("--nb_epoch", type=int, default=3, help="number of epochs")
+    parser.add_argument("--sequences_per_epoch_train", type=int, default=200, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_val", type=int, default=10, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
+    parser.add_argument("--batch_size", type=int, default=1, help="batch size")
+    parser.add_argument("--nb_epoch", type=int, default=10, help="number of epochs")
     parser.add_argument("--second_stage", type=bool, default=True, help="utilize 2nd stage training data")
     """
     unser bs 20 x 25 steps = 42 sec -> 11.9 sequences/sec
     unser bs 30 x 10 steps = 24 sec -> 12.5 sequences/sec ***
     ser bs 4 x 25 steps = 13 sec -> 6.76 sequences/sec
     """
-    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels")
+    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels. Decompose turns bottom 3 channels to 12")
     parser.add_argument("--num_P_CNN", type=int, default=1, help="number of serial Prediction convolutions")
     parser.add_argument("--num_R_CLSTM", type=int, default=1, help="number of hierarchical Representation CLSTMs")
     parser.add_argument("--num_passes", type=int, default=1, help="number of prediction-update cycles per time-step")
     parser.add_argument("--pan_hierarchical", type=bool, default=False, help="utilize Pan-Hierarchical Representation")
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor for images prior to training")
     parser.add_argument("--resize_images", type=bool, default=False, help="whether or not to downscale images prior to training")
-    parser.add_argument("--training_split", type=float, default=0.96, help="proportion of data for training (only for monkaa)")
+    parser.add_argument("--decompose_images", type=bool, default=True, help="whether or not to downscale images prior to training")
+    parser.add_argument("--training_split", type=float, default=0.80, help="proportion of data for training (only for monkaa)")
 
     # Training args
     parser.add_argument("--seed", type=int, default=47, help="random seed") # np.random.randint(0,1000)
     parser.add_argument("--results_subdir", type=str, default=f"{str(datetime.now())}", help="Specify results directory")
-    parser.add_argument("--restart_training", type=bool, default=True, help="whether or not to delete weights and restart")
+    parser.add_argument("--restart_training", type=bool, default=False, help="whether or not to delete weights and restart")
     parser.add_argument("--reserialize_dataset", type=bool, default=True, help="reserialize dataset")
     parser.add_argument("--output_mode", type=str, default="Error", help="Error, Predictions, or Error_Images_and_Prediction. Only trains on Error.")
     # first / second stage rates - ~40k samples each:
@@ -506,11 +510,11 @@ if __name__ == "__main__":
     # parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-4, 1e-4, 99, 1e-4], help="output channels")
 
     # Structure args
-    parser.add_argument("--model_choice", type=str, default="baseline_plus_monet", help="Choose which model. Options: baseline, baseline_plus_monet, cl_delta, cl_recon, multi_channel")
+    parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, baseline_SceneDecomp, cl_delta, cl_recon, multi_channel")
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
     parser.add_argument("--dataset", type=str, default="various", help="kitti, driving, monkaa, rolling_square, or rolling_circle")
     parser.add_argument("--data_subset", type=str, default="central_multi_gen_shape_strafing", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
-    parser.add_argument("--num_dataset_chunks", type=int, default=4, help="number of dataset chunks to iterate through (full DS / 5000)")
+    parser.add_argument("--num_dataset_chunks", type=int, default=10, help="number of dataset chunks to iterate through (full DS / 2000)")
     parser.add_argument("--various_im_shape", nargs="+", type=int, default=[64, 64], help="output channels")
     """
     Avaialble dataset/data_subset arg combinations:

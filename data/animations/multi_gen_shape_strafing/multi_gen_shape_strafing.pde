@@ -18,15 +18,15 @@ boolean rand_occlusions = true;
 int ws = 64;
 int image_pairs_interval = 1;
 
-String rand_background = "whole"; // can be "pixels", "whole", "white"
+String rand_background = "pixels"; // can be "pixels", "whole", "white"
 
 boolean save_gif = false; // only set save_gif or save_frames to true, not both, or both to false
 boolean save_frames = true;
-boolean second_stage = true; // switches to white background and grey occlusions to sharpen up predictions
+boolean second_stage = false; // switches to white background and grey occlusions to sharpen up predictions
 
 boolean train_mode = true; // just flip this one to switch between train and test modes
 boolean test_mode = !train_mode;
-boolean image_pairs = true; // if true, only two frames are generated before new shapes
+boolean image_pairs = false; // if true, only two frames are generated before new shapes
 
 boolean exec_randomize = true;
 boolean flip = false;
@@ -38,6 +38,7 @@ GifMaker gifExport;
 public void settings() {
   if ((save_gif == false) && (save_frames == false)) {size(500, 500);} // Set the size of the window, w, h
   else {size(ws, ws);} // Set the size of the window, w, h
+  noSmooth(); // Disable anti-aliasing to eliminate fading at edges
 }
 
 void setup() {
@@ -48,9 +49,10 @@ void setup() {
   if (save_gif && save_frames) {println("Error: save_gif and save_frames cannot both be true."); exit();}
   if (test_mode && !second_stage) {println("Error: test mode must be second stage"); exit();}
   if (save_gif) {num_frames = 150; frame_rate = 200;}
-  else if (save_frames && train_mode) {num_frames = 100000; frame_rate = 10000;} // deleteDirectory(new File(save_dir));}
+  else if (save_frames && train_mode && !image_pairs) {num_frames = 20000; frame_rate = 10000;} // deleteDirectory(new File(save_dir));}
+  else if (save_frames && train_mode && image_pairs) {num_frames = 100000; frame_rate = 10000;} // deleteDirectory(new File(save_dir));}
   else if (save_frames && test_mode) {num_frames = 2000; frame_rate = 1000;} // deleteDirectory(new File(save_dir));}
-  else {num_frames = 1000; frame_rate = 2;}
+  else {num_frames = 1000; frame_rate = 1;}
   images = new PImage[num_frames];
 
   frameRate(frame_rate);
@@ -76,7 +78,7 @@ void draw() {
   if ((rand_background == "pixels") && (second_stage == false)) {
     image(images[frameCount-1], 0, 0, width, height);
   } else if ((rand_background == "whole")) {
-    background(color(random(0, 255), random(0, 255), random(0, 255)));
+    background(color(random(100, 200), random(100, 200), random(100, 200)));
   } else if ((rand_background == "white") && (second_stage == false)) {
     background(255);
   } else if (second_stage == true) {

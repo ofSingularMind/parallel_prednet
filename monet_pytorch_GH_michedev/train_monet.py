@@ -55,7 +55,7 @@ dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 # Initialize model, loss function, and optimizer. Load saved weights if resuming training.
 monet = Monet.from_config(model='monet-SSM', dataset=None, scene_max_objects=4, dataset_width=64, dataset_height=64).to(device)
-optimizer = optim.Adam(monet.parameters(), lr=0.0005)
+optimizer = optim.Adam(monet.parameters(), lr=0.00015)
 
 # Load weights if resuming training
 if loadModel:

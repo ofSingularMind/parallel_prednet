@@ -169,7 +169,7 @@ monet = Monet.from_config(model='monet-SSM', dataset=None, scene_max_objects=4, 
 
 # Load weights if resuming training
 try:
-    monet.load_state_dict(torch.load(WEIGHTS_PATH + 'monet_weights.pth'))
+    monet.load_state_dict(torch.load(WEIGHTS_PATH + 'monet_weights.pth', map_location=torch.device(device)))
     print('Successfully loaded model weights, resuming training...')
     with open(WEIGHTS_PATH + 'loss.txt', 'r') as f:
         best_loss = float(f.read())
