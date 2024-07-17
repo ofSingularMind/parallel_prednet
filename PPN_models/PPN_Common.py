@@ -6,6 +6,7 @@ import tensorflow as tf
 import numpy as np
 import os
 import warnings
+import matplotlib.pyplot as plt
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -30,19 +31,35 @@ class Target(keras.layers.Layer):
 
 
 class Prediction(keras.layers.Layer):
-    def __init__(self, output_channels, num_P_CNN, layer_num, activation='relu', *args, **kwargs):
+    def __init__(self, output_channels, num_P_CNN, layer_num, activation='relu', num_frameChannels = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.output_channels = output_channels
         self.num_P_CNN = num_P_CNN
         self.conv_layers = []
+        self.last_frame = None
+        self.layer_num = layer_num
+        self.num_frameChannels = num_frameChannels
         for i in range(num_P_CNN):
             self.conv_layers.append(layers.Conv2D(self.output_channels, (3, 3), padding="same", activation=activation, name=f"Prediction_Conv{i}_Layer{layer_num}"))
 
     def call(self, inputs):
+        if self.last_frame is not None:
+            inputs = keras.layers.Concatenate(axis=-1)([inputs, self.last_frame])
+        else:
+            self.last_frame = tf.zeros_like(inputs)[..., -self.num_frameChannels:] #.to(inputs.device)
+            inputs = keras.layers.Concatenate(axis=-1)([inputs, self.last_frame])
         out = inputs
         for i in range(self.num_P_CNN):
             out = self.conv_layers[i](out)
         return out
+
+    def set_last_frame(self, last_frame):
+        for _ in range(self.layer_num):
+            last_frame = keras.layers.MaxPool2D((2, 2))(last_frame)
+        self.last_frame = last_frame
+
+    def clear_last_frame(self):
+        self.last_frame = None
 
 
 class Error(keras.layers.Layer):
@@ -158,3 +175,18 @@ class FlowNetSimple(keras.layers.Layer):
         out = self.conv_e1(out)
         flow = self.conv_f1(out)
         return flow
+
+class PreviousInputLayer(layers.Layer):
+    def __init__(self, **kwargs):
+        super(PreviousInputLayer, self).__init__(**kwargs)
+        self.previous_input = None
+
+    def call(self, inputs):
+        # if self.previous_input is None:
+        #     self.previous_input = tf.zeros_like(inputs)
+        # detached_previous_input = tf.stop_gradient(self.previous_input)
+        self.previous_input = inputs.detach()
+        return self.previous_input
+
+    def compute_output_shape(self, input_shape):
+        return input_shape

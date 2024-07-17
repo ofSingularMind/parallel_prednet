@@ -1,7 +1,7 @@
 def main(args):
     for training_it in range(args["num_dataset_chunks"]):
         # uncomment to resume training at a specific iteration, because it crashes
-        if (training_it+1) <= 5: continue
+        if (training_it) < args["train_restart_iteration"]: continue
 
         import os
         import warnings
@@ -25,9 +25,9 @@ def main(args):
             else:
                 from PPN_models.PPN_Baseline import ParaPredNet
                 print("Using Pan-Hierarchical Representation")
-        elif args["model_choice"] == "baseline_SceneDecomp":
-            from PPN_models.PPN_Baseline_SceneDecomp import ParaPredNet
-            print("Using Decomposed Inputs")
+        elif args["model_choice"] == "SelfPerception":
+            from PPN_models.PPN_SelfPerception import ParaPredNet
+            print("Using Feeding Frames to Prediction Units")
         elif args["model_choice"] == "cl_delta":
             # Predict next frame and change from current frame
             from PPN_models.PPN_CompLearning_Delta_Predictions import ParaPredNet
@@ -477,10 +477,10 @@ if __name__ == "__main__":
 
     # Tuning args
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
-    parser.add_argument("--sequences_per_epoch_train", type=int, default=200, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_train", type=int, default=800, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=10, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
     parser.add_argument("--batch_size", type=int, default=1, help="batch size")
-    parser.add_argument("--nb_epoch", type=int, default=10, help="number of epochs")
+    parser.add_argument("--nb_epoch", type=int, default=1, help="number of epochs")
     parser.add_argument("--second_stage", type=bool, default=True, help="utilize 2nd stage training data")
     """
     unser bs 20 x 25 steps = 42 sec -> 11.9 sequences/sec
@@ -494,7 +494,7 @@ if __name__ == "__main__":
     parser.add_argument("--pan_hierarchical", type=bool, default=False, help="utilize Pan-Hierarchical Representation")
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor for images prior to training")
     parser.add_argument("--resize_images", type=bool, default=False, help="whether or not to downscale images prior to training")
-    parser.add_argument("--decompose_images", type=bool, default=True, help="whether or not to downscale images prior to training")
+    parser.add_argument("--decompose_images", type=bool, default=True, help="whether or not to decompose images for training")
     parser.add_argument("--training_split", type=float, default=0.80, help="proportion of data for training (only for monkaa)")
 
     # Training args
@@ -503,18 +503,15 @@ if __name__ == "__main__":
     parser.add_argument("--restart_training", type=bool, default=False, help="whether or not to delete weights and restart")
     parser.add_argument("--reserialize_dataset", type=bool, default=True, help="reserialize dataset")
     parser.add_argument("--output_mode", type=str, default="Error", help="Error, Predictions, or Error_Images_and_Prediction. Only trains on Error.")
-    # first / second stage rates - ~40k samples each:
-    # parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-2, 1e-3, 99, 5e-4], help="output channels")
-    parser.add_argument("--learning_rates", nargs="+", type=int, default=[5e-4, 5e-4, 99, 1e-4], help="output channels")
-    # parser.add_argument("--learning_rates", nargs="+", type=int, default=[2e-4, 2e-4, 99, 2e-4], help="output channels")
-    # parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-4, 1e-4, 99, 1e-4], help="output channels")
+    parser.add_argument("--train_restart_iteration", type=int, default=0, help="when training crashes, can restart from last iteration. 0 means to start from the beginning")
+    parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-3, 5e-4, 99, 1e-4], help="output channels")
 
     # Structure args
-    parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, baseline_SceneDecomp, cl_delta, cl_recon, multi_channel")
+    parser.add_argument("--model_choice", type=str, default="SelfPerception", help="Choose which model. Options: baseline, SelfPerception, cl_delta, cl_recon, multi_channel")
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
     parser.add_argument("--dataset", type=str, default="various", help="kitti, driving, monkaa, rolling_square, or rolling_circle")
     parser.add_argument("--data_subset", type=str, default="central_multi_gen_shape_strafing", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
-    parser.add_argument("--num_dataset_chunks", type=int, default=10, help="number of dataset chunks to iterate through (full DS / 2000)")
+    parser.add_argument("--num_dataset_chunks", type=int, default=20, help="number of dataset chunks to iterate through (full DS / 2000)")
     parser.add_argument("--various_im_shape", nargs="+", type=int, default=[64, 64], help="output channels")
     """
     Avaialble dataset/data_subset arg combinations:

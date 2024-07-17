@@ -184,7 +184,7 @@ class IntermediateEvaluations(Callback):
         # Calculate predicted sequence(s)
         #   self.model.layers[-1] is the PredNet layer
         self.model.layers[-1].output_mode = "Error_Images_and_Prediction"
-        if self.model_choice == "baseline":
+        if self.model_choice in ["baseline","SelfPerception"]:
             error_images, X_hat = self.model.layers[-1](self.X_test_inputs)
         elif self.model_choice == "cl_delta":
             error_images, X_hat, X_delta_hat = self.model.layers[-1](self.X_test_inputs)
@@ -228,8 +228,11 @@ class IntermediateEvaluations(Callback):
 
         # Plot some training predictions
         aspect_ratio = float(X_hat.shape[2]) / X_hat.shape[3]
-        if self.model_choice=="baseline":
+        if self.model_choice in ["baseline"]:
             gs = gridspec.GridSpec(self.Xtc, self.plot_nt)
+            plt.figure(figsize=(3 * self.plot_nt, 10 * aspect_ratio), layout="constrained")
+        if self.model_choice in ["SelfPerception"]:
+            gs = gridspec.GridSpec(self.Xtc+2, self.plot_nt)
             plt.figure(figsize=(3 * self.plot_nt, 10 * aspect_ratio), layout="constrained")
         # elif self.model_choice=="baseline" and self.Xtc != 3:
         #     gs = gridspec.GridSpec(3*oc, self.plot_nt)
@@ -266,8 +269,24 @@ class IntermediateEvaluations(Callback):
                         plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
                         if t == 0:
                             plt.ylabel("Error", fontsize=10)
-            plt.savefig(plot_save_dir + "e" + str(epoch) + "_plot_" + str(i) + ".png")
-            plt.clf()
+                
+                h, w = self.X_test[i, t, ...].shape[:2]        
+                for t in range(self.plot_nt):
+                    plt.subplot(gs[t + self.Xtc*self.plot_nt])
+                    reconstructed_image = np.minimum(np.sum([X_hat[i, t, ..., k*3:(k+1)*3] for k in range(self.Xtc//3)], axis=0), 1)
+                    plt.imshow(reconstructed_image, interpolation="none")
+                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                    if t == 0:
+                        plt.ylabel("Predicted", fontsize=10)
+
+                    plt.subplot(gs[t + (self.Xtc+1)*self.plot_nt])
+                    original_image = np.minimum(np.sum([self.X_test[i, t, ..., k*3:(k+1)*3] for k in range(self.Xtc//3)], axis=0), 1)
+                    plt.imshow(original_image, interpolation="none")
+                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                    if t == 0:
+                        plt.ylabel("Actual", fontsize=10)
+                plt.savefig(plot_save_dir + "e" + str(epoch) + "_plot_" + str(i) + ".png")
+                plt.clf()
         else:
             for i in plot_idx:
                 X_test_last = tf.zeros_like(self.X_test[i, -1])
@@ -530,7 +549,7 @@ def serialize_dataset(data_dirs, pfm_paths, pgm_paths, png_paths, dataset_name="
     if dataset_name == "driving":
         subset_length = np.minimum(length, 200)
     else:
-        nms = 2000 # nominal_subset_max
+        nms = 1000 # nominal_subset_max
         subset_max = np.minimum(nms, length - (iteration) * nms)
         assert subset_max >= 1000, "Subset max is less than 1000 - create new data and restart training"
         subset_length = np.minimum(nms, length - (iteration) * nms)

@@ -103,20 +103,15 @@ class SceneDecomposer:
 
     def process_dataset(self, dataset):
         """
-        Process a batch of images with shape (BS, T, 64, 64, 3) and return masks with shape (BS, T, 64, 64, n_colors*3)
+        Process a dataset of images with shape (T, 64, 64, 3) and return masks with shape (T, 64, 64, n_colors*3)
         """
         T, H, W, C = dataset.shape
         masks_batch = np.zeros((T, H, W, self.n_colors*C), dtype=np.float32)
 
         self.clear_state()
         for t in range(T):
-            # image = Image.fromarray((dataset[t] * 255).astype(np.uint8))
             new_masks = self.process_single_image(dataset[t])
             masks_batch[t] = new_masks
-
-            # for i in range(self.n_colors):
-            #     mask_array = np.array(mask)
-            #     masks_batch[t, ..., i*C:(i+1)*C] = mask_array[..., :3] # Discard the alpha channel
 
         return masks_batch
 
@@ -259,7 +254,7 @@ class SceneDecomposer_CV:
 
 
 # # Configuration
-# input_folder = '/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/multi_gen_shape_strafing/frames/multi_gen_shape_2nd_stage'  # Folder with source images
+# input_folder = '/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/multi_gen_shape_strafing/frames/multi_gen_shape_1st_stage'  # Folder with source images
 # output_folder = '/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/decompose_images/output'  # Folder to save the processed images
 
 # if os.path.exists(output_folder):
@@ -267,7 +262,7 @@ class SceneDecomposer_CV:
 #         os.remove(os.path.join(output_folder, filename))
 
 # # Instantiate and process images
-# processor = SceneDecomposer2(input_folder, output_folder, n_colors=4, mode='save')
+# processor = SceneDecomposer(input_folder, output_folder, n_colors=4, mode='save')
 # processor.process_images()
 
 # # Plot 10 sets of masks, 40 masks in total in a 10x4 grid
