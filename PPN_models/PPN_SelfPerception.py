@@ -5,7 +5,7 @@ import tensorflow as tf
 import numpy as np
 import os
 import warnings
-from PPN_models.PPN_Common import Target, Prediction, Error, Representation, PanRepresentation, MotionMaskPrediction, PreviousInputLayer
+from PPN_models.PPN_Common import Target, Prediction, Error, Representation, PanRepresentation, MotionMaskPrediction, ObjectRepresentation
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -40,6 +40,8 @@ class PredLayer(keras.Model):
         # self.predicted_motion_mask = MotionMaskPrediction(output_channels, layer_num=self.layer_num, name=f"MotionMaskPrediction_Layer{self.layer_num}")
         if not self.bottom_layer:
             self.target = Target(output_channels, layer_num=self.layer_num, name=f"Target_Layer{self.layer_num}")
+        if self.bottom_layer and self.training_args['object_representations']:
+            self.object_representations = ObjectRepresentation(self.training_args, self.training_args['output_channels'][0]//3, self.layer_num, self.im_height, self.im_width, name=f"ObjectRepresentation_Layer{self.layer_num}")
         self.error = Error(layer_num=self.layer_num, name=f"Error_Layer{self.layer_num}")
         self.upsample = layers.UpSampling2D((2, 2), name=f"Upsample_Layer{self.layer_num}")
         self.last_frame = None
@@ -50,14 +52,14 @@ class PredLayer(keras.Model):
         self.states["P_M"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
         self.states["P"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
         self.states["T"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
-        # if self.training_args["decompose_images"]:
-        #     self.states["E"] = tf.zeros((batch_size, self.im_height, self.im_width, 2 * self.output_channels + 6))
         self.states["E"] = tf.zeros((batch_size, self.im_height, self.im_width, 2 * self.output_channels)) # double for the pos/neg concatenated error
         
         self.states["TD_inp"] = None
         self.states["L_inp"] = None
         self.states['P_Inp'] = None
         self.states["lstm"] = None
+
+        self.last_frame = tf.zeros((batch_size, self.im_height, self.im_width, self.training_args['output_channels'][0]))
 
     def clear_states(self):
         # Clear internal layer states
@@ -74,7 +76,15 @@ class PredLayer(keras.Model):
 
         self.states["E_raw"] = None
 
-        self.prediction.clear_last_frame()
+        self.clear_last_frame()
+
+    def set_last_frame(self, last_frame):
+        for _ in range(self.layer_num):
+            last_frame = keras.layers.MaxPool2D((2, 2))(last_frame)
+        self.last_frame = last_frame
+
+    def clear_last_frame(self):
+        self.last_frame = None
 
     def call(self, inputs=None, direction="top_down", paddings=None):
         # PredLayer should update internal states when called with new TD and BU inputs, inputs[0] = BU, inputs[1] = TD
@@ -96,6 +106,9 @@ class PredLayer(keras.Model):
                     self.states["TD_inp"] = self.upsample(inputs[1])
                     self.states["TD_inp"] = keras.layers.ZeroPadding2D(paddings)(self.states["TD_inp"])
                     R_inp = keras.layers.Concatenate()([self.states["E"], self.states["R"], self.states["TD_inp"]])
+                if self.bottom_layer and self.training_args['object_representations']:
+                    object_representations = self.object_representations(self.last_frame)
+                    R_inp = keras.layers.Concatenate()([R_inp, object_representations])
 
             if self.states["lstm"] is None:
                 self.states["R"], self.states["lstm"] = self.representation(R_inp)
@@ -103,7 +116,8 @@ class PredLayer(keras.Model):
                 self.states["R"], self.states["lstm"] = self.representation(R_inp, initial_states=self.states["lstm"])
 
             # FORM PREDICTION(S)
-            self.states["P"] = K.minimum(self.prediction(self.states["R"]), self.pixel_max) if self.bottom_layer else self.prediction(self.states["R"])
+            P_inp = keras.layers.Concatenate()([self.states["R"], self.last_frame])
+            self.states["P"] = K.minimum(self.prediction(P_inp), self.pixel_max) if self.bottom_layer else self.prediction(self.states["R"])
             # motion_mask_input = keras.layers.Concatenate()([self.states["R"], self.states["P"]])
             # self.states["P_M"] = K.minimum(self.predicted_motion_mask(motion_mask_input), self.pixel_max) if self.bottom_layer else self.predicted_motion_mask(motion_mask_input)
 
@@ -231,7 +245,7 @@ class ParaPredNet(keras.Model):
             """ Perform bottom-up pass, starting from the bottom layer """
             for l, layer in list(enumerate(self.predlayers)):
                 # Pass ground truth last frame to Prediction heads, as part of bottom-up pass
-                layer.prediction.set_last_frame(inputs[:, t, ...])
+                layer.set_last_frame(inputs[:, t, ...])
                 
                 # Then perform the bottom-up pass:
                 # Bottom layer

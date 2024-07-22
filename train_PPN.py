@@ -27,7 +27,7 @@ def main(args):
                 print("Using Pan-Hierarchical Representation")
         elif args["model_choice"] == "SelfPerception":
             from PPN_models.PPN_SelfPerception import ParaPredNet
-            print("Using Feeding Frames to Prediction Units")
+            print("Feeding Past Frame to Prediction Units")
         elif args["model_choice"] == "cl_delta":
             # Predict next frame and change from current frame
             from PPN_models.PPN_CompLearning_Delta_Predictions import ParaPredNet
@@ -495,6 +495,7 @@ if __name__ == "__main__":
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor for images prior to training")
     parser.add_argument("--resize_images", type=bool, default=False, help="whether or not to downscale images prior to training")
     parser.add_argument("--decompose_images", type=bool, default=True, help="whether or not to decompose images for training")
+    parser.add_argument("--object_representations", type=bool, default=True, help="whether or not to use object representations as input to Rep unit")
     parser.add_argument("--training_split", type=float, default=0.80, help="proportion of data for training (only for monkaa)")
 
     # Training args
