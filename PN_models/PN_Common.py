@@ -88,7 +88,6 @@ class CustomConvLSTM2D(keras.layers.Layer):
         f = self.convs["conv_f"](inputs)
         o = self.convs["conv_o"](inputs)
         h, c = initial_states if initial_states is not None else 2 * [tf.zeros(f.shape, dtype=tf.float32)]
-        print(h.shape, c.shape)
         c = f * c + i * self.convs["conv_c"](inputs)
         h = o * keras.activations.tanh(c)
         output = h
@@ -130,7 +129,6 @@ class ObjectRepresentation(layers.Layer):
 
     def call(self, inputs):
         output_tensors = []
-        batch_size = tf.shape(inputs)[0]
 
         for i in range(0, self.frame_channels, 3):
             frame = inputs[..., i:i+3]

@@ -6,15 +6,10 @@ warnings.filterwarnings("ignore")
 # or '2' to filter out INFO messages too
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
-import subprocess
-from six.moves import cPickle as pickle
 import random
 import time
 from PIL import Image
 import glob
-import sys
-import re
-
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
@@ -23,11 +18,8 @@ from keras.callbacks import Callback
 from keras.preprocessing.image import Iterator
 from keras import backend as K
 import tensorflow as tf
-import keras
 import numpy as np
 import hickle as hkl
-import flow_vis
-import re
 from data.animations.decompose_images.decomposer import SceneDecomposer
 
 # Data generator that creates sequences for input into PredNet.

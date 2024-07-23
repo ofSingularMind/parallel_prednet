@@ -21,21 +21,21 @@ def main(args):
     if args["model_choice"] == "baseline":
         # Predict next frame along RGB channels only
         if not args['pan_hierarchical']:
-            from PPN_models.PPN_Baseline import ParaPredNet
+            from PN_models.PN_Baseline import PredNet
         else:
-            from PPN_models.PPN_Baseline import ParaPredNet
+            from PN_models.PN_Baseline import PredNet
             print("Using Pan-Hierarchical Representation")
     elif args["model_choice"] == "cl_delta":
         # Predict next frame and change from current frame
-        from PPN_models.PPN_CompLearning_Delta_Predictions import ParaPredNet
+        from PN_models.PN_CompLearning_Delta_Predictions import PredNet
     elif args["model_choice"] == "cl_recon":
         # Predict current and next frame
-        from PPN_models.PPN_CompLearning_Recon_Predictions import ParaPredNet
+        from PN_models.PN_CompLearning_Recon_Predictions import PredNet
     elif args["model_choice"] == "multi_channel":
         # Predict next frame along Disparity, Material Index, Object Index, 
         # Optical Flow, Motion Boundaries, and RGB channels all stacked together
         assert args["dataset"] == "monkaa" or args["dataset"] == "driving", "Multi-channel model only works with Monkaa or Driving dataset"
-        from PPN_models.PPN_Multi_Channel import ParaPredNet
+        from PN_models.PN_Multi_Channel import PredNet
         bottom_layer_output_channels = 7 # 1 Disparity, 3 Optical Flow, 3 RGB
         args["output_channels"][0] = bottom_layer_output_channels
     else:
@@ -227,13 +227,13 @@ def main(args):
     # print(f"Test size: {test_size}")
     # print("All datasets created successfully")
 
-    # Create ParaPredNet
+    # Create PredNet
     if args["dataset"] == "kitti":
         # These are Kitti specific input shapes
         inputs = (keras.Input(shape=(nt, im_shape[0], im_shape[1], 3)))
-        PPN = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])  # [3, 48, 96, 192]
-        outputs = PPN(inputs)
-        PPN = keras.Model(inputs=inputs, outputs=outputs)
+        PN = PredNet(args, im_height=im_shape[0], im_width=im_shape[1])  # [3, 48, 96, 192]
+        outputs = PN(inputs)
+        PN = keras.Model(inputs=inputs, outputs=outputs)
 
     elif args["dataset"] == "monkaa":
         # These are Monkaa specific input shapes
@@ -244,9 +244,9 @@ def main(args):
             keras.Input(shape=(nt, im_shape[0], im_shape[1], 1)),
             keras.Input(shape=(nt, im_shape[0], im_shape[1], 3)),
         )
-        PPN = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])  # [3, 48, 96, 192]
-        outputs = PPN(inputs)
-        PPN = keras.Model(inputs=inputs, outputs=outputs)
+        PN = PredNet(args, im_height=im_shape[0], im_width=im_shape[1])  # [3, 48, 96, 192]
+        outputs = PN(inputs)
+        PN = keras.Model(inputs=inputs, outputs=outputs)
 
     elif args["dataset"] == "driving":
         # These are driving specific input shapes
@@ -254,24 +254,24 @@ def main(args):
             keras.Input(shape=(nt, im_shape[0], im_shape[1], 3)),
             keras.Input(shape=(nt, im_shape[0], im_shape[1], 3)),
         )
-        PPN = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])  # [3, 48, 96, 192]
-        outputs = PPN(inputs)
-        PPN = keras.Model(inputs=inputs, outputs=outputs)
+        PN = PredNet(args, im_height=im_shape[0], im_width=im_shape[1])  # [3, 48, 96, 192]
+        outputs = PN(inputs)
+        PN = keras.Model(inputs=inputs, outputs=outputs)
 
     elif args["dataset"] in ["rolling_square", "rolling_circle"]:
         # These are rolling_square specific input shapes
         inputs = keras.Input(shape=(nt, im_shape[0], im_shape[1], 3))
-        PPN_layer = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])
-        PPN_layer.output_mode = "Prediction"
-        PPN_layer.continuous_eval = True
-        outputs = PPN_layer(inputs)
-        PPN = keras.Model(inputs=inputs, outputs=outputs)
+        PN_layer = PredNet(args, im_height=im_shape[0], im_width=im_shape[1])
+        PN_layer.output_mode = "Prediction"
+        PN_layer.continuous_eval = True
+        outputs = PN_layer(inputs)
+        PN = keras.Model(inputs=inputs, outputs=outputs)
     
-    resos = PPN.layers[-1].resolutions
-    PPN.compile(optimizer="adam", loss="mean_squared_error")
-    print("ParaPredNet compiled...")
-    PPN.build(input_shape=(None, nt) + im_shape)
-    print(PPN.summary())
+    resos = PN.layers[-1].resolutions
+    PN.compile(optimizer="adam", loss="mean_squared_error")
+    print("PredNet compiled...")
+    PN.build(input_shape=(None, nt) + im_shape)
+    print(PN.summary())
     num_layers = len(output_channels)  # number of layers in the architecture
     print(f"{num_layers} PredNet layers with resolutions:")
     for i in reversed(range(num_layers)):
@@ -279,13 +279,13 @@ def main(args):
 
     # load previously saved weights
     try: 
-        PPN.load_weights(weights_file)
+        PN.load_weights(weights_file)
         print("Weights loaded successfully...")
     except: 
         raise ValueError("Weights don't fit - exiting...")
 
-    # manually initialize PPN layer states
-    PPN.layers[-1].init_layer_states()
+    # manually initialize PN layer states
+    PN.layers[-1].init_layer_states()
 
     # dataset_iter = iter(test_dataset)
     fig, axs = plt.subplots(1, 3, figsize=(30, 10))
@@ -299,7 +299,7 @@ def main(args):
     for i in range(td_len):
         # ground_truth_image = next(dataset_iter)[0]
         ground_truth_image = np.reshape(test_data[i], (1, 1, *test_data.shape[1:]))
-        predicted_image = PPN.layers[-1](ground_truth_image)
+        predicted_image = PN.layers[-1](ground_truth_image)
         error_image = ground_truth_image - predicted_image
         error_image_grey = np.mean(error_image, axis=-1, keepdims=True)
         mse = np.mean(error_image**2)
@@ -334,7 +334,7 @@ if __name__ == "__main__":
     import os
     from datetime import datetime
 
-    parser = argparse.ArgumentParser(description="PPN")  # Training parameters
+    parser = argparse.ArgumentParser(description="PN")  # Training parameters
 
     # Tuning args
     parser.add_argument("--nt", type=int, default=1, help="sequence length")

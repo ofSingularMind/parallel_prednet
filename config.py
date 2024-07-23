@@ -9,7 +9,7 @@
 # # Where results (prediction plots and evaluation file) will be saved.
 # RESULTS_SAVE_DIR = '',
 
-# # Where Tensorboard logs will be saved if you run PPN_train.py
+# # Where Tensorboard logs will be saved if you run PN_train.py
 # LOG_DIR = ''
 
 settings = {'dirs': ''}

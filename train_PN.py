@@ -46,12 +46,13 @@ def main(args):
         """Model Setup"""
         # PICK MODEL
         if args["model_choice"] == "baseline":
+            assert not args["decompose_images"], "Baseline PredNet does not use decomposed images"
             # Predict next frame along RGB channels only
-            from PPN_models.PPN_Baseline import ParaPredNet
-            print("Using Pan-Hierarchical Representation")
+            from PN_models.PN_Baseline import PredNet
+            print("Using Baseline PredNet")
         elif args["model_choice"] == "object_centric":
             assert args["decompose_images"], "Object-Centric PredNet requires images to be decomposed"
-            from PPN_models.PPN_ObjectCentric import ParaPredNet
+            from PN_models.PN_ObjectCentric import PredNet
             if args["object_representations"]:
                 print("Using the Object-Centric PredNet; Decomposing & classifying inputs, and maintaining & applying object representations.")
             else:
@@ -65,18 +66,18 @@ def main(args):
         downscale_factor = args["downscale_factor"]
         im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, args["output_channels"][0]) if args["resize_images"] else original_im_shape
         
-        # Create ParaPredNet with animation specific input shapes
+        # Create PredNet with animation specific input shapes
         inputs = keras.Input(shape=(nt, im_shape[0], im_shape[1], im_shape[2]))
-        PPN = ParaPredNet(args, im_height=im_shape[0], im_width=im_shape[1])
-        outputs = PPN(inputs)
-        PPN = keras.Model(inputs=inputs, outputs=outputs)
+        PN = PredNet(args, im_height=im_shape[0], im_width=im_shape[1])
+        outputs = PN(inputs)
+        PN = keras.Model(inputs=inputs, outputs=outputs)
         
         # Finalize model
-        resos = PPN.layers[-1].resolutions
-        PPN.compile(optimizer="adam", loss="mean_squared_error")
-        print("ParaPredNet compiled...")
-        PPN.build(input_shape=(None, nt) + im_shape)
-        print(PPN.summary())
+        resos = PN.layers[-1].resolutions
+        PN.compile(optimizer="adam", loss="mean_squared_error")
+        print("PredNet compiled...")
+        PN.build(input_shape=(None, nt) + im_shape)
+        print(PN.summary())
         num_layers = len(output_channels)  # number of layers in the architecture
         print(f"{num_layers} PredNet layers with resolutions:")
         for i in reversed(range(num_layers)):
@@ -96,7 +97,7 @@ def main(args):
         # load previously saved weights
         if os.path.exists(weights_file):
             try: 
-                PPN.load_weights(weights_file)
+                PN.load_weights(weights_file)
                 print("Weights loaded successfully - continuing training from last epoch")
             except: 
                 os.remove(weights_file) # model architecture has changed, so weights cannot be loaded
@@ -186,7 +187,7 @@ def main(args):
         if tensorboard:
             callbacks.append(TensorBoard(log_dir=LOG_DIR, histogram_freq=1, write_graph=True, write_images=False))
 
-        history = PPN.fit(train_dataset, steps_per_epoch=train_size // batch_size if sequences_per_epoch_train is None else sequences_per_epoch_train,
+        history = PN.fit(train_dataset, steps_per_epoch=train_size // batch_size if sequences_per_epoch_train is None else sequences_per_epoch_train,
                         epochs=nb_epoch, callbacks=callbacks, validation_data=val_dataset, validation_steps=val_size // batch_size if sequences_per_epoch_val is None else sequences_per_epoch_val)
 
 if __name__ == "__main__":
@@ -196,7 +197,7 @@ if __name__ == "__main__":
     import os
     from datetime import datetime
 
-    parser = argparse.ArgumentParser(description="PPN")  # Training parameters
+    parser = argparse.ArgumentParser(description="PN")  # Training parameters
 
     # Tuning args
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
@@ -214,7 +215,7 @@ if __name__ == "__main__":
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor for images prior to training")
     parser.add_argument("--resize_images", type=bool, default=False, help="whether or not to downscale images prior to training")
     parser.add_argument("--decompose_images", type=bool, default=True, help="whether or not to decompose images for training")
-    parser.add_argument("--object_representations", type=bool, default=False, help="whether or not to use object representations as input to Rep unit")
+    parser.add_argument("--object_representations", type=bool, default=True, help="whether or not to use object representations as input to Rep unit")
     parser.add_argument("--training_split", type=float, default=0.80, help="proportion of data for training (only for monkaa)")
 
     # Training args
@@ -227,7 +228,7 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-3, 5e-4, 99, 1e-4], help="output channels")
 
     # Structure args
-    parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: baseline, object_centric, cl_delta, cl_recon, multi_channel")
+    parser.add_argument("--model_choice", type=str, default="object_centric", help="Choose which model. Options: 'baseline' or 'object_centric'")
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
     parser.add_argument("--dataset", type=str, default="SSM", help="kitti, driving, monkaa, rolling_square, or rolling_circle")
     parser.add_argument("--data_subset", type=str, default="central_multi_gen_shape_strafing", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")

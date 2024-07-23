@@ -5,7 +5,7 @@ import tensorflow as tf
 import numpy as np
 import os
 import warnings
-from PPN_models.PPN_Common import Target, Prediction, Error, Representation, ObjectRepresentation
+from PN_models.PN_Common import Target, Prediction, Error, Representation
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -15,8 +15,8 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 # for the ablation study:
 # 1 layer with representation channels [3-in, 339-out], prediction channels [339-in, 3-out]
     # edits:
-    # in PPN_Baseline, PredLayer, self.states["R"] = tf.zeros((batch_size, self.im_height, self.im_width, 339))
-    # in PPN_Common, Representation, add line: output_channels = 339 - so representation outputs 339 channels
+    # in PN_Baseline, PredLayer, self.states["R"] = tf.zeros((batch_size, self.im_height, self.im_width, 339))
+    # in PN_Common, Representation, add line: output_channels = 339 - so representation outputs 339 channels
 
 class PredLayer(keras.Model):
     def __init__(self, training_args, im_height, im_width, output_channels, layer_num, bottom_layer=False, top_layer=False, *args, **kwargs):
@@ -35,11 +35,8 @@ class PredLayer(keras.Model):
         self.prediction = Prediction(output_channels, layer_num=self.layer_num, name=f"Prediction_Layer{self.layer_num}")
         if not self.bottom_layer:
             self.target = Target(output_channels, layer_num=self.layer_num, name=f"Target_Layer{self.layer_num}")
-        if self.bottom_layer and self.training_args['object_representations']:
-            self.object_representations = ObjectRepresentation(self.training_args, self.training_args['output_channels'][0]//3, self.layer_num, self.im_height, self.im_width, name=f"ObjectRepresentation_Layer{self.layer_num}")
         self.error = Error(layer_num=self.layer_num, name=f"Error_Layer{self.layer_num}")
         self.upsample = layers.UpSampling2D((2, 2), name=f"Upsample_Layer{self.layer_num}")
-        self.last_frame = None
 
     def initialize_states(self, batch_size):
         # Initialize internal layer states
@@ -50,8 +47,6 @@ class PredLayer(keras.Model):
         self.states["E"] = tf.zeros((batch_size, self.im_height, self.im_width, 2 * self.output_channels)) # double for the pos/neg concatenated error
         self.states["TD_inp"] = None
         self.states["lstm"] = None
-
-        self.last_frame = tf.zeros((batch_size, self.im_height, self.im_width, self.training_args['output_channels'][0]))
 
     def clear_states(self):
         # Clear internal layer states
@@ -64,16 +59,6 @@ class PredLayer(keras.Model):
         self.states["lstm"] = None
         self.states["E_raw"] = None
 
-        self.clear_last_frame()
-
-    def set_last_frame(self, last_frame):
-        for _ in range(self.layer_num):
-            last_frame = keras.layers.MaxPool2D((2, 2))(last_frame)
-        self.last_frame = last_frame
-
-    def clear_last_frame(self):
-        self.last_frame = None
-
     def call(self, inputs=None, direction="top_down", paddings=None):
         # PredLayer should update internal states when called with new TD and BU inputs, inputs[0] = BU, inputs[1] = TD
 
@@ -85,9 +70,6 @@ class PredLayer(keras.Model):
                 self.states["TD_inp"] = self.upsample(inputs[1])
                 self.states["TD_inp"] = keras.layers.ZeroPadding2D(paddings)(self.states["TD_inp"])
                 R_inp = keras.layers.Concatenate()([self.states["E"], self.states["R"], self.states["TD_inp"]])
-            if self.bottom_layer and self.training_args['object_representations']:
-                object_representations = self.object_representations(self.last_frame)
-                R_inp = keras.layers.Concatenate()([R_inp, object_representations])
 
             if self.states["lstm"] is None:
                 self.states["R"], self.states["lstm"] = self.representation(R_inp)
@@ -96,9 +78,6 @@ class PredLayer(keras.Model):
 
             # FORM PREDICTION(S)
             self.states["P"] = K.minimum(self.prediction(self.states["R"]), self.pixel_max) if self.bottom_layer else self.prediction(self.states["R"])
-
-            # RE-COMPUTE TARGET ERROR (this only matters when PredNet num_passes > 1, otherwise is overwritten)
-            self.states["E"] = self.error(self.states["P"], self.states["T"])
 
         elif direction == "bottom_up":
             # RETRIEVE TARGET(S) (bottom-up input) ~ (batch_size, im_height, im_width, output_channels)
@@ -117,9 +96,9 @@ class PredLayer(keras.Model):
             raise ValueError("Invalid direction. Must be 'top_down' or 'bottom_up'.")
 
 
-class ParaPredNet(keras.Model):
+class PredNet(keras.Model):
     def __init__(self, training_args, im_height=540, im_width=960, *args, **kwargs):
-        super(ParaPredNet, self).__init__(*args, **kwargs)
+        super(PredNet, self).__init__(*args, **kwargs)
         self.training_args = training_args
         self.batch_size = training_args['batch_size']
         self.nt = training_args['nt']
@@ -202,17 +181,6 @@ class ParaPredNet(keras.Model):
                     layer_error = self.layer_weights[l] * K.mean(K.batch_flatten(error), axis=-1, keepdims=True)  # (batch_size, 1)
                     all_error = layer_error if l == 0 else tf.add(all_error, layer_error)  # (batch_size, 1)
 
-            if self.output_mode == "Error" and self.training_args["decompose_images"]:
-                predictions = self.predlayers[0].states["P"]
-                targets = self.predlayers[0].states["T"]
-                # Calculate reconstruction error
-                reconstructed_image = K.minimum(1.0, tf.reduce_sum([predictions[...,i*3:(i+1)*3] for i in range(predictions.shape[-1]//3)], axis=0))
-                original_image = K.minimum(1.0, tf.reduce_sum([targets[...,i*3:(i+1)*3] for i in range(targets.shape[-1]//3)], axis=0))
-                recon_e_down = keras.backend.relu(original_image - reconstructed_image)
-                recon_e_up = keras.backend.relu(reconstructed_image - original_image)
-                recon_error = keras.layers.Concatenate(axis=-1)([recon_e_down, recon_e_up])
-                recon_error = K.mean(K.batch_flatten(error), axis=-1, keepdims=True)
-                all_error = tf.add(all_error, recon_error)  # (batch_size, 1)
 
             # save outputs over time
             if self.output_mode == "Error":
