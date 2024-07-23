@@ -1,8 +1,14 @@
+import os
+import warnings
+
+# Suppress warnings
+warnings.filterwarnings("ignore")
+# or '2' to filter out INFO messages too
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.layers import ConvLSTM2D
-from tensorflow.keras import Model
-import os
+from keras.layers import ConvLSTM2D
+from keras import Model
 
 # Define the custom ConvLSTM layer
 # class CustomConvLSTM(tf.keras.layers.Layer):
@@ -34,10 +40,10 @@ import os
 #         self.state_c = None
 
 class CustomConvLSTM(tf.keras.layers.Layer):
-    def __init__(self, output_channels, num_classes, **kwargs):
+    def __init__(self, output_channels, **kwargs):
         super().__init__(**kwargs)
         self.output_channels = output_channels
-        self.conv_lstm = ConvLSTM2D(filters=output_channels, kernel_size=(3, 3), padding='same', return_sequences=False, return_state=True)
+        self.conv_lstm = ConvLSTM2D(filters=output_channels, kernel_size=(3, 3), padding='same', return_sequences=False, return_state=True, stateful=True)
 
     def build(self, input_shape):
         # Initialize state variables with the appropriate shape
@@ -46,18 +52,22 @@ class CustomConvLSTM(tf.keras.layers.Layer):
         self.state_c = self.add_weight(shape=state_shape, initializer='zeros', trainable=False, name='state_c')
 
     def call(self, inputs, states=None):
-        if states is None:
-            states = [self.state_h, self.state_c]
+        # if states is None:
+        #     states = [self.state_h, self.state_c]
 
         outputs, state_h, state_c = self.conv_lstm(inputs, initial_state=states)
-        self.state_h.assign(state_h)
-        self.state_c.assign(state_c)
+        # self.state_h.assign(state_h)
+        # self.state_c.assign(state_c)
 
         return outputs
 
     def reset_states(self):
         self.state_h.assign(tf.zeros_like(self.state_h))
         self.state_c.assign(tf.zeros_like(self.state_c))
+    
+    def detach_states(self):
+        self.state_h = tf.stop_gradient(self.state_h)
+        self.state_c = tf.stop_gradient(self.state_c)
 
 
 # Define the synthetic dataset
@@ -76,7 +86,7 @@ dataset = dataset.batch(batch_size)
 
 # Training utilities
 conv_lstm_layer = CustomConvLSTM(output_channels=32)
-# conv_lstm_layer.build(input_shape=(None, 5, 64, 64, 3)) 
+conv_lstm_layer.build(input_shape=(batch_size, 5, 64, 64, 3)) 
 optimizer = tf.keras.optimizers.Adam()
 loss_fn = tf.keras.losses.MeanSquaredError()
 
