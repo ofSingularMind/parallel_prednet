@@ -14,28 +14,21 @@ from PIL import Image
 import glob
 import sys
 import re
-from PPN_models.PPN_Baseline import ParaPredNet
 
-# from monkaa_settings import *
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from keras.layers import Input
 from keras.callbacks import Callback
-from keras.models import Model, model_from_json
 from keras.preprocessing.image import Iterator
 from keras import backend as K
 import tensorflow as tf
 import keras
 import numpy as np
 import hickle as hkl
-from config import update_settings, get_settings
 import flow_vis
 import re
 from data.animations.decompose_images.decomposer import SceneDecomposer
-
-# DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = get_settings()["dirs"]
-
 
 # Data generator that creates sequences for input into PredNet.
 class SequenceGenerator(Iterator):
@@ -129,44 +122,12 @@ class IntermediateEvaluations(Callback):
         self.output_channels = output_channels
         self.dataset = dataset
         self.model_choice = model_choice
-        # self.weights_file = os.path.join(WEIGHTS_DIR, "tensorflow_weights/para_prednet_monkaa_weights.hdf5")
         self.rg_colormap = LinearSegmentedColormap.from_list('custom_cmap', [(0, 'red'), (0.5, 'black'), (1, 'green')])
+        
         # Retrieve target sequence (use the same sequence(s) always)
         self.X_test_inputs = [next(self.dataset_iterator) for _ in range(10)][-1][0]  # take just batch_x not batch_y
-        self.Xtc = 3 # X_test_channels
-
-
-        if self.dataset == "kitti":
-            self.X_test = self.X_test_inputs
-        elif self.dataset in ["monkaa", "driving"] and self.model_choice != "multi_channel":
-            self.X_test = self.X_test_inputs[-1] # take only the PNG images for MSE calcs and plotting
-        elif self.dataset in ["rolling_square", "rolling_circle", "all_rolling", "ball_collisions", "general_ellipse_vertical", "general_cross_horizontal", "various"] and self.model_choice != "multi_channel":
-            self.X_test = self.X_test_inputs # take only the PNG images for MSE calcs and plotting
-            self.Xtc = self.X_test.shape[-1] # X_test_channels        
-        elif self.dataset == "monkaa" and self.model_choice == "multi_channel":
-            # self.X_test_inputs = 
-            self.X_test = tf.concat([self.X_test_inputs[0], self.X_test_inputs[3], self.X_test_inputs[5]], axis=-1)
-            self.X_test = self.X_test.numpy()
-            self.X_test[..., 0] = np.interp(self.X_test[..., 0], (self.X_test[..., 0].min(), self.X_test[..., 0].max()), (0, 1))
-            # self.X_test_mat = self.X_test[..., 1].astype(np.int32)
-            # self.X_test_obj = self.X_test[..., 2].astype(np.int32)
-            # self.X_test_opt = np.zeros_like(self.X_test[..., 3:6], dtype=np.int32)
-            for b in range(self.batch_size):
-                for t in range(self.nt):
-                    self.X_test[b, t, ..., 1:4] = flow_vis.flow_to_color(self.X_test[b, t, ..., 1:3], convert_to_bgr=False).astype(np.float32) // 255.0
-            # self.X_test_mot = self.X_test[..., 6]
-        elif self.dataset == "driving" and self.model_choice == "multi_channel":
-            # self.X_test_inputs = 
-            self.X_test = tf.concat([self.X_test_inputs[0], self.X_test_inputs[1], self.X_test_inputs[2]], axis=-1)
-            self.X_test = self.X_test.numpy()
-            self.X_test[..., 0] = np.interp(self.X_test[..., 0], (self.X_test[..., 0].min(), self.X_test[..., 0].max()), (0, 1))
-            # self.X_test_mat = self.X_test[..., 1].astype(np.int32)
-            # self.X_test_obj = self.X_test[..., 2].astype(np.int32)
-            # self.X_test_opt = np.zeros_like(self.X_test[..., 3:6], dtype=np.int32)
-            for b in range(self.batch_size):
-                for t in range(self.nt):
-                    self.X_test[b, t, ..., 1:4] = flow_vis.flow_to_color(self.X_test[b, t, ..., 1:3], convert_to_bgr=False).astype(np.float32) // 255.0
-            # self.X_test_mot = self.X_test[..., 6]
+        self.X_test = self.X_test_inputs # take only the PNG images for MSE calcs and plotting
+        self.Xtc = self.X_test.shape[-1] # X_test_channels        
 
         if not os.path.exists(self.RESULTS_SAVE_DIR):
             os.makedirs(self.RESULTS_SAVE_DIR, exist_ok=True)
@@ -177,47 +138,23 @@ class IntermediateEvaluations(Callback):
 
     def plot_training_samples(self, epoch):
         """
-        Evaluate trained PredNet on KITTI or Monkaa sequences.
+        Evaluate trained PredNet on SSM Dataset sequences.
         Calculates mean-squared error and plots predictions.
         """
 
         # Calculate predicted sequence(s)
-        #   self.model.layers[-1] is the PredNet layer
         self.model.layers[-1].output_mode = "Error_Images_and_Prediction"
-        if self.model_choice in ["baseline","SelfPerception"]:
-            error_images, X_hat = self.model.layers[-1](self.X_test_inputs)
-        elif self.model_choice == "cl_delta":
-            error_images, X_hat, X_delta_hat = self.model.layers[-1](self.X_test_inputs)
-            X_delta_hat_gray = np.mean(X_delta_hat, axis=-1)
-        elif self.model_choice == "cl_recon":
-            error_images, X_hat, X_recon_hat = self.model.layers[-1](self.X_test_inputs)
-        elif self.model_choice == "multi_channel":
-            error_images, X_hat = self.model.layers[-1](self.X_test_inputs)
-            X_hat = X_hat.numpy()
-            X_hat[..., 0] = np.interp(X_hat[..., 0], (X_hat[..., 0].min(), X_hat[..., 0].max()), (0, 1))
-            X_hat[..., -3:] = np.interp(X_hat[..., -3:], (X_hat[..., -3:].min(), X_hat[..., -3:].max()), (0, 1))
-            # X_hat_mat = X_hat[..., 1].astype(np.int32)
-            # X_hat_obj = X_hat[..., 2].astype(np.int32)
-            # X_hat_opt = np.zeros_like(X_hat[..., 1:4], dtype=np.int32)
-            for b in range(self.batch_size):
-                for t in range(self.nt):
-                    X_hat[b, t, ..., 1:4] = flow_vis.flow_to_color(X_hat[b, t, ..., 1:3], convert_to_bgr=False).astype(np.float32) // 255.0
-            # X_hat_mot = X_hat[..., 6]
+        assert self.model_choice in ["baseline","object_centric"], "This branch is specific to baseline or object-centric PredNet"
+        error_images, X_hat = self.model.layers[-1](self.X_test_inputs)
 
         if self.Xtc == 3:
             error_images_gray = np.mean(error_images, axis=-1)
         else:
             error_images_gray = np.concatenate([np.expand_dims(np.mean(error_images[..., 3*i:3*(i+1)], axis=-1), axis=-1) for i in range(self.Xtc//3)], axis=-1)
         self.model.layers[-1].output_mode = "Error"
-        
-        # for c in range(X_test.shape[-1]):
-        #     # print min/max values for each channel for both X_test and X_hat
-        #     print(f"X_test channel {c} min: {X_test[..., c].min()}, max: {X_test[..., c].max()}, dtype: {X_test[..., c].dtype}")
-        #     print(f"X_hat channel {c} min: {X_hat[..., c].min()}, max: {X_hat[..., c].max()}, dtype: {X_hat[..., c].dtype}")
 
-        
         # Compare MSE of PredNet predictions vs. using last frame.  Write results to prediction_scores.txt
-        # look at all timesteps except the first
+        # Look at all timesteps except the first
         mse_model = np.mean((self.X_test[:, 1:, ..., -self.Xtc:] - X_hat[:, 1:, ..., -self.Xtc:]) ** 2)
         mse_prev = np.mean((self.X_test[:, :-1, ..., -self.Xtc:] - self.X_test[:, 1:, ..., -self.Xtc:]) ** 2)
         f = open(self.RESULTS_SAVE_DIR + "training_scores.txt", "a+")
@@ -228,28 +165,45 @@ class IntermediateEvaluations(Callback):
 
         # Plot some training predictions
         aspect_ratio = float(X_hat.shape[2]) / X_hat.shape[3]
-        if self.model_choice in ["baseline"]:
+        if self.model_choice == "baseline":
             gs = gridspec.GridSpec(self.Xtc, self.plot_nt)
             plt.figure(figsize=(3 * self.plot_nt, 10 * aspect_ratio), layout="constrained")
-        if self.model_choice in ["SelfPerception"]:
+        elif self.model_choice == "object_centric":
             gs = gridspec.GridSpec(self.Xtc+2, self.plot_nt)
             plt.figure(figsize=(3 * self.plot_nt, 10 * aspect_ratio), layout="constrained")
-        # elif self.model_choice=="baseline" and self.Xtc != 3:
-        #     gs = gridspec.GridSpec(3*oc, self.plot_nt)
-        #     plt.figure(figsize=(3*oc * self.plot_nt, 10 * aspect_ratio), layout="constrained")
-        elif self.model_choice=="cl_delta" or self.model_choice=="cl_recon":
-            gs = gridspec.GridSpec(5, self.plot_nt)
-            plt.figure(figsize=(3 * self.plot_nt, 15 * aspect_ratio), layout="constrained")
-        elif self.model_choice=="multi_channel":
-            gs = gridspec.GridSpec(7, self.plot_nt) # 13 for all modalities
-            plt.figure(figsize=(3 * self.plot_nt, 20 * aspect_ratio), layout="constrained")
+
         gs.update(wspace=0.0, hspace=0.0)
         plot_save_dir = os.path.join(self.RESULTS_SAVE_DIR, "training_plots/")
         if not os.path.exists(plot_save_dir):
             os.makedirs(plot_save_dir, exist_ok=True)
         plot_idx = np.random.permutation(self.X_test.shape[0])[: self.n_plot]
-        if self.Xtc > 3:
+        if self.model_choice == "baseline":
             for i in plot_idx:
+                for t in range(self.plot_nt):
+                    plt.subplot(gs[t])
+                    plt.imshow(X_hat[i, t, ..., -self.Xtc:], interpolation="none")
+                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                    if t == 0:
+                        plt.ylabel("Predicted", fontsize=10)
+
+                    plt.subplot(gs[t + self.plot_nt])
+                    plt.imshow(self.X_test[i, t, ..., -self.Xtc:], interpolation="none")
+                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                    if t == 0:
+                        plt.ylabel("Actual", fontsize=10)
+
+                    plt.subplot(gs[t + 2 * self.plot_nt])
+                    plt.imshow(error_images_gray[i, t], cmap=self.rg_colormap)
+                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
+                    if t == 0:
+                        plt.ylabel("Error", fontsize=10)
+                
+                plt.savefig(plot_save_dir + "e" + str(epoch) + "_plot_" + str(i) + ".png")
+                plt.clf()
+        
+        elif self.model_choice == "object_centric":
+            for i in plot_idx:
+                # Plot the decomposed image data
                 for j in range(self.Xtc//3):
                     for t in range(self.plot_nt):
                         plt.subplot(gs[t + (3*j)*self.plot_nt])
@@ -270,7 +224,7 @@ class IntermediateEvaluations(Callback):
                         if t == 0:
                             plt.ylabel("Error", fontsize=10)
                 
-                h, w = self.X_test[i, t, ...].shape[:2]        
+                # Plot the reconstructed full images
                 for t in range(self.plot_nt):
                     plt.subplot(gs[t + self.Xtc*self.plot_nt])
                     reconstructed_image = np.minimum(np.sum([X_hat[i, t, ..., k*3:(k+1)*3] for k in range(self.Xtc//3)], axis=0), 1)
@@ -285,236 +239,15 @@ class IntermediateEvaluations(Callback):
                     plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
                     if t == 0:
                         plt.ylabel("Actual", fontsize=10)
+                
                 plt.savefig(plot_save_dir + "e" + str(epoch) + "_plot_" + str(i) + ".png")
                 plt.clf()
-        else:
-            for i in plot_idx:
-                X_test_last = tf.zeros_like(self.X_test[i, -1])
-                for t in range(self.plot_nt):
-                    plt.subplot(gs[t])
-                    plt.imshow(X_hat[i, t, ..., -self.Xtc:], interpolation="none")
-                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                    if t == 0:
-                        plt.ylabel("Predicted", fontsize=10)
 
-                    plt.subplot(gs[t + self.plot_nt])
-                    plt.imshow(self.X_test[i, t, ..., -self.Xtc:], interpolation="none")
-                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                    if t == 0:
-                        plt.ylabel("Actual", fontsize=10)
-
-                    plt.subplot(gs[t + 2 * self.plot_nt])
-                    plt.imshow(error_images_gray[i, t], cmap=self.rg_colormap)
-                    plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                    if t == 0:
-                        plt.ylabel("Error", fontsize=10)
-                    
-                    # Composite Learning Delta Images
-                    if self.model_choice == "cl_delta":
-                        plt.subplot(gs[t + 3 * self.plot_nt])
-                        plt.imshow(X_delta_hat_gray[i, t], cmap=self.rg_colormap)
-                        plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                        if t == 0:
-                            plt.ylabel("Predicted Delta", fontsize=10)
-
-                        plt.subplot(gs[t + 4 * self.plot_nt])
-                        if t > 0:
-                            plt.imshow(np.mean((self.X_test[i, t] - X_test_last), axis=-1), cmap=self.rg_colormap)
-                        else:
-                            plt.imshow(np.mean((self.X_test[i, t] - self.X_test[i, t]), axis=-1), cmap=self.rg_colormap)
-                        plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                        if t == 0:
-                            plt.ylabel("Actual Delta", fontsize=10)
-                        X_test_last = self.X_test[i, t]
-                    
-                    # Composite Learning Reconstructed Images
-                    elif self.model_choice == "cl_recon":
-                        plt.subplot(gs[t + 3 * self.plot_nt])
-                        plt.imshow(X_recon_hat[i, t], interpolation="none")
-                        plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                        if t == 0:
-                            plt.ylabel("Predicted Recon", fontsize=10) 
-
-                        plt.subplot(gs[t + 4 * self.plot_nt])
-                        plt.imshow(X_test_last, interpolation="none")
-                        plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                        if t == 0:
-                            plt.ylabel("Actual Recon", fontsize=10) 
-                        X_test_last = self.X_test[i, t]
-
-                    # Multi Channel Images
-                    elif self.model_choice == "multi_channel":
-                        # DISPARITY
-                        plt.subplot(gs[t + 3 * self.plot_nt])
-                        plt.imshow(X_hat[i, t, ..., 0], interpolation="none")
-                        plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                        if t == 0:
-                            plt.ylabel("Predicted Disp", fontsize=10)
-
-                        plt.subplot(gs[t + 4 * self.plot_nt])
-                        plt.imshow(self.X_test[i, t, ..., 0], interpolation="none")
-                        plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                        if t == 0:
-                            plt.ylabel("Actual Disp", fontsize=10)
-                        
-                        # # MATERIAL SEGMENTATION
-                        # plt.subplot(gs[t + 5 * self.plot_nt])
-                        # plt.imshow(X_hat_mat[i, t, ...], interpolation="none")
-                        # plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                        # if t == 0:
-                        #     plt.ylabel("Predicted Mat", fontsize=10)
-
-                        # plt.subplot(gs[t + 6 * self.plot_nt])
-                        # plt.imshow(self.X_test_mat[i, t, ...], interpolation="none")
-                        # plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                        # if t == 0:
-                        #     plt.ylabel("Actual Mat", fontsize=10)
-                        
-                        # # OBJECT SEGMENTATION
-                        # plt.subplot(gs[t + 7 * self.plot_nt])
-                        # plt.imshow(X_hat_obj[i, t, ...], interpolation="none")
-                        # plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                        # if t == 0:
-                        #     plt.ylabel("Predicted Obj", fontsize=10)
-
-                        # plt.subplot(gs[t + 8 * self.plot_nt])
-                        # plt.imshow(self.X_test_obj[i, t, ...], interpolation="none")
-                        # plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                        # if t == 0:
-                        #     plt.ylabel("Actual Obj", fontsize=10)
-                        
-                        # OPTICAL FLOW
-                        plt.subplot(gs[t + 5 * self.plot_nt])
-                        plt.imshow(X_hat[i, t, ..., 1:4], interpolation="none")
-                        plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                        if t == 0:
-                            plt.ylabel("Predicted Opt", fontsize=10)
-
-                        plt.subplot(gs[t + 6 * self.plot_nt])
-                        plt.imshow(self.X_test[i, t, ..., 1:4], interpolation="none")
-                        plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                        if t == 0:
-                            plt.ylabel("Actual Opt", fontsize=10)
-                        
-                        # # MOTION BOUNDARIES
-                        # plt.subplot(gs[t + 11 * self.plot_nt])
-                        # plt.imshow(X_hat_mot[i, t], interpolation="none", cmap="gray")
-                        # plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                        # if t == 0:
-                        #     plt.ylabel("Predicted Mot", fontsize=10)
-
-                        # plt.subplot(gs[t + 12 * self.plot_nt])
-                        # plt.imshow(self.X_test_mot[i, t], interpolation="none", cmap="gray")
-                        # plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
-                        # if t == 0:
-                        #     plt.ylabel("Actual Mot", fontsize=10)
-                        
-
-            plt.savefig(plot_save_dir + "e" + str(epoch) + "_plot_" + str(i) + ".png")
-            plt.clf()
-
-
-def writePFM(file, image, scale=1):
-    file = open(file, "wb")
-
-    color = None
-
-    if image.dtype.name != "float32":
-        raise Exception("Image dtype must be float32.")
-
-    image = np.flipud(image)
-
-    if len(image.shape) == 3 and image.shape[2] == 3:  # color image
-        color = True
-    # greyscale
-    elif len(image.shape) == 2 or len(image.shape) == 3 and image.shape[2] == 1:
-        color = False
-    else:
-        raise Exception("Image must have H x W x 3, H x W x 1 or H x W dimensions.")
-
-    file.write("PF\n" if color else "Pf\n")
-    file.write("%d %d\n" % (image.shape[1], image.shape[0]))
-
-    endian = image.dtype.byteorder
-
-    if endian == "<" or endian == "=" and sys.byteorder == "little":
-        scale = -scale
-
-    file.write("%f\n" % scale)
-
-    image.tofile(file)
-
-
-def dir_PFM_to_PNG(dir):
-    for obj in os.listdir(dir):
-        print(f"Processing {obj}. Isdir == {os.path.isdir(dir + obj)}")
-        if os.path.isdir(dir + obj):
-            dir_PFM_to_PNG(dir + obj + "/")
-        elif obj.endswith(".pfm"):
-            data, scale = readPFM(dir + obj)
-            print(f"Converting {obj} to {obj[:-4]}.png")
-            if (np.max(data) > 1) or (np.min(data) < 0):
-                data = (data - np.min(data)) / (np.max(data) - np.min(data))
-            plt.imsave(dir + obj[:-4] + ".png", data)
-            print(f"Processed {obj} to {obj[:-4]}.png")
-
-
-def readPFM(file):
-    file = open(file, "rb")
-
-    color = None
-    width = None
-    height = None
-    scale = None
-    endian = None
-
-    header = file.readline().rstrip()
-    if header == b"PF":
-        color = True
-    elif header == b"Pf":
-        color = False
-    else:
-        raise Exception("Not a PFM file.")
-
-    dim_match = re.match(b"^(\d+)\s(\d+)\s$", file.readline())
-    if dim_match:
-        width, height = map(int, dim_match.groups())
-    else:
-        raise Exception("Malformed PFM header.")
-
-    scale = float(file.readline().rstrip())
-    if scale < 0:  # little-endian
-        endian = "<"
-        scale = -scale
-    else:
-        endian = ">"  # big-endian
-
-    data = np.fromfile(file, endian + "f")
-    shape = (height, width, 3) if color else (height, width)
-
-    data = np.reshape(data, shape)
-    data = np.flipud(data)
-    return data
-
-
-# def sort_files_by_name(files):
-#     return sorted(files, key=lambda x: os.path.basename(x))
 
 def sort_files_by_name(files):
     return sorted(files, key=lambda x: int(os.path.basename(x).split('.')[0]))
 
-# def sort_files_by_name(files):
-#     def extract_number(filename):
-#         # Regular expression to find one or more digits
-#         match = re.search(r'\d+', os.path.basename(filename))
-#         if match:
-#             return int(match.group()) 
-#         else: raise ValueError(f"Could not extract number from {filename}")
-
-#     return sorted(files, key=extract_number)
-
-
-def serialize_dataset(data_dirs, pfm_paths, pgm_paths, png_paths, dataset_name="driving", test_data=False, start_time=time.perf_counter(), single_channel=False, iteration=0):
+def serialize_dataset(data_dirs, pfm_paths, pgm_paths, png_paths, dataset_name="SSM", test_data=False, start_time=time.perf_counter(), single_channel=False, iteration=0):
     DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = data_dirs
     print(f"Start to serialize at {time.perf_counter() - start_time} seconds.")
     pfm_sources = []
@@ -643,8 +376,7 @@ def serialize_dataset(data_dirs, pfm_paths, pgm_paths, png_paths, dataset_name="
     print(f"HKL dump done at {time.perf_counter() - start_time} seconds.")
     print(f"Dataset serialization complete at {time.perf_counter() - start_time} seconds.")
 
-
-def create_dataset_from_serialized_generator(data_dirs, pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name="driving", im_height=540, im_width=960, output_channels=3, batch_size=4, nt=10, train_split=0.7, reserialize=False, shuffle=True, resize=False, single_channel=False, iteration=0, decompose=False):
+def create_dataset_from_serialized_generator(data_dirs, pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name="SSM", im_height=540, im_width=960, output_channels=3, batch_size=4, nt=10, train_split=0.7, reserialize=False, shuffle=True, resize=False, single_channel=False, iteration=0, decompose=False):
     DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = data_dirs
     start_time = time.perf_counter()
     if decompose: sceneDecomposer = SceneDecomposer()
@@ -731,7 +463,7 @@ def create_dataset_from_serialized_generator(data_dirs, pfm_paths, pgm_paths, pn
 
     return datasets, length
 
-def create_dataset_from_generator(data_dirs, pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name="driving", im_height=540, im_width=960, batch_size=4, nt=10, train_split=0.7, reserialize=False, shuffle=True, resize=False, single_channel=False):
+def create_dataset_from_generator(data_dirs, pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name="SSM", im_height=540, im_width=960, batch_size=4, nt=10, train_split=0.7, reserialize=False, shuffle=True, resize=False, single_channel=False):
     DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = data_dirs
     start_time = time.perf_counter()
     print(f"Begin tf.data.Dataset creation at {time.perf_counter() - start_time} seconds.")
@@ -800,7 +532,7 @@ def create_dataset_from_generator(data_dirs, pfm_paths, pgm_paths, png_paths, ou
             dataset = tf.data.Dataset.from_generator(gen, output_signature=((tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32)), tf.TensorSpec(shape=(1), dtype=tf.float32)))
         elif dataset_name == "driving":
             dataset = tf.data.Dataset.from_generator(gen, output_signature=((tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32), tf.TensorSpec(shape=(nt, im_height, im_width, 3), dtype=tf.float32)), tf.TensorSpec(shape=(1), dtype=tf.float32)))
-        elif dataset_name not in ["all_rolling", "various"]:
+        elif dataset_name not in ["all_rolling", "SSM"]:
             if single_channel:
                 dataset = tf.data.Dataset.from_generator(gen, output_signature=(tf.TensorSpec(shape=(nt, im_height, im_width, 1), dtype=tf.float32), tf.TensorSpec(shape=(1), dtype=tf.float32)))
             else:
@@ -820,198 +552,3 @@ def create_dataset_from_generator(data_dirs, pfm_paths, pgm_paths, png_paths, ou
     print(f"End tf.data.Dataset creation at {time.perf_counter() - start_time} seconds.")
 
     return datasets, length
-
-def analyze_dataset(path):
-    dataset = hkl.load(path)
-    for i, source in enumerate(dataset):
-        print(f"Source {i} has shape {source.shape} and dtype {source.dtype}")
-        print(f"Min: {np.min(source)}, Max: {np.max(source)}")
-        # print(f"Mean: {np.mean(source)}, Std: {np.std(source)}")
-        # print(f"Unique values: {np.unique(source)}")
-        # print(f"Unique values count: {np.unique(source, return_counts=True)}")
-        print("\n")
-
-
-def fix_my_hickle_files(data_files, file_names):
-    for data_file, file_name in zip(data_files, file_names):
-        data = hkl.load(data_file)
-        print("gets here")
-        pickle.dump(data, open(file_name, "w"))
-
-
-def rehickling(data_files, file_names):
-    for data_file, file_name in zip(data_files, file_names):
-        with open(file_name, "rb") as file:
-            data = pickle.load(file)
-            print("gets here")
-            hkl.dump(data, data_file)
-
-
-def hickle_swap(data_files):
-    for data_file in data_files:
-        with open(data_file, "r") as file:
-            print("opens file")
-            data = hkl.load(file)
-            print("loads file")
-
-            uninstall_result = subprocess.call(["pip", "uninstall", "hickle"])
-            if uninstall_result == 0:
-                print("Old package uninstalled successfully.")
-            else:
-                print("Error uninstalling old package.")
-
-            install_result = subprocess.call(["pip", "install", "hickle"])
-            if install_result == 0:
-                print("New package installed successfully.")
-            else:
-                print("Error installing new package.")
-
-            # Continue with the rest of your script logic
-            hkl.dump(data, data_file)
-            print("dumps file")
-
-            uninstall_result = subprocess.call(["pip", "uninstall", "hickle"])
-            if uninstall_result == 0:
-                print("Old package uninstalled successfully.")
-            else:
-                print("Error uninstalling old package.")
-
-            install_result = subprocess.call(["pip", "install", "hickle==2.1.0"])
-            if install_result == 0:
-                print("New package installed successfully.")
-            else:
-                print("Error installing new package.")
-
-
-def test_hickle(data_files):
-    for data_file in data_files:
-        with open(data_file, "r") as file:
-            print("opens file")
-            data = hkl.load(file)
-            print("loads file")
-
-
-def grab_data_and_save(data_files):
-    files = ["/home/evalexii/Documents/Thesis/code/mod_prednet/kitti_data/X_train.npy", 
-             "/home/evalexii/Documents/Thesis/code/mod_prednet/kitti_data/X_val.npy",
-             "/home/evalexii/Documents/Thesis/code/mod_prednet/kitti_data/X_test.npy",
-             "/home/evalexii/Documents/Thesis/code/mod_prednet/kitti_data/sources_train.npy", 
-             "/home/evalexii/Documents/Thesis/code/mod_prednet/kitti_data/sources_val.npy", 
-             "/home/evalexii/Documents/Thesis/code/mod_prednet/kitti_data/sources_test.npy", 
-             ]
-    for i, data_file in enumerate(data_files):
-        data = np.load(files[i], allow_pickle=True)
-        hkl.dump(data, data_file)
-        print("dumps file")
-    for data_file in data_files:
-        data = hkl.load(data_file)
-        print("loads file")
-    while input("Hold: ") != "q":
-        pass
-
-
-def grab_single_data_and_save(data_file):
-    data = np.load("/home/evalexii/Documents/Thesis/code/prednet/add.npy", allow_pickle=True)
-    hkl.dump(data, data_file)
-    print("dumps to file")
-    while input("Hold: ") != "q":
-        pass
-
-
-# Data files
-# DATA_DIR = "/home/evalexii/Documents/Thesis/code/parallel_prednet/kitti_data/"
-# train_file = os.path.join(DATA_DIR, 'X_train.hkl')
-# train_sources = os.path.join(DATA_DIR, 'sources_train.hkl')
-# val_file = os.path.join(DATA_DIR, 'X_val.hkl')
-# val_sources = os.path.join(DATA_DIR, 'sources_val.hkl')
-# test_file = os.path.join(DATA_DIR, 'X_test.hkl')
-# test_sources = os.path.join(DATA_DIR, 'sources_test.hkl')
-
-# files = [train_file, val_file, test_file, train_sources, val_sources, test_sources]
-# file_names = [os.path.join(DATA_DIR, 'X_test.npy'), os.path.join(DATA_DIR, 'sources_test.npy')]
-
-# fix_my_hickle_files(files)
-# rehickling(files, file_names)
-# hickle_swap(files)
-# test_hickle(files)
-# grab_data_and_save(files)
-# grab_single_data_and_save(train_file)
-
-
-def test_dataset():
-    # Training data
-    pfm_paths = []
-    pfm_paths.append("/home/evalexii/local_dataset/disparity/family_x2/left/")
-    pfm_paths.append("/home/evalexii/local_dataset/material_index/family_x2/left/")
-    pfm_paths.append("/home/evalexii/local_dataset/object_index/family_x2/left/")
-    pfm_paths.append("/home/evalexii/local_dataset/optical_flow/family_x2/into_future/left/")
-    pgm_paths = []
-    pgm_paths.append("/home/evalexii/local_dataset/motion_boundaries/family_x2/into_future/left/")
-    png_paths = []
-    png_paths.append("/home/evalexii/local_dataset/frames_cleanpass/family_x2/left")
-    num_sources = len(pfm_paths) + len(pgm_paths) + len(png_paths)
-
-    # Training parameters
-    nt = 10  # number of time steps
-    nb_epoch = 150  # 150
-    batch_size = 2  # 4
-    samples_per_epoch = 100  # 500
-    N_seq_val = 20  # number of sequences to use for validation
-    output_channels = [3, 12, 24, 48]  # [3, 48, 96, 192]
-    original_im_shape = (540, 960, 3)
-    downscale_factor = 2
-    im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, 3, )
-
-    #  Create and split dataset
-    dataset, length = create_dataset_from_serialized_generator(pfm_paths, pgm_paths, png_paths, output_mode="Error", im_height=im_shape[0], im_width=im_shape[1], batch_size=batch_size, nt=nt, reserialize=False, shuffle=True, resize=True, )
-
-    ts = 0.7
-    vs = (1 - ts) / 2
-    train_size = int(ts * length)
-    val_size = int(vs * length)
-    test_size = int(vs * length)
-    print(f"Train size: {train_size}")
-    print(f"Validation size: {val_size}")
-    print(f"Test size: {test_size}")
-
-    train_dataset = dataset.take(train_size)
-    test_dataset = dataset.skip(train_size)
-    val_dataset = test_dataset.skip(val_size)
-    test_dataset = test_dataset.take(test_size)
-
-    # Iterate over the dataset
-    for b, batch in enumerate(train_dataset):
-        # batch is a tuple of (batch of sequences of images) and (batch of scalar errors)
-        for j in range(batch_size):
-            fig, axes = plt.subplots(len(batch[0]), nt, figsize=(15, 5))
-            for i, image in enumerate(batch[0]):
-                print(image.shape)
-                for k in range(nt):
-                    axes[i, k].imshow(image[j, k])
-            plt.savefig(f"./images/test_{b}_{j}.png")
-
-
-def config_gpus():
-    gpus = tf.config.experimental.list_physical_devices("GPU")
-    if gpus:
-        try:
-            # Currently, memory growth needs to be the same across GPUs
-            for gpu in gpus:
-                tf.config.experimental.set_memory_growth(gpu, True)
-            logical_gpus = tf.config.experimental.list_logical_devices("GPU")
-            print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
-        except RuntimeError as e:
-            # Memory growth must be set before GPUs have been initialized
-            print(e)
-
-def plot_video_sequences(data_path, save_path, num_samples=10):
-    assert os.path.exists(data_path), "Path does not exist."
-    files = sort_files_by_name(glob.glob(data_path + "/*.png"))
-    start = np.random.randint(0, len(files) - num_samples)
-    print(f"Start index: {start}")
-    fig, axes = plt.subplots(1, num_samples, figsize=(10, 10))
-    for i in range(num_samples):
-        axes[i].imshow(np.array(Image.open(files[start + i])))
-        axes[i].axis("off")
-    plt.show()
-    plt.savefig(save_path)

@@ -354,7 +354,7 @@ if __name__ == "__main__":
     parser.add_argument("--results_subdir", type=str, default=f"{str(datetime.now())}", help="Specify results directory")
     # parser.add_argument("--restart_training", type=bool, default=False, help="whether or not to delete weights and restart")
     # parser.add_argument("--learning_rates", nargs="+", type=int, default=[5e-3, 5e-4, 1e-4, 5e-5], help="output channels")
-    parser.add_argument("--dataset_weights", type=str, default="various", help="kitti, driving, monkaa, or rolling_square")
+    parser.add_argument("--dataset_weights", type=str, default="SSM", help="kitti, driving, monkaa, or rolling_square")
     parser.add_argument("--data_subset_weights", type=str, default="CircleV_CrossH", help="kitti, driving, monkaa, or rolling_square")
     parser.add_argument("--dataset", type=str, default="circle_vertical", help="kitti, driving, monkaa, or rolling_square")
     parser.add_argument("--data_subset", type=str, default="circle_vertical", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")

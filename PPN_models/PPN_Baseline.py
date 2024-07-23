@@ -5,7 +5,7 @@ import tensorflow as tf
 import numpy as np
 import os
 import warnings
-from PPN_models.PPN_Common import Target, Prediction, Error, Representation, PanRepresentation, MotionMaskPrediction
+from PPN_models.PPN_Common import Target, Prediction, Error, Representation
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -21,22 +21,20 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
     # in PPN_Common, Representation, add line: output_channels = 339 - so representation outputs 339 channels
 
 class PredLayer(keras.Model):
-    def __init__(self, training_args, im_height, im_width, num_P_CNN, num_R_CLSTM, output_channels, layer_num, bottom_layer=False, top_layer=False, *args, **kwargs):
+    def __init__(self, training_args, im_height, im_width, output_channels, layer_num, bottom_layer=False, top_layer=False, *args, **kwargs):
         super(PredLayer, self).__init__(*args, **kwargs)
         self.training_args = training_args
         self.layer_num = layer_num
         self.im_height = im_height
         self.im_width = im_width
-        self.num_P_CNN = num_P_CNN
-        self.num_R_CLSTM = num_R_CLSTM
         self.pixel_max = 1
         self.output_channels = output_channels
         self.bottom_layer = bottom_layer
         self.top_layer = top_layer
         # R = Representation, P = Prediction, T = Target, E = Error, and P == A_hat and T == A
         self.states = {"R": None, "P": None, "PM": None, "T": None, "E": None, "TD_inp": None, "L_inp": None}
-        self.representation = Representation(output_channels, num_R_CLSTM, layer_num=self.layer_num, name=f"Representation_Layer{self.layer_num}")
-        self.prediction = Prediction(output_channels, num_P_CNN, layer_num=self.layer_num, name=f"Prediction_Layer{self.layer_num}")
+        self.representation = Representation(output_channels, layer_num=self.layer_num, name=f"Representation_Layer{self.layer_num}")
+        self.prediction = Prediction(output_channels, layer_num=self.layer_num, name=f"Prediction_Layer{self.layer_num}")
         # self.predicted_motion_mask = MotionMaskPrediction(output_channels, layer_num=self.layer_num, name=f"MotionMaskPrediction_Layer{self.layer_num}")
         if not self.bottom_layer:
             self.target = Target(output_channels, layer_num=self.layer_num, name=f"Target_Layer{self.layer_num}")
@@ -45,7 +43,7 @@ class PredLayer(keras.Model):
 
     def initialize_states(self, batch_size):
         # Initialize internal layer states
-        self.states["R"] = tf.zeros((batch_size, self.im_height, self.im_width, self.num_R_CLSTM * self.output_channels))
+        self.states["R"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
         self.states["P_M"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
         self.states["P"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
         self.states["T"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
@@ -76,21 +74,12 @@ class PredLayer(keras.Model):
 
         if direction == "top_down":
             # UPDATE REPRESENTATION
-            if self.training_args['pan_hierarchical']:
-                self.states["P_Inp"] = inputs[2]
-                if self.top_layer:
-                    R_inp = keras.layers.Concatenate()([self.states["E"], self.states["R"], self.states["P_Inp"]])
-                else:
-                    self.states["TD_inp"] = self.upsample(inputs[1])
-                    self.states["TD_inp"] = keras.layers.ZeroPadding2D(paddings)(self.states["TD_inp"])
-                    R_inp = keras.layers.Concatenate()([self.states["E"], self.states["R"], self.states["TD_inp"], self.states["P_Inp"]])
+            if self.top_layer:
+                R_inp = keras.layers.Concatenate()([self.states["E"], self.states["R"]])
             else:
-                if self.top_layer:
-                    R_inp = keras.layers.Concatenate()([self.states["E"], self.states["R"]])
-                else:
-                    self.states["TD_inp"] = self.upsample(inputs[1])
-                    self.states["TD_inp"] = keras.layers.ZeroPadding2D(paddings)(self.states["TD_inp"])
-                    R_inp = keras.layers.Concatenate()([self.states["E"], self.states["R"], self.states["TD_inp"]])
+                self.states["TD_inp"] = self.upsample(inputs[1])
+                self.states["TD_inp"] = keras.layers.ZeroPadding2D(paddings)(self.states["TD_inp"])
+                R_inp = keras.layers.Concatenate()([self.states["E"], self.states["R"], self.states["TD_inp"]])
 
             if self.states["lstm"] is None:
                 self.states["R"], self.states["lstm"] = self.representation(R_inp)
