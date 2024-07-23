@@ -1,7 +1,7 @@
 def main(args):
     for training_it in range(args["num_dataset_chunks"]):
         # uncomment to resume training at a specific iteration, because it crashes
-        if (training_it) < args["train_restart_iteration"]: continue
+        if (training_it+1) < args["train_restart_iteration"]: continue
 
         import os
         import warnings
@@ -86,9 +86,15 @@ def main(args):
 
         """Weights Setup"""
         # Define where weights will be loaded/saved
-        weights_file = os.path.join(WEIGHTS_DIR, f"para_prednet_"+args["dataset"]+"_"+args["data_subset"]+"_weights.hdf5")
+        if args["model_choice"] == "baseline":
+            file_name = "baseline_weights.hdf5"
+        elif args["model_choice"] == "object_centric" and not args["object_representations"]:
+            file_name = "objectCentric_weights.hdf5"
+        elif args["model_choice"] == "object_centric" and args["object_representations"]:
+            file_name = "objectCentric_withObjectRepresentations_weights.hdf5"
+        weights_file = os.path.join(WEIGHTS_DIR, file_name)
         # Define where weights will be saved with results
-        results_weights_file = os.path.join(RESULTS_SAVE_DIR, f"tensorflow_weights/para_prednet_"+args["dataset"]+"_"+args["data_subset"]+"_weights.hdf5")
+        results_weights_file = os.path.join(RESULTS_SAVE_DIR, "tensorflow_weights/"+file_name)
         # Remove weights file if restarting training. Previous weights can still be found with the results
         if args["restart_training"] and training_it == 0:
             if os.path.exists(weights_file):
@@ -199,7 +205,7 @@ if __name__ == "__main__":
 
     # Tuning args
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
-    parser.add_argument("--sequences_per_epoch_train", type=int, default=10, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_train", type=int, default=8, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=10, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
     parser.add_argument("--batch_size", type=int, default=1, help="batch size")
     parser.add_argument("--nb_epoch", type=int, default=1, help="number of epochs")
@@ -212,7 +218,7 @@ if __name__ == "__main__":
     parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels. Decompose turns bottom 3 channels to 12")
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor for images prior to training")
     parser.add_argument("--resize_images", type=bool, default=False, help="whether or not to downscale images prior to training")
-    parser.add_argument("--decompose_images", type=bool, default=False, help="whether or not to decompose images for training")
+    parser.add_argument("--decompose_images", type=bool, default=True, help="whether or not to decompose images for training")
     parser.add_argument("--object_representations", type=bool, default=False, help="whether or not to use object representations as input to Rep unit")
     parser.add_argument("--training_split", type=float, default=0.80, help="proportion of data for training (only for monkaa)")
 
@@ -222,14 +228,14 @@ if __name__ == "__main__":
     parser.add_argument("--restart_training", type=bool, default=False, help="whether or not to delete weights and restart")
     parser.add_argument("--reserialize_dataset", type=bool, default=True, help="reserialize dataset")
     parser.add_argument("--output_mode", type=str, default="Error", help="Error, Predictions, or Error_Images_and_Prediction. Only trains on Error.")
-    parser.add_argument("--train_restart_iteration", type=int, default=0, help="when training crashes, can restart from last iteration. 0 means to start from the beginning")
+    parser.add_argument("--train_restart_iteration", type=int, default=6, help="when training crashes, can restart from last iteration. 0 means to start from the beginning")
     parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-3, 5e-4, 99, 1e-4], help="output channels")
 
     # Structure args
-    parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: 'baseline' or 'object_centric'")
+    parser.add_argument("--model_choice", type=str, default="object_centric", help="Choose which model. Options: 'baseline' or 'object_centric'")
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
     parser.add_argument("--dataset", type=str, default="SSM", help="SSM - Simple Shape Motion dataset")
-    parser.add_argument("--data_subset", type=str, default="central_multi_gen_shape_strafing", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
+    parser.add_argument("--data_subset", type=str, default="multiShape", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
     parser.add_argument("--num_dataset_chunks", type=int, default=20, help="number of dataset chunks to iterate through (full DS / 2000)")
     parser.add_argument("--SSM_im_shape", nargs="+", type=int, default=[64, 64], help="output channels")
     """
