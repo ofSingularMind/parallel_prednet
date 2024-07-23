@@ -122,8 +122,6 @@ def main(args):
             f.write(f"Dataset names: {dataset_names}\n")
 
         # Training data
-        pfm_paths = []
-        pgm_paths = []
         list_png_paths = []
         for ds_name, dss_name in zip(dataset_names, data_subset_names):
             assert os.path.exists(DATA_DIR + f"{ds_name}/frames/{dss_name}/" + "/001.png"), "Dataset not found"
@@ -136,7 +134,7 @@ def main(args):
         full_train_dataset, full_val_dataset, full_test_dataset = None, None, None
         for png_paths, dataset_name in zip(list_png_paths, dataset_names):
             #  Create and split dataset
-            datasets, ds_len = create_dataset_from_serialized_generator(data_dirs, pfm_paths, pgm_paths, png_paths, output_mode="Error", dataset_name=dataset_name, im_height=im_shape[0], im_width=im_shape[1],
+            datasets, ds_len = create_dataset_from_serialized_generator(data_dirs, png_paths, output_mode="Error", dataset_name=dataset_name, im_height=im_shape[0], im_width=im_shape[1],
                                                                         output_channels=im_shape[2], batch_size=batch_size, nt=nt, train_split=train_split, reserialize=args["reserialize_dataset"], 
                                                                         shuffle=True, resize=args["resize_images"], single_channel=False, iteration=training_it, decompose=args["decompose_images"])
             train_dataset, val_dataset, test_dataset = datasets
@@ -145,7 +143,7 @@ def main(args):
             full_test_dataset = test_dataset if full_test_dataset is None else full_test_dataset.concatenate(test_dataset)
             length += ds_len
 
-        
+
         train_size = int(train_split * length)
         val_size = int(val_split * length)
         test_size = length-train_size-val_size
@@ -162,10 +160,10 @@ def main(args):
         print(f"Test size: {test_size}")
         print("All datasets created successfully")
 
+
+        """Training Setup"""
         print(f"Training iteration {training_it+1} of {args['num_dataset_chunks']}")
         
-        
-        """Training Setup"""
         # start with lr of 0.001 and then drop to 0.0001 after 75 epochs
         def lr_schedule(epoch): 
             if training_it == 0:
@@ -214,8 +212,8 @@ if __name__ == "__main__":
     parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels. Decompose turns bottom 3 channels to 12")
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor for images prior to training")
     parser.add_argument("--resize_images", type=bool, default=False, help="whether or not to downscale images prior to training")
-    parser.add_argument("--decompose_images", type=bool, default=True, help="whether or not to decompose images for training")
-    parser.add_argument("--object_representations", type=bool, default=True, help="whether or not to use object representations as input to Rep unit")
+    parser.add_argument("--decompose_images", type=bool, default=False, help="whether or not to decompose images for training")
+    parser.add_argument("--object_representations", type=bool, default=False, help="whether or not to use object representations as input to Rep unit")
     parser.add_argument("--training_split", type=float, default=0.80, help="proportion of data for training (only for monkaa)")
 
     # Training args
@@ -228,9 +226,9 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-3, 5e-4, 99, 1e-4], help="output channels")
 
     # Structure args
-    parser.add_argument("--model_choice", type=str, default="object_centric", help="Choose which model. Options: 'baseline' or 'object_centric'")
+    parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: 'baseline' or 'object_centric'")
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
-    parser.add_argument("--dataset", type=str, default="SSM", help="kitti, driving, monkaa, rolling_square, or rolling_circle")
+    parser.add_argument("--dataset", type=str, default="SSM", help="SSM - Simple Shape Motion dataset")
     parser.add_argument("--data_subset", type=str, default="central_multi_gen_shape_strafing", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
     parser.add_argument("--num_dataset_chunks", type=int, default=20, help="number of dataset chunks to iterate through (full DS / 2000)")
     parser.add_argument("--SSM_im_shape", nargs="+", type=int, default=[64, 64], help="output channels")
