@@ -23,6 +23,7 @@ class PredLayer(keras.Model):
         super(PredLayer, self).__init__(*args, **kwargs)
         self.training_args = training_args
         self.layer_num = layer_num
+        self.batch_size = training_args['batch_size']
         self.im_height = im_height
         self.im_width = im_width
         self.pixel_max = 1
@@ -36,7 +37,7 @@ class PredLayer(keras.Model):
         if not self.bottom_layer:
             self.target = Target(output_channels, layer_num=self.layer_num, name=f"Target_Layer{self.layer_num}")
         if self.bottom_layer and self.training_args['object_representations']:
-            self.object_representations = ObjectRepresentation(self.training_args, self.training_args['output_channels'][0]//3, self.layer_num, self.im_height, self.im_width, name=f"ObjectRepresentation_Layer{self.layer_num}")
+            self.object_representations = ObjectRepresentation(num_classes=4, batch_size=self.batch_size, im_height=self.im_height, im_width=self.im_width, output_channels=12, name=f"ObjectRepresentation_Layer{self.layer_num}")
         self.error = Error(layer_num=self.layer_num, name=f"Error_Layer{self.layer_num}")
         self.upsample = layers.UpSampling2D((2, 2), name=f"Upsample_Layer{self.layer_num}")
         self.last_frame = None
@@ -86,7 +87,7 @@ class PredLayer(keras.Model):
                 self.states["TD_inp"] = keras.layers.ZeroPadding2D(paddings)(self.states["TD_inp"])
                 R_inp = keras.layers.Concatenate()([self.states["E"], self.states["R"], self.states["TD_inp"]])
             if self.bottom_layer and self.training_args['object_representations']:
-                object_representations = self.object_representations(self.last_frame)
+                object_representations = self.object_representations(tf.expand_dims(self.last_frame, axis=1)) # Inputs shape: (bs, 1, h, w, ic), Outputs shape: (bs, h, w, nc*oc)
                 R_inp = keras.layers.Concatenate()([R_inp, object_representations])
 
             if self.states["lstm"] is None:

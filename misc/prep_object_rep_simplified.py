@@ -15,28 +15,6 @@ from keras.applications import MobileNetV2
 from keras.layers import Dense, GlobalAveragePooling2D, Flatten, ConvLSTM2D
 from keras.models import Model
 
-def sharpened_softmax(logits):
-    # print("Raw logits:", logits.numpy())
-
-    # Subtract 0.99 * max of the logits from each logit
-    max_logit = tf.reduce_max(logits)
-    adjusted_logits = logits - 0.99 * max_logit
-    # print("Adjusted logits:", adjusted_logits.numpy())
-    
-    # Apply ReLU
-    relu_logits = tf.nn.relu(adjusted_logits)
-    # print("ReLU applied:", relu_logits.numpy())
-
-    # Scale the relu_logits
-    scaled_relu_logits = tf.multiply(relu_logits, 1e9)
-    # print("Scaled RuLU:", scaled_relu_logits.numpy())
-    
-    # Apply softmax
-    sharpened_softmax_probs = tf.nn.softmax(scaled_relu_logits)
-    # print("Softmax probabilities:", sharpened_softmax_probs.numpy())
-    
-    return sharpened_softmax_probs
-
 class CustomMobileNetV2(tf.keras.layers.Layer):
     def __init__(self, num_classes, input_shape, **kwargs):
         super(CustomMobileNetV2, self).__init__(**kwargs)
@@ -92,8 +70,9 @@ class ObjectRepresentation(layers.Layer):
         '''
         weights = tf.transpose(tf.nn.softmax(logits * beta), [1, 0]) # (num_classes, batch_size)
         current_weights_shape = weights.shape
-        new_weights_shape = current_weights_shape + (1,) * len(params.shape[2:])
-        reshaped_weights = tf.reshape(weights, new_weights_shape)
+        reshaped_weights = weights
+        for _ in range(len(params.shape) - len(current_weights_shape)):
+            reshaped_weights = tf.expand_dims(reshaped_weights, axis=-1)
 
         weighted_params = reshaped_weights * params
         weighted_sum = tf.reduce_sum(weighted_params, axis=0)
@@ -181,7 +160,6 @@ class ObjectRepresentation(layers.Layer):
             
             # classify the input frame to get the class logits predictions
             class_logits = self.classifier(tf.squeeze(frame, axis=1)) # (bs, nc)
-            print("Class logits:", class_logits)
 
             # get current class states
             current_class_states = [self.diff_gather(self.class_states_h, class_logits), self.diff_gather(self.class_states_c, class_logits)] # (bs, h, w, oc)
@@ -198,67 +176,15 @@ class ObjectRepresentation(layers.Layer):
 
             # append the class output to the list of output_class_tensors
             output_class_tensors.append(class_output)
+            # print("Class output shape:", class_output.shape)
+            assert class_output.shape == (self.batch_size, self.im_height, self.im_width, self.output_channels)
 
         # stack the class outputs to get the final output
-        output = tf.stack(output_class_tensors, axis=-1)
+        output = tf.concat(output_class_tensors, axis=-1)
+        # print("Output shape:", output.shape)
+        assert output.shape == (self.batch_size, self.im_height, self.im_width, self.num_classes*self.output_channels)
 
-        # return the class-specific object representation (hidden class state)
-        return output
-
-class NewObjectRepresentation(layers.Layer):
-    def __init__(self, num_classes, batch_size, im_height, im_width, output_channels, **kwargs):
-        super(NewObjectRepresentation, self).__init__(**kwargs)
-        self.num_classes = num_classes
-        self.batch_size = batch_size
-        self.im_height = im_height
-        self.im_width = im_width
-        self.output_channels = output_channels
-        self.conv_lstm_general = ConvLSTM2D(filters=output_channels, kernel_size=(3, 3), padding='same', return_sequences=False, return_state=True, stateful=False, name='conv_lstm_general')
-        self.conv_lstm_class = ConvLSTM2D(filters=output_channels, kernel_size=(3, 3), padding='same', return_sequences=False, return_state=True, stateful=False, name='conv_lstm_class')
-        self.classifier = CustomMobileNetV2(num_classes=num_classes, input_shape=(self.im_height, self.im_width, 3))
-
-        self.class_states_h = self.add_weight(shape=(num_classes, batch_size, im_height, im_width, output_channels), initializer='zeros', trainable=False, name='class_state_h')
-        self.class_states_c = self.add_weight(shape=(num_classes, batch_size, im_height, im_width, output_channels), initializer='zeros', trainable=False, name='class_state_c')
-        self.general_states_h = self.add_weight(shape=(1, batch_size, im_height, im_width, output_channels), initializer='zeros', trainable=False, name='general_state_h')
-        self.general_states_c = self.add_weight(shape=(1, batch_size, im_height, im_width, output_channels), initializer='zeros', trainable=False, name='general_state_c')
-
-    @tf.function
-    def call(self, inputs):
-        current_general_states = [self.general_states_h[0], self.general_states_c[0]] # (bs, h, w, oc) x 2
-        all_class_object_representations = self.class_states_h # (nc, bs, h, w, oc)
-        all_class_object_representations = tf.reshape(all_class_object_representations, (self.batch_size, 1, self.im_height, self.im_width, self.num_classes * self.output_channels)) # (bs, 1, h, w, nc*oc)
-
-        _, new_general_state_h, new_general_state_c = self.conv_lstm_general(all_class_object_representations, initial_state=current_general_states) # (bs, h, w, oc) x 3
-        general_update_h = tf.tensor_scatter_nd_update(self.general_states_h, [[0]], [new_general_state_h])
-        general_update_c = tf.tensor_scatter_nd_update(self.general_states_c, [[0]], [new_general_state_c])
-        self.general_states_h.assign(general_update_h)
-        self.general_states_c.assign(general_update_c)
-
-        output_class_tensors = []
-        for i in range(self.num_classes):
-            frame = inputs[..., i*3:(i+1)*3] # (bs, 1, h, w, 3)
-            new_general_object_representation = tf.expand_dims(new_general_state_h, axis=1) # (bs, 1, h, w, oc)
-            augmented_inputs = tf.concat([frame, new_general_object_representation], axis=-1) # (bs, 1, h, w, 3+oc)
-
-            class_logits = self.classifier(tf.squeeze(frame, axis=1)) # (bs, nc)
-            class_probs = tf.expand_dims(sharpened_softmax(class_logits), axis=1) # (bs, nc)
-
-            # Compute weighted sum of class states
-            current_class_states_h = tf.einsum('bij,bjhwc->bhwc', class_probs, self.class_states_h) # (nc)
-            current_class_states_c = tf.einsum('bij,bjhwc->bhwc', class_probs, self.class_states_c)
-
-            class_output, new_class_state_h, new_class_state_c = self.conv_lstm_class(augmented_inputs, initial_state=[current_class_states_h, current_class_states_c])
-
-            # Update all class states using soft assignments
-            new_class_state_h = tf.einsum('bij,bhwc->bjhwc', class_probs, new_class_state_h)
-            new_class_state_c = tf.einsum('bij,bhwc->bjhwc', class_probs, new_class_state_c)
-
-            self.class_states_h.assign(tf.reduce_sum(new_class_state_h, axis=0))
-            self.class_states_c.assign(tf.reduce_sum(new_class_state_c, axis=0))
-
-            output_class_tensors.append(class_output)
-
-        output = tf.stack(output_class_tensors, axis=-1)
+        # return the class-specific object representations (hidden class states)
         return output
 
 class OuterLayer(layers.Layer):
@@ -284,13 +210,14 @@ class OuterLayer(layers.Layer):
 """Build model"""
 nc = 4
 nt = 10
-oc = 12
+ic = 12
+oc = 3
 bs = 1
 h = 64
 w = 64
 assert bs == 1
 
-input_layer = layers.Input(shape=(nt, h, w, oc), batch_size=bs)
+input_layer = layers.Input(shape=(nt, h, w, ic), batch_size=bs)
 outer = OuterLayer(num_classes=nc, batch_size=bs, im_height=h, im_width=w, output_channels=oc, name='outer_layer')
 output = outer(input_layer)
 model = Model(inputs=input_layer, outputs=output)
@@ -318,9 +245,9 @@ checkpoint_callback = ModelCheckpoint(filepath=weights_path, save_weights_only=T
 
 # Train the model using the fake dataset
 num_samples = 10
-x_train = np.random.random((num_samples, nt, h, w, oc)).astype(np.float32)
+x_train = np.random.random((num_samples, nt, h, w, ic)).astype(np.float32)
 y_train = np.random.random((num_samples,)).astype(np.float32)
-x_val = np.random.random((num_samples // 10, nt, h, w, oc)).astype(np.float32)
+x_val = np.random.random((num_samples // 10, nt, h, w, ic)).astype(np.float32)
 y_val = np.random.random((num_samples // 10,)).astype(np.float32)
 
 model.fit(x_train, y_train, epochs=5, batch_size=bs, validation_data=(x_val, y_val), callbacks=[checkpoint_callback])

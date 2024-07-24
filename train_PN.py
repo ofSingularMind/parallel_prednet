@@ -67,7 +67,7 @@ def main(args):
         im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, args["output_channels"][0]) if args["resize_images"] else original_im_shape
         
         # Create PredNet with animation specific input shapes
-        inputs = keras.Input(shape=(nt, im_shape[0], im_shape[1], im_shape[2]))
+        inputs = keras.Input(shape=(nt, im_shape[0], im_shape[1], im_shape[2]), batch_size=batch_size)
         PN = PredNet(args, im_height=im_shape[0], im_width=im_shape[1])
         outputs = PN(inputs)
         PN = keras.Model(inputs=inputs, outputs=outputs)
@@ -76,7 +76,7 @@ def main(args):
         resos = PN.layers[-1].resolutions
         PN.compile(optimizer="adam", loss="mean_squared_error")
         print("PredNet compiled...")
-        PN.build(input_shape=(None, nt) + im_shape)
+        PN.build(input_shape=(batch_size, nt) + im_shape)
         print(PN.summary())
         num_layers = len(output_channels)  # number of layers in the architecture
         print(f"{num_layers} PredNet layers with resolutions:")

@@ -4,7 +4,7 @@ import tensorflow as tf
 import os
 import warnings
 from keras.applications import MobileNetV2
-from keras.layers import Dense, GlobalAveragePooling2D
+from keras.layers import Dense, GlobalAveragePooling2D, ConvLSTM2D
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -129,8 +129,9 @@ class ObjectRepresentation(layers.Layer):
         '''
         weights = tf.transpose(tf.nn.softmax(logits * beta), [1, 0]) # (num_classes, batch_size)
         current_weights_shape = weights.shape
-        new_weights_shape = current_weights_shape + (1,) * len(params.shape[2:])
-        reshaped_weights = tf.reshape(weights, new_weights_shape)
+        reshaped_weights = weights
+        for _ in range(len(params.shape) - len(current_weights_shape)):
+            reshaped_weights = tf.expand_dims(reshaped_weights, axis=-1)
 
         weighted_params = reshaped_weights * params
         weighted_sum = tf.reduce_sum(weighted_params, axis=0)
@@ -158,7 +159,7 @@ class ObjectRepresentation(layers.Layer):
         
         # Check dimension matching
         nc, bs, h, w, oc = A.shape
-        if (B.shape != (bs, h, w, oc)) or (one_hot.shape != (bs, nc)):
+        if ((B.shape != (bs, h, w, oc)) and (B.shape != (None, h, w, oc))) or ((one_hot.shape != (bs, nc)) and (one_hot.shape != (None, nc))):
             raise ValueError("Dimension mismatch among inputs.")
 
         # Expand the one-hot matrix to match A's dimensions
@@ -218,7 +219,6 @@ class ObjectRepresentation(layers.Layer):
             
             # classify the input frame to get the class logits predictions
             class_logits = self.classifier(tf.squeeze(frame, axis=1)) # (bs, nc)
-            print("Class logits:", class_logits)
 
             # get current class states
             current_class_states = [self.diff_gather(self.class_states_h, class_logits), self.diff_gather(self.class_states_c, class_logits)] # (bs, h, w, oc)
@@ -235,11 +235,15 @@ class ObjectRepresentation(layers.Layer):
 
             # append the class output to the list of output_class_tensors
             output_class_tensors.append(class_output)
+            # print("Class output shape:", class_output.shape)
+            assert (class_output.shape == (self.batch_size, self.im_height, self.im_width, self.output_channels) or class_output.shape == (None, self.im_height, self.im_width, self.output_channels))
 
         # stack the class outputs to get the final output
-        output = tf.stack(output_class_tensors, axis=-1)
+        output = tf.concat(output_class_tensors, axis=-1)
+        # print("Output shape:", output.shape)
+        assert (output.shape == (self.batch_size, self.im_height, self.im_width, self.num_classes*self.output_channels) or output.shape == (None, self.im_height, self.im_width, self.num_classes*self.output_channels))
 
-        # return the class-specific object representation (hidden class state)
+        # return the class-specific object representations (hidden class states)
         return output
 
 
