@@ -239,7 +239,7 @@ class IntermediateEvaluations(Callback):
 def sort_files_by_name(files):
     return sorted(files, key=lambda x: int(os.path.basename(x).split('.')[0]))
 
-def serialize_dataset(data_dirs, png_paths, dataset_name="SSM", test_data=False, start_time=time.perf_counter(), iteration=0):
+def serialize_dataset(data_dirs, png_paths, dataset_name="SSM", test_data=False, start_time=time.perf_counter(), iteration=0, dataset_chunk_size=1000):
     DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = data_dirs
     print(f"Start to serialize at {time.perf_counter() - start_time} seconds.")
 
@@ -257,9 +257,9 @@ def serialize_dataset(data_dirs, png_paths, dataset_name="SSM", test_data=False,
     dataset = [0 for _ in range(all_files.shape[1])]
 
     # Dataset chunk details...
-    nms = 1000 # nominal_subset_max
+    nms = dataset_chunk_size # nominal_subset_max
     subset_max = np.minimum(nms, length - (iteration) * nms)
-    assert subset_max >= 1000, "Subset max is less than 1000 - create new data and restart training"
+    assert subset_max >= dataset_chunk_size, "Subset max is less than dataset_chunk_size - create new data and restart training"
     subset_length = np.minimum(nms, length - (iteration) * nms)
 
     # Select random offset for dataset
@@ -294,12 +294,12 @@ def serialize_dataset(data_dirs, png_paths, dataset_name="SSM", test_data=False,
     print(f"HKL dump done at {time.perf_counter() - start_time} seconds.")
     print(f"Dataset serialization complete at {time.perf_counter() - start_time} seconds.")
 
-def create_dataset_from_serialized_generator(data_dirs, png_paths, output_mode="Error", dataset_name="SSM", im_height=540, im_width=960, output_channels=3, batch_size=4, nt=10, train_split=0.7, reserialize=False, shuffle=True, resize=False, single_channel=False, iteration=0, decompose=False):
+def create_dataset_from_serialized_generator(data_dirs, png_paths, output_mode="Error", dataset_name="SSM", im_height=540, im_width=960, output_channels=3, batch_size=4, nt=10, train_split=0.7, reserialize=False, shuffle=True, resize=False, single_channel=False, iteration=0, decompose=False, dataset_chunk_size=1000):
     DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = data_dirs
     start_time = time.perf_counter()
     if decompose: sceneDecomposer = SceneDecomposer()
     if reserialize:
-        serialize_dataset(data_dirs, png_paths, dataset_name=dataset_name, start_time=start_time, iteration=iteration)
+        serialize_dataset(data_dirs, png_paths, dataset_name=dataset_name, start_time=start_time, iteration=iteration, dataset_chunk_size=dataset_chunk_size)
         print("Reserialized dataset.")
     else:
         print("Using previously serialized dataset.")

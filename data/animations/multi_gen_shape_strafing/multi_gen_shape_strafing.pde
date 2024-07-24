@@ -1,9 +1,9 @@
 ArrayList<Shape> shapes;
-int num_shapes = 1;
+int num_shapes = 2;
 float x, y;
 int lastAddedFrame = 0;
 int addInterval = 900; // Time in milliseconds to add new shape
-float speed = 0;
+float speed = 0.1;
 int num_occlusions = 6;
 int frame_rate; //<>//
 int num_frames;
@@ -16,18 +16,17 @@ color[] occ_colors = new color[num_occlusions];
 float[] occ_rot = new float[num_occlusions];
 boolean rand_occlusions = true;
 int ws = 64;
-int image_pairs_interval = 2;
+int image_pairs_interval = 1;
 
-String rand_background = "black"; // can be "pixels", "whole", "white", or "black"
-float r, g, b;
+String rand_background = "pixels"; // can be "pixels", "whole", "white"
 
 boolean save_gif = false; // only set save_gif or save_frames to true, not both, or both to false
 boolean save_frames = true;
-boolean second_stage = false; // switches to white background and grey occlusions to sharpen up predictions
+boolean second_stage = true; // switches to white background and grey occlusions to sharpen up predictions
 
 boolean train_mode = true; // just flip this one to switch between train and test modes
 boolean test_mode = !train_mode;
-boolean image_pairs = true; // if true, only two frames are generated before new shapes
+boolean image_pairs = false; // if true, only two frames are generated before new shapes
 
 boolean exec_randomize = true;
 boolean flip = false;
@@ -50,8 +49,8 @@ void setup() {
   if (save_gif && save_frames) {println("Error: save_gif and save_frames cannot both be true."); exit();}
   if (test_mode && !second_stage) {println("Error: test mode must be second stage"); exit();}
   if (save_gif) {num_frames = 150; frame_rate = 200;}
-  else if (save_frames && train_mode && !image_pairs) {num_frames = 20000; frame_rate = 10000;} // deleteDirectory(new File(save_dir));}
-  else if (save_frames && train_mode && image_pairs) {num_frames = 10000; frame_rate = 10000;} // deleteDirectory(new File(save_dir));}
+  else if (save_frames && train_mode && !image_pairs) {num_frames = 100000; frame_rate = 10000;} // deleteDirectory(new File(save_dir));}
+  else if (save_frames && train_mode && image_pairs) {num_frames = 100000; frame_rate = 10000;} // deleteDirectory(new File(save_dir));}
   else if (save_frames && test_mode) {num_frames = 2000; frame_rate = 1000;} // deleteDirectory(new File(save_dir));}
   else {num_frames = 1000; frame_rate = 1;}
   images = new PImage[num_frames];
@@ -74,27 +73,14 @@ void setup() {
   }
 }
 
-int iteration = 1;
 void draw() {
   // Set the background to random pixels or white:
   if ((rand_background == "pixels") && (second_stage == false)) {
     image(images[frameCount-1], 0, 0, width, height);
   } else if ((rand_background == "whole")) {
-    if (frameCount == 1) {
-      r = 100;
-      g = 150;
-      b = 200;
-    }
-    else {
-      r = (r + random(-12, 12)) % 255;
-      g = (g + random(-12, 12)) % 255;
-      b = (b + random(-12, 12)) % 255;
-    }
-    background(color(r, g, b));
+    background(color(random(100, 200), random(100, 200), random(100, 200)));
   } else if ((rand_background == "white") && (second_stage == false)) {
     background(255);
-  } else if ((rand_background == "black") && (second_stage == false)) {
-    background(0);
   } else if (second_stage == true) {
     background(255); // white anyways
   }
@@ -112,8 +98,8 @@ void draw() {
       float wid = len_wid[1];
       // crosses go down (x,y)
       for (int i = 0; i < int(random(1,5)); i++) {
-        x = random(width*0.25, width*0.75);
-        y = random(height*0.25, height*0.75);
+        x = random(width*0.05, width*0.95);
+        y = random(height*0.05, height*0.95);
       }
       // x = width/2;
       // y = height/2;
@@ -125,8 +111,8 @@ void draw() {
       float wid = len_wid[1];
       // ellipses go right (x,y)
       for (int i = 0; i < int(random(1,5)); i++) {
-        x = random(width*0.25, width*0.75);
-        y = random(height*0.25, height*0.75);
+        x = random(width*0.05, width*0.95);
+        y = random(height*0.05, height*0.95);
       }
       // x = width/2;
       // y = height/2;
@@ -171,15 +157,14 @@ void draw() {
       }
   }
 
-  if (rand_occlusions && !(frameCount % 2 == 0)) {
+  if (rand_occlusions) {
     // int n = 30;
     // display_circles(n, n, width/(n*3)); // Display a grid of circles
     for (int i = 0; i < num_occlusions; i++) {
-      if (false) { // second_stage == false
+      if (second_stage == false) {
         occ_colors[i] = color(random(255), random(255), random(255));
       } else {
-        occ_colors[i] = color(0, 0, 0); // switch to gray occlusions for second stage
-        // occ_colors[i] = color(127, 127, 127); // switch to gray occlusions for second stage
+        occ_colors[i] = color(127, 127, 127); // switch to gray occlusions for second stage
       }
       fill(occ_colors[i]);
       strokeWeight(1 * (width / ws));
@@ -190,7 +175,7 @@ void draw() {
       popMatrix();
     }
     // fill(e_color); // Reset fill color
-    // strokframeRatet stroke thickness
+    // strokeWeight(thickness);  // Reset stroke thickness
   }
 
   if (save_gif == true) {
@@ -204,14 +189,7 @@ void draw() {
   
   else if (save_frames == true) {
     if (!second_stage) {
-      if (train_mode && !(frameCount % 2 == 0)) {
-        saveFrame("/home/evalexii/Documents/Thesis/code/pix2pix/datasets/shapes/inputs/" + String.valueOf(iteration) +".png");
-        }
-      else if (train_mode && (frameCount % 2 == 0)) {
-        String class_name = shapes.get(0).class_name;
-        saveFrame("/home/evalexii/Documents/Thesis/code/pix2pix/datasets/shapes/targets/" + String.valueOf(iteration) + "_" + class_name +".png");
-        iteration++;
-        }
+      if (train_mode) {saveFrame("frames/multi_gen_shape_1st_stage/###.png");}
       else if (test_mode) {println("Error: test_mode should be used with second stage"); exit();}
     }
     else if (second_stage) {
@@ -244,7 +222,6 @@ void draw() {
 abstract class Shape {
   float x, y, len, wid, rotation, stroke;
   color c;
-  String class_name;
   boolean active = true;
   
   abstract void update();
@@ -263,7 +240,6 @@ class Cross extends Shape {
     this.rotation = rotation;
     this.c = c;
     this.stroke = stroke;
-    this.class_name = "cross";
   }
   
   void update() {
@@ -292,7 +268,6 @@ class Ellipse extends Shape {
     this.rotation = rotation;
     this.c = c;
     this.stroke = stroke;
-    this.class_name = "ellipse";
   }
   
   void update() {

@@ -142,7 +142,7 @@ def main(args):
             #  Create and split dataset
             datasets, ds_len = create_dataset_from_serialized_generator(data_dirs, png_paths, output_mode="Error", dataset_name=dataset_name, im_height=im_shape[0], im_width=im_shape[1],
                                                                         output_channels=im_shape[2], batch_size=batch_size, nt=nt, train_split=train_split, reserialize=args["reserialize_dataset"], 
-                                                                        shuffle=True, resize=args["resize_images"], single_channel=False, iteration=training_it, decompose=args["decompose_images"])
+                                                                        shuffle=True, resize=args["resize_images"], single_channel=False, iteration=training_it, decompose=args["decompose_images"], dataset_chunk_size=args["dataset_chunk_size"])
             train_dataset, val_dataset, test_dataset = datasets
             full_train_dataset = train_dataset if full_train_dataset is None else full_train_dataset.concatenate(train_dataset)
             full_val_dataset = val_dataset if full_val_dataset is None else full_val_dataset.concatenate(val_dataset)
@@ -176,10 +176,8 @@ def main(args):
                 return args["learning_rates"][0]
             elif 0 < training_it and training_it < args["num_dataset_chunks"] // 2:
                 return args["learning_rates"][1] 
-            # elif 50 < epoch <= 100:
-            #     return args["learning_rates"][2]
             else:
-                return args["learning_rates"][3]
+                return args["learning_rates"][2]
 
         callbacks = [LearningRateScheduler(lr_schedule)]
         if save_model:
@@ -205,16 +203,13 @@ if __name__ == "__main__":
 
     # Tuning args
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
-    parser.add_argument("--sequences_per_epoch_train", type=int, default=800, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_train", type=int, default=160, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=10, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
     parser.add_argument("--batch_size", type=int, default=1, help="batch size")
-    parser.add_argument("--nb_epoch", type=int, default=1, help="number of epochs")
+    parser.add_argument("--nb_epoch", type=int, default=5, help="number of epochs")
     parser.add_argument("--second_stage", type=bool, default=True, help="utilize 2nd stage training data")
-    """
-    unser bs 20 x 25 steps = 42 sec -> 11.9 sequences/sec
-    unser bs 30 x 10 steps = 24 sec -> 12.5 sequences/sec ***
-    ser bs 4 x 25 steps = 13 sec -> 6.76 sequences/sec
-    """
+
+    # Model args
     parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels. Decompose turns bottom 3 channels to 12")
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor for images prior to training")
     parser.add_argument("--resize_images", type=bool, default=False, help="whether or not to downscale images prior to training")
@@ -228,21 +223,26 @@ if __name__ == "__main__":
     parser.add_argument("--restart_training", type=bool, default=False, help="whether or not to delete weights and restart")
     parser.add_argument("--reserialize_dataset", type=bool, default=True, help="reserialize dataset")
     parser.add_argument("--output_mode", type=str, default="Error", help="Error, Predictions, or Error_Images_and_Prediction. Only trains on Error.")
-    parser.add_argument("--train_restart_iteration", type=int, default=6, help="when training crashes, can restart from last iteration. 0 means to start from the beginning")
-    parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-3, 5e-4, 99, 1e-4], help="output channels")
+    parser.add_argument("--train_restart_iteration", type=int, default=0, help="when training crashes, can restart from last iteration. 0 means to start from the beginning")
+    parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-3, 5e-4, 1e-4], help="output channels")
 
     # Structure args
     parser.add_argument("--model_choice", type=str, default="object_centric", help="Choose which model. Options: 'baseline' or 'object_centric'")
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
     parser.add_argument("--dataset", type=str, default="SSM", help="SSM - Simple Shape Motion dataset")
-    parser.add_argument("--data_subset", type=str, default="multiShape", help="family_x2 only for laptop, any others (ex. treeflight_x2) for delftblue")
-    parser.add_argument("--num_dataset_chunks", type=int, default=20, help="number of dataset chunks to iterate through (full DS / 2000)")
+    parser.add_argument("--data_subset", type=str, default="multiShape", help="provide descriptive name for results and weights")
+    parser.add_argument("--dataset_size", type=int, default=20000, help="total number of images in data dir")
+    parser.add_argument("--num_dataset_chunks", type=int, default=20, help="number of dataset chunks to iterate through (dataset_size / dataset_chunk_size)")
+    parser.add_argument("--dataset_chunk_size", type=int, default=1000, help="dataset_chunk_size")
     parser.add_argument("--SSM_im_shape", nargs="+", type=int, default=[64, 64], help="output channels")
     """
     Avaialble dataset/data_subset arg combinations:
     - SSM / *: Specify within dataset-creation block which datasets to use. arg["data_subset"] can provide descriptive name for results and weights
     """
     args = parser.parse_args().__dict__
+
+    assert args["dataset_size"] >= args["num_dataset_chunks"] * args["dataset_chunk_size"], "Ensure that the dataset length through all training iterations is not exceeded"
+    assert args["training_split"] * args["dataset_chunk_size"] >= args["nb_epoch"] * args["sequences_per_epoch_train"] * args["batch_size"], "Ensure that the data length in each training iteration is not exceeded"
 
     update_settings(args["system"], args["dataset"], args["data_subset"], args["results_subdir"])
     DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = get_settings()["dirs"]
