@@ -16,49 +16,57 @@ from keras.applications import MobileNetV2
 from keras.layers import Dense, GlobalAveragePooling2D, Flatten
 from keras.models import Model
 from keras.layers import ConvLSTM2D
-from keras.callbacks import Callback
-
-class PrintBatchNumberCallback(Callback):
-    def on_train_batch_end(self, batch, logs=None):
-        print(f"End of batch {batch}, Loss: {logs['loss']:.4f}")
-
-class PrintEpochNumberCallback(Callback):
-    def on_epoch_begin(self, epoch, logs=None):
-        print(f"Starting Epoch {epoch+1}")
-
-    def on_epoch_end(self, epoch, logs=None):
-        print(f"End of Epoch {epoch+1}")
-
-# callbacks = [PrintBatchNumberCallback(), PrintEpochNumberCallback()]
-
-def detach(tensor):
-    copied_tensor = tf.identity(tensor)
-    detached_tensor_values = tf.keras.backend.eval(copied_tensor)
-    return detached_tensor_values
-
-class CustomConvLSTM2D(keras.layers.Layer):
-    def __init__(self, output_channels, layer_num, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Add ConvLSTM, being sure to pass previous states in OR use stateful=True
-        conv_i = layers.Conv2D(output_channels, (3, 3), padding="same", activation="hard_sigmoid", name=f"CustomConvLSTM2D_Conv_i_Layer{layer_num}")
-        conv_f = layers.Conv2D(output_channels, (3, 3), padding="same", activation="hard_sigmoid", name=f"CustomConvLSTM2D_Conv_f_Layer{layer_num}")
-        conv_o = layers.Conv2D(output_channels, (3, 3), padding="same", activation="hard_sigmoid", name=f"CustomConvLSTM2D_Conv_o_Layer{layer_num}")
-        conv_c = layers.Conv2D(output_channels, (3, 3), padding="same", activation="tanh", name=f"CustomConvLSTM2D_Conv_c_Layer{layer_num}")
-        self.convs = {"conv_i": conv_i, "conv_f": conv_f, "conv_o": conv_o, "conv_c": conv_c}
-
-    def call(self, inputs, initial_states=None):
-        i = self.convs["conv_i"](inputs)
-        f = self.convs["conv_f"](inputs)
-        o = self.convs["conv_o"](inputs)
-        h, c = initial_states if initial_states is not None else 2 * [tf.zeros(f.shape, dtype=tf.float32)]
-        c = f * c + i * self.convs["conv_c"](inputs)
-        h = o * keras.activations.tanh(c)
-        output = h
-        states = [h, c]
-
-        return output, *states
+from keras.callbacks import Callback, ModelCheckpoint
 
 class MultiClassStatefulConvLSTM2D(tf.keras.layers.Layer):
+    def __init__(self, output_channels=32, num_classes=4, **kwargs):
+        super().__init__(**kwargs)
+        self.output_channels = output_channels
+        self.num_classes = num_classes
+        self.conv_lstms = [ConvLSTM2D(filters=output_channels, kernel_size=(3, 3), padding='same', return_sequences=False, return_state=True, stateful=True) for _ in range(num_classes)]
+        # self.conv_lstm = CustomConvLSTM2D(output_channels=output_channels, layer_num=0)
+
+    # def build(self, input_shape):
+    #     super().build(input_shape)
+    #     state_shape = (input_shape[0], input_shape[1], input_shape[2], self.output_channels)
+    #     self.states_h = self.add_weight(shape=(self.num_classes, *state_shape), initializer='zeros', trainable=False, name='states_h')
+    #     self.states_c = self.add_weight(shape=(self.num_classes, *state_shape), initializer='zeros', trainable=False, name='states_c')
+    #     for i in range(self.num_classes):
+    #         dummy_input = tf.expand_dims(tf.zeros(input_shape), axis=1)
+    #         output, state_h, state_c = self.conv_lstms[i](dummy_input, initial_state=[self.states_h[i], self.states_c[i]])
+
+    def call(self, inputs, class_ID=0):
+        # current_states = [tf.gather(self.states_h, class_ID), tf.gather(self.states_c, class_ID)]
+
+        outputs, state_h, state_c = self.conv_lstms[class_ID](inputs)
+
+        self.states_h = tf.tensor_scatter_nd_update(self.states_h, [[class_ID]], [state_h])
+        self.states_c = tf.tensor_scatter_nd_update(self.states_c, [[class_ID]], [state_c])
+
+        return outputs
+
+    def get_hidden_states(self):
+        h_states = tf.stack([conv_lstm.states[0] for conv_lstm in self.conv_lstms])
+        return h_states
+        # return self.states_h if self.num_classes > 1 else self.states_h[0]
+
+    def reset_states(self, states=None):
+        # self.states_h = tf.zeros_like(self.states_h)
+        # self.states_c = tf.zeros_like(self.states_c)
+        if states is None:
+            states = [self.states_h, self.states_c] 
+        for i in range(self.num_classes):
+            self.conv_lstms[i].reset_states(states=states[i])
+    
+    def detach_states(self):
+        # self.states_h = tf.stop_gradient(self.states_h)
+        # self.states_c = tf.stop_gradient(self.states_c)
+        # self.states_h = self.states_h.numpy()
+        # self.states_c = self.states_c.numpy()
+        self.states_h = detach(self.states_h)
+        self.states_c = detach(self.states_c)
+
+class oldMCSCL(tf.keras.layers.Layer):
     def __init__(self, output_channels=32, num_classes=4, **kwargs):
         super().__init__(**kwargs)
         self.output_channels = output_channels
@@ -67,7 +75,8 @@ class MultiClassStatefulConvLSTM2D(tf.keras.layers.Layer):
         # self.conv_lstm = CustomConvLSTM2D(output_channels=output_channels, layer_num=0)
 
     def build(self, input_shape):
-        state_shape = (input_shape[1], input_shape[2], self.output_channels)
+        super().build(input_shape)
+        state_shape = (input_shape[0], input_shape[1], input_shape[2], self.output_channels)
         self.states_h = self.add_weight(shape=(self.num_classes, *state_shape), initializer='zeros', trainable=False, name='states_h')
         self.states_c = self.add_weight(shape=(self.num_classes, *state_shape), initializer='zeros', trainable=False, name='states_c')
 
@@ -82,7 +91,7 @@ class MultiClassStatefulConvLSTM2D(tf.keras.layers.Layer):
         return outputs
 
     def get_hidden_states(self):
-        return self.states_h
+        return self.states_h if self.num_classes > 1 else self.states_h[0]
 
     def reset_states(self):
         # self.states_h = tf.zeros_like(self.states_h)
@@ -135,20 +144,18 @@ class ObjectRepresentation(layers.Layer):
         self.im_width = im_width
         self.num_classes = num_classes
         self.batch_size = training_args['batch_size']
+        assert self.batch_size == 1, "Only working for batch_size 1"
         self.frame_channels = training_args['output_channels'][0]
         self.classifier = CustomMobileNetV2(num_classes=4, input_shape=(self.im_height, self.im_width, 3))
 
-        self.general_object_tensor = tf.random.normal((1, self.im_height, self.im_width, self.frame_channels))
-        self.class_tensors = tf.stack([tf.random.normal((1, self.im_height, self.im_width, self.frame_channels)) for _ in range(num_classes)])
+        # self.general_object_tensor = tf.random.normal((1, self.im_height, self.im_width, self.frame_channels))
+        # self.class_tensors = tf.stack([tf.random.normal((1, self.im_height, self.im_width, self.frame_channels)) for _ in range(num_classes)])
 
         self.multi_CLSTM_general = MultiClassStatefulConvLSTM2D(output_channels=self.frame_channels, num_classes=1, name=f"ObjectRepresentation_ConvLSTM_General_Layer{self.layer_num}")
         self.multi_CLSTM_class = MultiClassStatefulConvLSTM2D(output_channels=self.frame_channels, num_classes=4, name=f"ObjectRepresentation_ConvLSTM_Class_Layer{self.layer_num}")
-        self.multi_CLSTM_general.build((self.batch_size, self.im_height, self.im_width, self.num_classes * self.frame_channels))
-        self.multi_CLSTM_class.build((self.batch_size, self.im_height, self.im_width, self.frame_channels + 3))
+        # self.multi_CLSTM_general.build((self.batch_size, self.im_height, self.im_width, self.num_classes * self.frame_channels))
+        # self.multi_CLSTM_class.build((self.batch_size, self.im_height, self.im_width, self.frame_channels + 3))
 
-    def compute_output_shape(self, input_shape):
-        return (self.im_height, self.im_width, self.frame_channels * self.num_classes)
-    
     def call(self, inputs):
         output_tensors = []
 
@@ -163,18 +170,20 @@ class ObjectRepresentation(layers.Layer):
             class_label = tf.squeeze(class_label, axis=None) # Ensure class_label is a scalar if possible
 
             # Update class tensor using ConvLSTM over general object tensor and new frame
-            concatenated_input = tf.expand_dims(tf.concat([self.general_object_tensor, frame], axis=-1), axis=1)
+            general_object_tensor = self.multi_CLSTM_general.get_hidden_states() # (nc, bs, 64, 64, 12)
+            concatenated_input = tf.expand_dims(tf.concat([general_object_tensor, frame], axis=-1), axis=1)
             updated_class_tensor = self.multi_CLSTM_class(inputs=concatenated_input, class_ID=class_label)
-            tf.tensor_scatter_nd_update(self.class_tensors, [[class_label]], [updated_class_tensor])
+            # tf.tensor_scatter_nd_update(self.class_tensors, [[class_label]], [updated_class_tensor])
             
             output_tensors.append(updated_class_tensor)
             # TODO: If the same class is predicted twice in the same frame, it will be upated twice. Is this OK? Maybe they are similar enough.
 
-        all_class_tensors = tf.reshape(self.class_tensors, (1, self.im_height, self.im_width, self.num_classes * self.frame_channels))
-        all_class_tensors = tf.expand_dims(all_class_tensors, axis=1)
-        updated_general_object_tensor = self.multi_CLSTM_general(inputs=all_class_tensors, class_ID=0)
-        updated_general_object_tensor = tf.squeeze(updated_general_object_tensor)
-        tf.tensor_scatter_nd_update(self.general_object_tensor, [0], updated_general_object_tensor)
+        all_class_tensors = self.multi_CLSTM_class.get_hidden_states() # (nc, bs, 64, 64, 12)
+        all_class_tensors = tf.reshape(all_class_tensors, (self.batch_size, 1, self.im_height, self.im_width, self.num_classes * self.frame_channels))
+        # all_class_tensors = tf.expand_dims(all_class_tensors, axis=1)
+        _ = self.multi_CLSTM_general(inputs=all_class_tensors, class_ID=0)
+        # updated_general_object_tensor = tf.squeeze(updated_general_object_tensor)
+        # tf.tensor_scatter_nd_update(self.general_object_tensor, [0], updated_general_object_tensor)
         # tf.compat.v1.assign(self.general_object_tensor, updated_general_object_tensor)
 
         out = tf.concat(output_tensors, axis=-1)
@@ -190,16 +199,17 @@ class dummyLayer(layers.Layer):
         self.nt = training_args["nt"]
 
     def call(self, inputs):
+        # inputs: (bs, nt, 64, 64, oc)
         sequence_output_tensors = []
         for t in range(self.nt):
-            decomposed_frame = inputs[:, t, ...]
-            sequence_output_tensors.append(self.object_representation(decomposed_frame))
+            decomposed_frame = inputs[:, t, ...] # (bs, 64, 64, oc)
+            sequence_output_tensors.append(self.object_representation(decomposed_frame)) # (bs, 64, 64, oc*num_classes)
 
         return tf.stack(sequence_output_tensors)
         
             
-        
 
+"""Build model"""
 # Create input layer
 nt = 10
 oc = 12
@@ -219,11 +229,34 @@ model.summary()
 # Compile the model
 model.compile(optimizer=keras.optimizers.Adam(), loss=keras.losses.mean_squared_error, metrics=["accuracy"])
 
+# If weights exist, load them
+weights_file = 'dummyLayer_weights.hdf5'
+if os.path.exists(weights_file):
+    model.load_weights(weights_file)
 
+# Reset / Set initial states of ConvLSTM layers
+dummy.object_representation.multi_CLSTM_general.reset_states()
+dummy.object_representation.multi_CLSTM_class.reset_states()
+
+
+"""Train model"""
 # Create random test dataset for keras.model.fit()
 input_shape = (nt, 64, 64, oc)
 num_classes = 4
 
+class PrintBatchNumberCallback(Callback):
+    def on_train_batch_end(self, batch, logs=None):
+        print(f"End of batch {batch}, Loss: {logs['loss']:.4f}")
+
+class PrintEpochNumberCallback(Callback):
+    def on_epoch_begin(self, epoch, logs=None):
+        print(f"Starting Epoch {epoch+1}")
+
+    def on_epoch_end(self, epoch, logs=None):
+        print(f"End of Epoch {epoch+1}")
+
+callbacks = [PrintBatchNumberCallback(), PrintEpochNumberCallback()]
+callbacks.append(ModelCheckpoint(filepath=weights_file, monitor="val_loss", save_best_only=True, save_weights_only=True))
 
 """TRAIN OPTION 1"""
 
@@ -234,7 +267,7 @@ x_train = np.random.random((bs, *input_shape)).astype(np.float32)
 y_train = np.random.random((bs, nt, 64, 64, num_classes * oc)).astype(np.float32)
 
 # Train the model using the fake dataset
-model.fit(x_train, y_train, epochs=5, batch_size=bs)
+model.fit(x_train, y_train, epochs=5, batch_size=bs, callbacks=callbacks)
 
 
 """TRAIN OPTION 2"""
@@ -280,3 +313,33 @@ model.fit(x_train, y_train, epochs=5, batch_size=bs)
 
 # # Save the model weights
 # model.save_weights('conv_lstm_weights.h5')
+
+"""HOLDING"""
+
+
+def detach(tensor):
+    copied_tensor = tf.identity(tensor)
+    detached_tensor_values = tf.keras.backend.eval(copied_tensor)
+    return detached_tensor_values
+
+class CustomConvLSTM2D(keras.layers.Layer):
+    def __init__(self, output_channels, layer_num, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Add ConvLSTM, being sure to pass previous states in OR use stateful=True
+        conv_i = layers.Conv2D(output_channels, (3, 3), padding="same", activation="hard_sigmoid", name=f"CustomConvLSTM2D_Conv_i_Layer{layer_num}")
+        conv_f = layers.Conv2D(output_channels, (3, 3), padding="same", activation="hard_sigmoid", name=f"CustomConvLSTM2D_Conv_f_Layer{layer_num}")
+        conv_o = layers.Conv2D(output_channels, (3, 3), padding="same", activation="hard_sigmoid", name=f"CustomConvLSTM2D_Conv_o_Layer{layer_num}")
+        conv_c = layers.Conv2D(output_channels, (3, 3), padding="same", activation="tanh", name=f"CustomConvLSTM2D_Conv_c_Layer{layer_num}")
+        self.convs = {"conv_i": conv_i, "conv_f": conv_f, "conv_o": conv_o, "conv_c": conv_c}
+
+    def call(self, inputs, initial_states=None):
+        i = self.convs["conv_i"](inputs)
+        f = self.convs["conv_f"](inputs)
+        o = self.convs["conv_o"](inputs)
+        h, c = initial_states if initial_states is not None else 2 * [tf.zeros(f.shape, dtype=tf.float32)]
+        c = f * c + i * self.convs["conv_c"](inputs)
+        h = o * keras.activations.tanh(c)
+        output = h
+        states = [h, c]
+
+        return output, *states
