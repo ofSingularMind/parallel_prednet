@@ -102,7 +102,7 @@ class ObjectRepresentation(layers.Layer):
     def diff_scatter_nd_update(self, A, B, logits, beta=1e10):
         """
         Update tensor A with values from tensor B based on highest indices indicated by a logits matrix.
-        Like tf.tensor_scatter_nd_update, but differentiable.
+        Like tf.tensor_scatter_nd_update, but differentiable, in the sense that integer class indices are not required.
 
         Args:
         A (tf.Tensor): A tensor of shape (nc, bs, h, w, oc).
@@ -147,14 +147,13 @@ class ObjectRepresentation(layers.Layer):
         # Inputs shape: (bs, 1, h, w, oc)
 
         '''Update General Object States'''
+        # get all current class object representations (class object hidden states) as input
+        # reshaped to (nc, bs, h, w, oc) -> (bs, 1, h, w, nc*oc) for processing in ConvLSTM
+        all_class_object_representations = self.class_states_h # (nc, bs, h, w, oc)
+        all_class_object_representations = tf.expand_dims(tf.concat(tf.unstack(all_class_object_representations, axis=0), axis=-1), axis=1) # (bs, 1, h, w, nc*oc)
+
         # get current general object states
         current_general_states = [self.general_states_h[0], self.general_states_c[0]] # (bs, h, w, oc) x 2
-
-        # get all current class object representations (class object hidden states)
-        all_class_object_representations = self.class_states_h # (nc, bs, h, w, oc)
-
-        # reshape the class object representations to (nc, bs, h, w, oc) -> (bs, 1, h, w, nc*oc) for processing in ConvLSTM
-        all_class_object_representations = tf.reshape(all_class_object_representations, (self.batch_size, 1, self.im_height, self.im_width, self.num_classes*self.output_channels))
 
         # apply the general ConvLSTM layer to get the updated general states
         _, new_general_state_h, new_general_state_c = self.conv_lstm_general(all_class_object_representations, initial_state=current_general_states) # (bs, h, w, oc) x 3
@@ -180,12 +179,9 @@ class ObjectRepresentation(layers.Layer):
             # concatenate the general object representation with the input
             augmented_inputs = tf.concat([frame, new_general_object_representation], axis=-1) # (bs, 1, h, w, 3+oc)
             
-            # No classification happening yet, so create a dummy class ID
-            class_logits = self.classifier(tf.squeeze(frame, axis=1)) # (bs, h, w, 3)
-            # class_label = self.softargmax(class_probs)
-            # class_ID = tf.squeeze(class_label, axis=None) # Ensure class_label is a scalar if possible
-            # print("Class ID: ", class_ID)
-            # class_ID = i # np.random.randint(self.num_classes)
+            # classify the input frame to get the class logits predictions
+            class_logits = self.classifier(tf.squeeze(frame, axis=1)) # (bs, nc)
+            print("Class logits:", class_logits)
 
             # get current class states
             current_class_states = [self.diff_gather(self.class_states_h, class_logits), self.diff_gather(self.class_states_c, class_logits)] # (bs, h, w, oc)
@@ -194,8 +190,6 @@ class ObjectRepresentation(layers.Layer):
             class_output, new_class_state_h, new_class_state_c = self.conv_lstm_class(augmented_inputs, initial_state=current_class_states) # (bs, h, w, oc) x 3
 
             # update the class states
-            # class_update_h = tf.tensor_scatter_nd_update(self.class_states_h, [[class_ID]], [new_class_state_h])
-            # class_update_c = tf.tensor_scatter_nd_update(self.class_states_c, [[class_ID]], [new_class_state_c])
             class_update_h = self.diff_scatter_nd_update(self.class_states_h, new_class_state_h, class_logits)
             class_update_c = self.diff_scatter_nd_update(self.class_states_c, new_class_state_c, class_logits)
             
