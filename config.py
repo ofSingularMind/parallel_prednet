@@ -27,6 +27,13 @@ def update_settings(system, dataset, data_subset, subdir):
                        ]
     }
 
+    settings_dict[('delftblue', 'SSM')] = {'dirs' : [f'/scratch/aledbetter/parallel_prednet/data/animations/',
+                       f'/home/aledbetter/parallel_prednet/model_weights/SSM/{data_subset}/',
+                       f'/home/aledbetter/parallel_prednet/results/SSM_results/{data_subset}/{subdir}/',
+                       '/home/aledbetter/parallel_prednet/logs/SSM/'
+                       ]
+    }
+
     if (system, dataset) in settings_dict:
         settings.update(settings_dict[(system, dataset)])
     else:
