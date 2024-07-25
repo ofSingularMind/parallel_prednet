@@ -2,6 +2,7 @@ from keras import layers
 import keras
 import tensorflow as tf
 import os
+import sys
 import warnings
 from keras.applications import MobileNetV2
 from keras.layers import Dense, GlobalAveragePooling2D, ConvLSTM2D
@@ -121,6 +122,9 @@ class ObjectRepresentation(layers.Layer):
         self.general_states_h = self.add_weight(shape=(1, batch_size, im_height, im_width, output_channels), initializer='zeros', trainable=False, name='general_state_h')
         self.general_states_c = self.add_weight(shape=(1, batch_size, im_height, im_width, output_channels), initializer='zeros', trainable=False, name='general_state_c')
 
+        self.predicted_class_IDs = []
+
+
     def diff_gather(self, params, logits, beta=1e10):
         '''
         Differentiable gather operation.
@@ -207,6 +211,7 @@ class ObjectRepresentation(layers.Layer):
         # Note that inputs are nc*3 channels, where nc is the number of classes and thus we process each 3-channel block separately
         
         output_class_tensors = []
+        self.predicted_class_IDs = []
         for i in range(self.num_classes):
 
             frame = inputs[..., i*3:(i+1)*3] # (bs, 1, h, w, 3)
@@ -238,10 +243,23 @@ class ObjectRepresentation(layers.Layer):
             # print("Class output shape:", class_output.shape)
             assert (class_output.shape == (self.batch_size, self.im_height, self.im_width, self.output_channels) or class_output.shape == (None, self.im_height, self.im_width, self.output_channels))
 
+            """Debugging 1/2 - check if classifier is working"""
+            # val = tf.argmax(tf.nn.softmax(class_logits*1e10), axis=-1)
+            # try:
+            #     val = tf.squeeze(tf.convert_to_tensor(val))
+            #     self.predicted_class_IDs.append(val)
+            # except Exception:
+            #     # Skip symbolic tensors
+            #     pass
+
         # stack the class outputs to get the final output
         output = tf.concat(output_class_tensors, axis=-1)
         # print("Output shape:", output.shape)
         assert (output.shape == (self.batch_size, self.im_height, self.im_width, self.num_classes*self.output_channels) or output.shape == (None, self.im_height, self.im_width, self.num_classes*self.output_channels))
+
+        """Debugging 2/2 - check if classifier is working"""
+        # vals = tf.convert_to_tensor(self.predicted_class_IDs)
+        # tf.print("vals:", vals, output_stream=sys.stdout)
 
         # return the class-specific object representations (hidden class states)
         return output
