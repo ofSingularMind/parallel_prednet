@@ -22,10 +22,11 @@ String rand_background = "pixels"; // can be "pixels", "whole", "white"
 
 boolean save_gif = false; // only set save_gif or save_frames to true, not both, or both to false
 boolean save_frames = true;
-boolean second_stage = true; // switches to white background and grey occlusions to sharpen up predictions
+boolean second_stage = false; // switches to white background and grey occlusions to sharpen up predictions
 
-boolean train_mode = true; // just flip this one to switch between train and test modes
-boolean test_mode = !train_mode;
+boolean train_mode = false; // just flip this one to switch between train and test modes
+boolean val_mode = true; // overwrites train_mode (saves to different folder)
+boolean test_mode = false;
 boolean image_pairs = false; // if true, only two frames are generated before new shapes
 
 boolean exec_randomize = true;
@@ -45,13 +46,15 @@ void setup() {
   shapes = new ArrayList<Shape>();
   rectMode(CENTER);
   stroke(0);
+  if (train_mode && val_mode) {println("cannot have train and val"); exit();}
   // Set the frame rate and the number of frames to be saved per mode
   if (save_gif && save_frames) {println("Error: save_gif and save_frames cannot both be true."); exit();}
   if (test_mode && !second_stage) {println("Error: test mode must be second stage"); exit();}
   if (save_gif) {num_frames = 150; frame_rate = 200;}
   else if (save_frames && train_mode && !image_pairs) {num_frames = 100000; frame_rate = 10000;} // deleteDirectory(new File(save_dir));}
+  else if (save_frames && val_mode && !image_pairs) {num_frames = 10000; frame_rate = 10000;} // deleteDirectory(new File(save_dir));}
   else if (save_frames && train_mode && image_pairs) {num_frames = 100000; frame_rate = 10000;} // deleteDirectory(new File(save_dir));}
-  else if (save_frames && test_mode) {num_frames = 2000; frame_rate = 1000;} // deleteDirectory(new File(save_dir));}
+  else if (save_frames && test_mode) {num_frames = 10000; frame_rate = 10000;} // deleteDirectory(new File(save_dir));}
   else {num_frames = 1000; frame_rate = 1;}
   images = new PImage[num_frames];
 
@@ -190,13 +193,15 @@ void draw() {
   else if (save_frames == true) {
     if (!second_stage) {
       if (train_mode) {saveFrame("frames/multi_gen_shape_1st_stage/###.png");}
+      else if (val_mode) {saveFrame("frames/multi_gen_shape_1st_stage_val/###.png");}
       else if (test_mode) {println("Error: test_mode should be used with second stage"); exit();}
     }
     else if (second_stage) {
-      if (train_mode && !image_pairs) {saveFrame("frames/multi_gen_shape_2nd_stage/###.png");}
-      else if (train_mode && image_pairs) {saveFrame("frames/multi_gen_shape_2nd_stage_for_objects/###.png");}
-      else if (test_mode && (num_shapes == 1)) {saveFrame("frames/multi_gen_shape_test_1shape/###.png");}
-      else if (test_mode && (num_shapes == 2)) {saveFrame("frames/multi_gen_shape_test/###.png");}
+      if (train_mode && !image_pairs) {saveFrame("frames/multi_gen_shape_2nd_stage_train/######.png");}
+      else if (val_mode && !image_pairs) {saveFrame("frames/multi_gen_shape_2nd_stage_val/######.png");}
+      else if (train_mode && image_pairs) {saveFrame("frames/multi_gen_shape_2nd_stage_for_objects/######.png");}
+      else if (test_mode && (num_shapes == 1)) {saveFrame("frames/multi_gen_shape_test_1shape/######.png");}
+      else if (test_mode && (num_shapes == 2)) {saveFrame("frames/multi_gen_shape_2nd_stage_test/######.png");}
     }
     else {println("Error: train_mode and test_mode not defined."); exit();}
     if (frameCount == num_frames) {
@@ -288,20 +293,20 @@ class Ellipse extends Shape {
 
 public float[] get_len_wid(float multiplier) {
     float d = random(40, 70);
-    if (train_mode) {
+    if (train_mode || val_mode) {
       while (d >= 50 && d <= 60) {d = random(40, 70);}
     } else if (test_mode) {
       while (!(d > 52 && d < 58) && !(d > 73 && d < 90)) {d = random(53, 90);}
     } else {
-      println("Error: train_mode and test_mode not defined."); exit();
+      println("Error: train/val_mode and test_mode not defined."); exit();
     }
     float s_wid_divisor = random(2, 4);
-    if (train_mode) {
+    if (train_mode || val_mode) {
       while (s_wid_divisor >= 3 && s_wid_divisor <= 3.75) {s_wid_divisor = random(2, 4);}
     } else if (test_mode) {
       while (!(s_wid_divisor > 3.25 && s_wid_divisor < 3.5) && !(s_wid_divisor > 3.5 && s_wid_divisor < 5)) {s_wid_divisor = random(3.25, 5);}
     } else {
-      println("Error: train_mode and test_mode not defined."); exit();
+      println("Error: train/val_mode and test_mode not defined."); exit();
     }
     // if ((shape == "cross") || (shape == "rectangle")) {s_wid_divisor = s_wid_divisor * 1.5;} 
     // for debug with window_size != 50

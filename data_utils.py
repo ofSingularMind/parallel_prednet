@@ -20,7 +20,9 @@ from keras import backend as K
 import tensorflow as tf
 import numpy as np
 import hickle as hkl
-from data.animations.decompose_images.decomposer import SceneDecomposer
+from PN_models.PN_ObjectCentric import SceneDecomposer
+import math
+from keras.preprocessing.image import load_img, img_to_array
 
 # Data generator that creates sequences for input into PredNet.
 class SequenceGenerator(Iterator):
@@ -119,7 +121,8 @@ class IntermediateEvaluations(Callback):
         # Retrieve target sequence (use the same sequence(s) always)
         self.X_test_inputs = [next(self.dataset_iterator) for _ in range(10)][-1][0]  # take just batch_x not batch_y
         self.X_test = self.X_test_inputs # take only the PNG images for MSE calcs and plotting
-        self.Xtc = self.X_test.shape[-1] # X_test_channels        
+        # self.Xtc = self.test_dataset.element_spec[0].element_spec.shape[-1] # X_test_channels        
+        self.Xtc = self.X_test_inputs[0].shape[-1] # X_test_channels
 
         if not os.path.exists(self.RESULTS_SAVE_DIR):
             os.makedirs(self.RESULTS_SAVE_DIR, exist_ok=True)
@@ -294,10 +297,10 @@ def serialize_dataset(data_dirs, png_paths, dataset_name="SSM", test_data=False,
     print(f"HKL dump done at {time.perf_counter() - start_time} seconds.")
     print(f"Dataset serialization complete at {time.perf_counter() - start_time} seconds.")
 
-def create_dataset_from_serialized_generator(data_dirs, png_paths, output_mode="Error", dataset_name="SSM", im_height=540, im_width=960, output_channels=3, batch_size=4, nt=10, train_split=0.7, reserialize=False, shuffle=True, resize=False, single_channel=False, iteration=0, decompose=False, dataset_chunk_size=1000):
+def create_dataset_from_serialized_generator(data_dirs, png_paths, output_mode="Error", dataset_name="SSM", im_height=540, im_width=960, output_channels=3, batch_size=4, nt=10, train_split=0.7, reserialize=False, shuffle=True, resize=False, single_channel=False, iteration=0, decompose=False, dataset_chunk_size=1000, stage=2):
     DATA_DIR, WEIGHTS_DIR, RESULTS_SAVE_DIR, LOG_DIR = data_dirs
     start_time = time.perf_counter()
-    if decompose: sceneDecomposer = SceneDecomposer()
+    if decompose: sceneDecomposer = SceneDecomposer(n_colors=4, stage=stage)
     if reserialize:
         serialize_dataset(data_dirs, png_paths, dataset_name=dataset_name, start_time=start_time, iteration=iteration, dataset_chunk_size=dataset_chunk_size)
         print("Reserialized dataset.")
@@ -314,7 +317,7 @@ def create_dataset_from_serialized_generator(data_dirs, png_paths, output_mode="
     num_samples = all_files[0].shape[0]
     assert all([all_files[i].shape[0] == num_samples for i in range(num_total_paths)]), "All sources must have the same number of samples"
 
-    all_files = [sceneDecomposer.process_dataset(all_files[i]) for i in range(num_total_paths)] if decompose else all_files
+    all_files = [sceneDecomposer.process_sequence(all_files[i]) for i in range(num_total_paths)] if decompose else all_files
     # Get the length of the dataset (number of unique sequences, nus)
     nus = num_samples + 1 - nt
     length = nus
@@ -438,3 +441,160 @@ def create_dataset_from_generator(data_dirs, png_paths, output_mode="Error", dat
     print(f"End tf.data.Dataset creation at {time.perf_counter() - start_time} seconds.")
 
     return datasets, length
+
+class sequence_dataset_creator():
+    def __init__(self, training_args):
+        self.training_args = training_args
+        if self.training_args["decompose_images"]:
+            self.sceneDecomposer = SceneDecomposer(n_colors=4, stage=2)
+    
+    def list_image_files(self, image_folder):
+        file_paths = [os.path.join(image_folder, fname) for fname in sorted(os.listdir(image_folder)) if fname.endswith(('jpg', 'jpeg', 'png'))]
+        return tf.data.Dataset.from_tensor_slices(file_paths), len(file_paths)
+
+    def decode_image(self, file_path):
+        img = tf.io.read_file(file_path)
+        img = tf.image.decode_jpeg(img, channels=3)  # Adjust channels as needed (e.g., 1 for grayscale, 3 for RGB)
+        img = tf.image.convert_image_dtype(img, tf.float32)  # Convert to float32 [0,1]
+        img = tf.image.resize(img, [64, 64])  # Resize if needed
+        return img
+
+    def generate_sequence_dataset(self, image_folder, sequence_length, batch_size):
+        # Get list of image files
+        file_dataset, num_files = self.list_image_files(image_folder)
+        
+        # Read and decode images
+        image_dataset = file_dataset.map(self.decode_image, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+
+        # Create sequences of images
+        def make_sequences(ds, sequence_length):
+            ds = ds.window(sequence_length, shift=1, drop_remainder=True)
+            ds = ds.flat_map(lambda window: window.batch(sequence_length))
+            return ds
+
+        sequence_dataset = make_sequences(image_dataset, sequence_length)
+
+        # Apply the black box function to each sequence
+        def decompose_image_sequence(sequence):
+            sequence_np = sequence.numpy()  # Convert to numpy
+            decomposed_sequence_np = self.sceneDecomposer.process_sequence(sequence_np)  # Apply numpy processing
+            return decomposed_sequence_np
+
+        # Convert the numpy function to a tensorflow function
+        @tf.function
+        def tf_decompose_image_sequence(sequence):
+            decomposed_sequence = tf.py_function(func=decompose_image_sequence, inp=[sequence], Tout=tf.float32)
+            decomposed_sequence.set_shape((sequence_length, self.training_args["SSM_im_shape"][0], self.training_args["SSM_im_shape"][1], self.training_args["output_channels"][0]))  # Explicitly set the shape
+            return decomposed_sequence
+
+        if self.training_args["decompose_images"]:
+            sequence_dataset = sequence_dataset.map(tf_decompose_image_sequence, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+
+        # Pair each sequence with a single zero value as ground truth
+        def add_ground_truth(sequence):
+            target = tf.zeros((1,))  # Ground truth single zero value
+            return sequence, target
+
+        sequence_dataset = sequence_dataset.map(add_ground_truth, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        
+        # Batch the sequences
+        sequence_dataset = sequence_dataset.batch(batch_size)
+        sequence_dataset = sequence_dataset.prefetch(tf.data.experimental.AUTOTUNE)
+
+        # Calculate number of sequences and batches
+        num_sequences = num_files - sequence_length + 1
+        num_batches = tf.math.ceil(num_sequences / batch_size)
+
+        return sequence_dataset, num_sequences, num_batches
+
+class SequenceDataLoader:
+    def __init__(self, training_args, folder_path, sequence_length, batch_size, img_height, img_width, processed_img_channels, shuffle=True):
+        self.training_args = training_args
+        self.folder_path = folder_path
+        self.sequence_length = sequence_length
+        self.batch_size = batch_size
+        self.img_height = img_height
+        self.img_width = img_width
+        self.processed_img_channels = processed_img_channels
+        self.shuffle = shuffle
+        self.img_filenames = sorted([f for f in os.listdir(folder_path) if f.endswith('.png')])
+        self.num_images = len(self.img_filenames)
+        self.dataset_length = self.num_images - self.sequence_length + 1
+        if self.training_args["decompose_images"]:
+            self.sceneDecomposer = SceneDecomposer(n_colors=4)
+        
+    def process_sequence(self, sequence):
+        stage = 2 if self.training_args["second_stage"] else 1
+        return self.sceneDecomposer.process_sequence(sequence, stage=stage)
+    
+    def load_image(self, file_path):
+        img = Image.open(file_path) # load_img(file_path)
+        img_array = np.array(img, dtype=np.float32) / 255.0 # img_to_array(img) / 255.0
+        return img_array
+    
+    def load_sequence(self, start_index):
+        sequence = []
+        for i in range(self.sequence_length):
+            img_path = os.path.join(self.folder_path, self.img_filenames[start_index + i])
+            img_array = self.load_image(img_path)
+            sequence.append(img_array)
+        sequence = np.stack(sequence, axis=0)
+        if self.training_args["decompose_images"]:
+            sequence = self.process_sequence(sequence)
+        return sequence
+    
+    def generate_batch(self):
+        all_indices = np.arange(self.num_images - self.sequence_length + 1)
+        np.random.shuffle(all_indices) if self.shuffle else None
+        
+        for i in range(0, len(all_indices), self.batch_size):
+            batch_sequences = []
+            for j in range(self.batch_size):
+                if i + j < len(all_indices):
+                    sequence = self.load_sequence(all_indices[i + j])
+                    batch_sequences.append(sequence)
+            if batch_sequences:
+                yield np.stack(batch_sequences, axis=0), np.zeros((len(batch_sequences), 1))  # Target 0.0 MSE for training
+
+    def create_tf_dataset(self):
+        dataset = tf.data.Dataset.from_generator(
+            self.generate_batch,
+            output_signature=(
+                tf.TensorSpec(shape=(None, self.sequence_length, self.img_height, self.img_width, self.processed_img_channels), dtype=tf.float32),
+                tf.TensorSpec(shape=(None, 1), dtype=tf.float32)
+            )
+        )
+        dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
+        dataset = dataset.repeat()
+        return dataset, self.dataset_length
+
+class sequence_dataset_creator_yuck(tf.keras.utils.Sequence):
+    def __init__(self, image_folder, sequence_length, batch_size):
+        self.image_folder = image_folder
+        self.sequence_length = sequence_length
+        self.batch_size = batch_size
+        self.file_paths = [os.path.join(image_folder, fname) for fname in sorted(os.listdir(image_folder)) if fname.endswith(('jpg', 'jpeg', 'png'))]
+        self.num_files = len(self.file_paths)
+        self.possible_starts = np.arange(self.num_files - self.sequence_length + 1)
+        np.random.shuffle(self.possible_starts)  # Shuffle once and iterate
+
+    def __len__(self):
+        return (self.num_files - self.sequence_length + 1) // self.batch_size
+
+    def on_epoch_end(self):
+        np.random.shuffle(self.possible_starts)  # Reshuffle at the end of each epoch
+
+    def __getitem__(self, idx):
+        batch_indices = self.possible_starts[idx * self.batch_size:(idx + 1) * self.batch_size]
+        batch_images = []
+        for start_idx in batch_indices:
+            batch_seq = self.file_paths[start_idx:start_idx + self.sequence_length]
+            batch_images.append([self.load_and_preprocess_image(fp) for fp in batch_seq])
+        return np.array(batch_images), np.zeros((self.batch_size, 1))  # Dummy target array for training
+
+    def load_and_preprocess_image(self, file_path):
+        img = tf.io.read_file(file_path)
+        img = tf.image.decode_jpeg(img, channels=3)
+        img = tf.image.resize(img, [64, 64])  # Resize as needed
+        img = tf.image.convert_image_dtype(img, tf.float32) / 255.0  # Normalize to [0, 1]
+        return img.numpy()  # Return as numpy array for batch assembling
