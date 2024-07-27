@@ -24,8 +24,8 @@ boolean save_gif = false; // only set save_gif or save_frames to true, not both,
 boolean save_frames = true;
 boolean second_stage = false; // switches to white background and grey occlusions to sharpen up predictions
 
-boolean train_mode = false; // just flip this one to switch between train and test modes
-boolean val_mode = true; // overwrites train_mode (saves to different folder)
+boolean train_mode = true; // just flip this one to switch between train and test modes
+boolean val_mode = false; // overwrites train_mode (saves to different folder)
 boolean test_mode = false;
 boolean image_pairs = false; // if true, only two frames are generated before new shapes
 
@@ -192,8 +192,8 @@ void draw() {
   
   else if (save_frames == true) {
     if (!second_stage) {
-      if (train_mode) {saveFrame("frames/multi_gen_shape_1st_stage/###.png");}
-      else if (val_mode) {saveFrame("frames/multi_gen_shape_1st_stage_val/###.png");}
+      if (train_mode) {saveFrame("frames/multi_gen_shape_1st_stage_train/######.png");}
+      else if (val_mode) {saveFrame("frames/multi_gen_shape_1st_stage_val/######.png");}
       else if (test_mode) {println("Error: test_mode should be used with second stage"); exit();}
     }
     else if (second_stage) {
