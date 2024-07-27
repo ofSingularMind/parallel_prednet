@@ -210,8 +210,8 @@ if __name__ == "__main__":
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
     parser.add_argument("--sequences_per_epoch_train", type=int, default=1000, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=10, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
-    parser.add_argument("--batch_size", type=int, default=10, help="batch size")
-    parser.add_argument("--nb_epoch", type=int, default=10, help="number of epochs")
+    parser.add_argument("--batch_size", type=int, default=20, help="batch size")
+    parser.add_argument("--nb_epoch", type=int, default=5, help="number of epochs")
     parser.add_argument("--second_stage", type=bool, default=False, help="utilize 2nd stage training data even for first iteration through dataset")
 
     # Model args
@@ -220,7 +220,7 @@ if __name__ == "__main__":
     parser.add_argument("--resize_images", type=bool, default=False, help="whether or not to downscale images prior to training")
     parser.add_argument("--decompose_images", type=bool, default=True, help="whether or not to decompose images for training")
     parser.add_argument("--object_representations", type=bool, default=False, help="whether or not to use object representations as input to Rep unit")
-    parser.add_argument("--training_split", type=float, default=0.80, help="proportion of data for training (only for monkaa)")
+    parser.add_argument("--training_split", type=float, default=1, help="proportion of data for training (only for monkaa)")
 
     # Training args
     parser.add_argument("--seed", type=int, default=np.random.randint(0,1000), help="random seed")
@@ -233,7 +233,7 @@ if __name__ == "__main__":
     parser.add_argument("--debug_model", type=bool, default=False, help="this will bypass model.fit and instead feed data through the model to debug the model")
 
     # Structure args
-    parser.add_argument("--model_choice", type=str, default="object_centric", help="Choose which model. Options: 'baseline' or 'object_centric'")
+    parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: 'baseline' or 'object_centric'")
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
     parser.add_argument("--dataset", type=str, default="SSM", help="SSM - Simple Shape Motion dataset")
     parser.add_argument("--data_subset", type=str, default="multiShape", help="provide descriptive name for results and weights")
