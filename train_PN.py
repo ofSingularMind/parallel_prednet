@@ -67,12 +67,12 @@ def main(args):
         
         train_dataset, train_size = SequenceDataLoader(args, DATA_DIR + "multi_gen_shape_strafing/frames/multi_gen_shape_2nd_stage_train", nt, batch_size, im_shape[0], im_shape[1], im_shape[2]).create_tf_dataset()
         val_dataset, val_size = SequenceDataLoader(args, DATA_DIR + "multi_gen_shape_strafing/frames/multi_gen_shape_2nd_stage_val", nt, batch_size, im_shape[0], im_shape[1], im_shape[2]).create_tf_dataset()
-        test_dataset, test_size = SequenceDataLoader(args, DATA_DIR + "multi_gen_shape_strafing/frames/multi_gen_shape_2nd_stage_test", nt, batch_size, im_shape[0], im_shape[1], im_shape[2]).create_tf_dataset()
+        # test_dataset, test_size = SequenceDataLoader(args, DATA_DIR + "multi_gen_shape_strafing/frames/multi_gen_shape_2nd_stage_test", nt, batch_size, im_shape[0], im_shape[1], im_shape[2]).create_tf_dataset()
 
         print(f"Working on dataset: {args['dataset']} - {args['data_subset']} {'1st Stage' if not args['second_stage'] else '2nd Stage'}")
         print(f"Train size: {train_size}")
         print(f"Validation size: {val_size}")
-        print(f"Test size: {test_size}")
+        # print(f"Test size: {test_size}")
         print("All datasets created successfully")
 
 
@@ -169,18 +169,20 @@ def main(args):
         print(f"Training iteration {training_it+1} of {args['num_iterations']}")
 
         def lr_schedule(epoch):
-            if not args["second_stage"]:
+            if training_it == 0:
                 if epoch == 0:
                     return args["learning_rates"][0]
                 elif epoch < 2 * args["nb_epoch"] // 3:
                     return args["learning_rates"][1]
                 else:
                     return args["learning_rates"][2]
-            else:
+            elif training_it == 1:
                 if epoch < 2 * args["nb_epoch"] // 3:
                     return args["learning_rates"][2]
                 else:
                     return args["learning_rates"][3]
+            else:
+                return args["learning_rates"][3]
 
         callbacks = [LearningRateScheduler(lr_schedule)]
         if save_model:
@@ -188,7 +190,7 @@ def main(args):
             callbacks.append(ModelCheckpoint(filepath=weights_file, monitor="val_loss", save_best_only=True, save_weights_only=True))
             callbacks.append(ModelCheckpoint(filepath=results_weights_file, monitor="val_loss", save_best_only=True, save_weights_only=True))
         if plot_intermediate:
-            callbacks.append(IntermediateEvaluations(data_dirs, test_dataset, test_size, batch_size=batch_size, nt=nt, output_channels=output_channels, dataset=args["dataset"], model_choice=args["model_choice"], iteration=training_it+1))
+            callbacks.append(IntermediateEvaluations(data_dirs, val_dataset, val_size, batch_size=batch_size, nt=nt, output_channels=output_channels, dataset=args["dataset"], model_choice=args["model_choice"], iteration=training_it+1))
         if tensorboard:
             callbacks.append(TensorBoard(log_dir=LOG_DIR, histogram_freq=1, write_graph=True, write_images=False))
 
@@ -206,11 +208,11 @@ if __name__ == "__main__":
 
     # Tuning args
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
-    parser.add_argument("--sequences_per_epoch_train", type=int, default=5000, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_train", type=int, default=1000, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=10, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
-    parser.add_argument("--batch_size", type=int, default=2, help="batch size")
+    parser.add_argument("--batch_size", type=int, default=10, help="batch size")
     parser.add_argument("--nb_epoch", type=int, default=10, help="number of epochs")
-    parser.add_argument("--second_stage", type=bool, default=False, help="utilize 2nd stage training data")
+    parser.add_argument("--second_stage", type=bool, default=False, help="utilize 2nd stage training data even for first iteration through dataset")
 
     # Model args
     parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels. Decompose turns bottom 3 channels to 12")
@@ -236,7 +238,7 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", type=str, default="SSM", help="SSM - Simple Shape Motion dataset")
     parser.add_argument("--data_subset", type=str, default="multiShape", help="provide descriptive name for results and weights")
     parser.add_argument("--dataset_size", type=int, default=100000, help="total number of images in data dir")
-    parser.add_argument("--num_iterations", type=int, default=2, help="number of iterations through the dataset")
+    parser.add_argument("--num_iterations", type=int, default=4, help="number of iterations through the dataset")
     parser.add_argument("--SSM_im_shape", nargs="+", type=int, default=[64, 64], help="output channels")
     """
     Avaialble dataset/data_subset arg combinations:
