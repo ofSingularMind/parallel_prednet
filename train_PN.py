@@ -65,8 +65,9 @@ def main(args):
         downscale_factor = args["downscale_factor"]
         im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, args["output_channels"][0]) if args["resize_images"] else original_im_shape
         
-        train_dataset, train_size = SequenceDataLoader(args, DATA_DIR + "multi_gen_shape_strafing/frames/multi_gen_shape_2nd_stage_train", nt, batch_size, im_shape[0], im_shape[1], im_shape[2]).create_tf_dataset()
-        val_dataset, val_size = SequenceDataLoader(args, DATA_DIR + "multi_gen_shape_strafing/frames/multi_gen_shape_2nd_stage_val", nt, batch_size, im_shape[0], im_shape[1], im_shape[2]).create_tf_dataset()
+        stage = "2nd_stage" if args["second_stage"] else "1st_stage"
+        train_dataset, train_size = SequenceDataLoader(args, DATA_DIR + f"multi_gen_shape_strafing/frames/multi_gen_shape_{stage}_train", nt, batch_size, im_shape[0], im_shape[1], im_shape[2]).create_tf_dataset()
+        val_dataset, val_size = SequenceDataLoader(args, DATA_DIR + f"multi_gen_shape_strafing/frames/multi_gen_shape_{stage}_val", nt, batch_size, im_shape[0], im_shape[1], im_shape[2]).create_tf_dataset()
         # test_dataset, test_size = SequenceDataLoader(args, DATA_DIR + "multi_gen_shape_strafing/frames/multi_gen_shape_2nd_stage_test", nt, batch_size, im_shape[0], im_shape[1], im_shape[2]).create_tf_dataset()
 
         print(f"Working on dataset: {args['dataset']} - {args['data_subset']} {'1st Stage' if not args['second_stage'] else '2nd Stage'}")
@@ -208,9 +209,9 @@ if __name__ == "__main__":
 
     # Tuning args
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
-    parser.add_argument("--sequences_per_epoch_train", type=int, default=1000, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_train", type=int, default=10, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=10, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
-    parser.add_argument("--batch_size", type=int, default=20, help="batch size")
+    parser.add_argument("--batch_size", type=int, default=10, help="batch size")
     parser.add_argument("--nb_epoch", type=int, default=5, help="number of epochs")
     parser.add_argument("--second_stage", type=bool, default=False, help="utilize 2nd stage training data even for first iteration through dataset")
 
