@@ -16,6 +16,8 @@ from PIL import Image
 from scipy.spatial.distance import cdist
 from scipy.optimize import linear_sum_assignment
 
+import pdb
+
 # Suppress warnings
 warnings.filterwarnings("ignore")
 # or '2' to filter out INFO messages too
@@ -230,18 +232,40 @@ class PredNet(keras.Model):
                     all_frame_errors = layer_frame_errors if l == 0 else tf.add(all_frame_errors, layer_frame_errors)  # (batch_size, 1)
 
             if self.output_mode == "Error" and self.training_args["decompose_images"] and self.training_args["second_stage"]:
-                # reconstruction error doesn't work with the randomized backgrounds in the input images for first stage
+                # Note: reconstruction error doesn't work with the randomized backgrounds in the input images for first stage
                 predictions = self.predlayers[0].states["P"]
                 targets = self.predlayers[0].states["T"]
+
+                # If necessary, isolate the masks and prepare for reconstruction
+                if self.training_args["include_frame"]:
+                    pred_masks = predictions[..., :-3]
+                    pred_frames = predictions[..., -3:]
+                    target_masks = targets[..., :-3]
+                    target_frames = targets[..., -3:]
+                    bs, h, w, n_c = pred_masks.shape
+                    n = n_c // 3  # Number of masks
+                else:
+                    pred_masks = predictions
+                    pred_frames = None
+                    target_masks = targets
+                    target_frames = None
+                    bs, h, w, n_c = pred_masks.shape
+                    n = n_c // 3  # Number of masks
+                
+                # Form reconstructions
+                pred_masks_reshaped = tf.reshape(pred_masks, (bs, h, w, n, 3))
+                target_masks_reshaped = tf.reshape(target_masks, (bs, h, w, n, 3))
+                reconstructed_image = K.minimum(1.0, tf.reduce_max(pred_masks_reshaped, axis=2))
+                original_image = K.minimum(1.0, tf.reduce_max(target_masks_reshaped, axis=2))
+                
                 # Calculate reconstruction error
-                reconstructed_image = K.minimum(1.0, tf.reduce_sum([predictions[...,i*3:(i+1)*3] for i in range(predictions.shape[-1]//3)], axis=0))
-                original_image = K.minimum(1.0, tf.reduce_sum([targets[...,i*3:(i+1)*3] for i in range(targets.shape[-1]//3)], axis=0))
                 recon_e_down = keras.backend.relu(original_image - reconstructed_image)
                 recon_e_up = keras.backend.relu(reconstructed_image - original_image)
                 recon_error = keras.layers.Concatenate(axis=-1)([recon_e_down, recon_e_up])
                 recon_error = K.mean(K.batch_flatten(recon_error), axis=-1, keepdims=True)
                 total_prediction_errors = all_frame_errors + recon_error # (batch_size, 1)
-            elif self.output_mode == "Error" and self.training_args["decompose_images"]:
+
+            elif self.output_mode == "Error" and self.training_args["decompose_images"] and not self.training_args["second_stage"]:
                 total_prediction_errors = all_frame_errors
 
             # Calculate total error
@@ -476,59 +500,6 @@ class ObjectRepresentation(layers.Layer):
 
         return A_updated
 
-    # def calculate_classification_diversity_loss(self, all_logits):
-        # '''
-        # Compute the classification diversity loss.
-        # Args:
-        # all_logits (tf.Tensor): A tensor of shape (num_predictions, batch_size, num_classes).
-        # Returns:
-        # tf.Tensor: The classification diversity loss as total entropy of the prediction matrix, per batch.
-        # '''
-
-        # def entropy(logits, axis):
-        #     probs = tf.nn.softmax(logits, axis=axis)
-        #     return -tf.reduce_sum(probs * tf.math.log(probs + 1e-9), axis=axis)
-
-        # def total_matrix_entropy(logits):
-        #     '''
-        #     Args:
-        #     logits: (batch_size, num_predictions, num_classes)
-        #     Returns:
-        #     total_entropy: (batch_size,)
-        #     '''
-        #     inter_prediction_uncertainty = tf.reduce_sum(entropy(logits, axis=2), axis=-1, keepdims=True) # Shape: (batch_size, 1)
-        #     intra_prediction_overlap = tf.reduce_sum(entropy(logits, axis=1), axis=-1, keepdims=True) # Shape: (batch_size, 1)
-        #     return intra_prediction_overlap# + 0.1*inter_prediction_uncertainty
-
-        # def distinct_class_penalty(logits):
-        #     '''
-        #     Penalty for duplicate class predictions.
-        #     Args:
-        #     logits: (batch_size, num_predictions, num_classes)
-        #     Returns:
-        #     penalty: (batch_size,)
-        #     '''            
-        #     # Calculate sharp probability distribution across classes
-        #     probs = tf.nn.softmax(logits*3, axis=2) # Shape: (batch_size, num_predictions, num_classes)
-            
-        #     # Calculate entropy of predictions for each class
-        #     intra_prediction_overlap = -tf.reduce_sum(probs * tf.math.log(probs + 1e-9), axis=[1,2]) # Shape: (batch_size, 1)
-            
-        #     # Calculate penalty using MSE
-        #     # penalty = tf.reduce_mean(tf.square(counts - 1), axis=-1, keepdims=True) # Shape: (batch_size, 1)
-            
-        #     return intra_prediction_overlap*100
-
-        # # form batches of logits matrices
-        # batch_logits_matrices = tf.transpose(all_logits, [1, 0, 2]) # Shape: (batch_size, num_predictions, num_classes)
-
-        # # Compute the total entropy of the logits matrix
-        # total_entropy = total_matrix_entropy(batch_logits_matrices) # Shape: (batch_size, 1)
-
-        # # Compute the distinct class penalty
-        # distinct_penalty = distinct_class_penalty(batch_logits_matrices) # Shape: (batch_size, 1)
-
-        # return total_entropy# + distinct_penalty # Shape: (batch_size, 1)
 
     def calculate_classification_diversity_loss(self, all_logits):
         '''
@@ -681,10 +652,11 @@ class ObjectRepresentation(layers.Layer):
 
 
 class SceneDecomposer:
-    def __init__(self, n_colors=4):
+    def __init__(self, n_colors=4, include_frame=False):
         self.n_colors = n_colors
         self.last_colors = None
         self.last_masks = None
+        self.include_frame = include_frame
 
     def report_state(self):
         print("Last colors: ", self.last_colors)
@@ -697,6 +669,7 @@ class SceneDecomposer:
         '''
         Process a single image and return a list of masks, one for each color in the image.
         Expected input: PIL Image or numpy array with shape (H, W, 3), float32, range [0, 1]
+        Returns: List of masks, each with shape (H, W, 3), uint8, range [0, 255]
         '''
         if type(image) is np.ndarray:
             # print(type(image))
@@ -787,13 +760,17 @@ class SceneDecomposer:
     def process_sequence(self, sequence, stage=2):
         """
         Process a sequence of images with shape (T, 64, 64, 3) and return masks with shape (T, 64, 64, n_colors*3)
+        Optionally include original frame in the output
         """
         T, H, W, C = sequence.shape
-        masks_sequence = np.zeros((T, H, W, self.n_colors*C), dtype=np.float32)
+        masks_sequence = np.zeros((T, H, W, self.n_colors*C), dtype=np.float32) if not self.include_frame else np.zeros((T, H, W, (self.n_colors+1)*C), dtype=np.float32)
 
         self.clear_state()
         for t in range(T):
             new_masks = self.process_single_image(sequence[t])
+            if self.include_frame:
+                new_masks = np.concatenate([new_masks, (sequence[t] * 255).astype(np.uint8)], axis=-1)
+                assert new_masks.shape[-1] == (self.n_colors+1)*C
             masks_sequence[t] = new_masks
 
         if stage == 1:
@@ -809,8 +786,8 @@ class SceneDecomposer:
                     mask[black_pixels_mask] = random_colors
 
         # finally, convert sequence to float between 0 and 1
+        
         masks_sequence = masks_sequence / 255.0
-
         return masks_sequence
 
     def process_batch(self, batch):

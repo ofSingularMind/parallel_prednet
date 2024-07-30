@@ -23,6 +23,7 @@ import hickle as hkl
 from PN_models.PN_ObjectCentric import SceneDecomposer
 import math
 from keras.preprocessing.image import load_img, img_to_array
+import pdb
 
 # Data generator that creates sequences for input into PredNet.
 class SequenceGenerator(Iterator):
@@ -102,7 +103,8 @@ class SequenceGenerator(Iterator):
 
 
 class IntermediateEvaluations(Callback):
-    def __init__(self, data_dirs, test_dataset, length, batch_size=4, nt=10, output_channels=[3, 48, 96, 192], dataset="kitti", model_choice="baseline", iteration=0):
+    def __init__(self, training_args, data_dirs, test_dataset, length, batch_size=4, nt=10, output_channels=[3, 48, 96, 192], dataset="kitti", model_choice="baseline", iteration=0):
+        self.training_args = training_args
         self.DATA_DIR, self.WEIGHTS_DIR, self.RESULTS_SAVE_DIR, self.LOG_DIR = data_dirs
         self.RESULTS_SAVE_DIR = os.path.join(self.RESULTS_SAVE_DIR, f"it#{iteration}/")
         super(IntermediateEvaluations, self).__init__()
@@ -221,15 +223,41 @@ class IntermediateEvaluations(Callback):
                 
                 # Plot the reconstructed full images
                 for t in range(self.plot_nt):
+                    predictions = X_hat[i, t]
+                    targets = self.X_test[i, t]
+
+                    # If necessary, isolate the masks and prepare for reconstruction
+                    if self.training_args["include_frame"]:
+                        pred_masks = predictions[..., :-3]
+                        pred_frames = predictions[..., -3:]
+                        target_masks = targets[..., :-3]
+                        target_frames = targets[..., -3:]
+                        h, w, n_c = pred_masks.shape
+                        n = n_c // 3  # Number of masks
+                    else:
+                        pred_masks = predictions
+                        pred_frames = None
+                        target_masks = targets
+                        target_frames = None
+                        h, w, n_c = pred_masks.shape
+                        n = n_c // 3  # Number of masks
+                    
+                    # Form reconstructions
+                    pred_masks_reshaped = tf.reshape(pred_masks, (h, w, n, 3))
+                    target_masks_reshaped = tf.reshape(target_masks, (h, w, n, 3))
+                    reconstructed_image = K.minimum(1.0, tf.reduce_max(pred_masks_reshaped, axis=2))
+                    original_image = K.minimum(1.0, tf.reduce_max(target_masks_reshaped, axis=2))
+
+
                     plt.subplot(gs[t + self.Xtc*self.plot_nt])
-                    reconstructed_image = np.minimum(np.sum([X_hat[i, t, ..., k*3:(k+1)*3] for k in range(self.Xtc//3)], axis=0), 1)
+                    # reconstructed_image = np.minimum(np.sum([X_hat[i, t, ..., k*3:(k+1)*3] for k in range(self.Xtc//3)], axis=0), 1)
                     plt.imshow(reconstructed_image, interpolation="none")
                     plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
                     if t == 0:
                         plt.ylabel("Predicted", fontsize=10)
 
                     plt.subplot(gs[t + (self.Xtc+1)*self.plot_nt])
-                    original_image = np.minimum(np.sum([self.X_test[i, t, ..., k*3:(k+1)*3] for k in range(self.Xtc//3)], axis=0), 1)
+                    # original_image = np.minimum(np.sum([self.X_test[i, t, ..., k*3:(k+1)*3] for k in range(self.Xtc//3)], axis=0), 1)
                     plt.imshow(original_image, interpolation="none")
                     plt.tick_params(axis="both", which="both", bottom="off", top="off", left="off", right="off", labelbottom="off", labelleft="off", )
                     if t == 0:
@@ -508,7 +536,7 @@ class sequence_dataset_creator():
         return sequence_dataset, num_sequences, num_batches
 
 class SequenceDataLoader:
-    def __init__(self, training_args, folder_path, sequence_length, batch_size, img_height, img_width, processed_img_channels, shuffle=True):
+    def __init__(self, training_args, folder_path, sequence_length, batch_size, img_height, img_width, processed_img_channels, shuffle=True, include_frame=False):
         self.training_args = training_args
         self.folder_path = folder_path
         self.sequence_length = sequence_length
@@ -517,11 +545,12 @@ class SequenceDataLoader:
         self.img_width = img_width
         self.processed_img_channels = processed_img_channels
         self.shuffle = shuffle
+        self.include_frame = include_frame
         self.img_filenames = sorted([f for f in os.listdir(folder_path) if f.endswith('.png')])
         self.num_images = len(self.img_filenames)
         self.dataset_length = self.num_images - self.sequence_length + 1
         if self.training_args["decompose_images"]:
-            self.sceneDecomposer = SceneDecomposer(n_colors=4)
+            self.sceneDecomposer = SceneDecomposer(n_colors=4, include_frame=self.include_frame)
         
     def process_sequence(self, sequence):
         stage = 2 if self.training_args["second_stage"] else 1

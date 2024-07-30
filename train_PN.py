@@ -1,5 +1,8 @@
 def main(args):
     for training_it in range(args["num_iterations"]):
+
+        if (training_it+1) < args["restart_teration"]:
+            continue
         
         if training_it > 0:
             args["second_stage"] = True
@@ -34,12 +37,13 @@ def main(args):
         # Training parameters
         if args["model_choice"] == "baseline":
             if args["decompose_images"] or args["object_representations"]: 
-                print("Using Baseline PredNet")
                 print("Baseline PredNet does not use decomposed images or object representations, disabling both.")
                 args["decompose_images"] = False
                 args["object_representations"] = False
         if args["decompose_images"]:
             args["output_channels"][0] = 12 # We constrain to the SSM dataset and four object images
+            if args["include_frame"]:
+                args["output_channels"][0] += 3 # Add the original frame channels
         if args["pretrain_classifier"]:
             args["output_channels"] = args["output_channels"][:1] # Just need the bottom layer
             # args["nt"] = 1
@@ -56,6 +60,9 @@ def main(args):
         assert sequences_per_epoch_val is None or type(sequences_per_epoch_val) == int
         output_channels = args["output_channels"]
 
+        if args["debug_model"]:
+            print("Debugging model...")
+            tf.config.run_functions_eagerly(True)
 
         """Create datasets"""
         print("Creating datasets...")
@@ -65,9 +72,10 @@ def main(args):
         downscale_factor = args["downscale_factor"]
         im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, args["output_channels"][0]) if args["resize_images"] else original_im_shape
         
-        stage = "2nd_stage" if args["second_stage"] else "1st_stage"
-        train_dataset, train_size = SequenceDataLoader(args, DATA_DIR + f"multi_gen_shape_strafing/frames/multi_gen_shape_{stage}_train", nt, batch_size, im_shape[0], im_shape[1], im_shape[2]).create_tf_dataset()
-        val_dataset, val_size = SequenceDataLoader(args, DATA_DIR + f"multi_gen_shape_strafing/frames/multi_gen_shape_{stage}_val", nt, batch_size, im_shape[0], im_shape[1], im_shape[2]).create_tf_dataset()
+        # Always 2nd stage training for object-centric model because the random backgrounds are applied at decomposition time
+        stage = ("2nd_stage" if args["second_stage"] else "1st_stage") if args["model_choice"] == "baseline" else "2nd_stage"
+        train_dataset, train_size = SequenceDataLoader(args, DATA_DIR + f"multi_gen_shape_strafing/frames/multi_gen_shape_{stage}_train", nt, batch_size, im_shape[0], im_shape[1], im_shape[2], True, True).create_tf_dataset()
+        val_dataset, val_size = SequenceDataLoader(args, DATA_DIR + f"multi_gen_shape_strafing/frames/multi_gen_shape_{stage}_val", nt, batch_size, im_shape[0], im_shape[1], im_shape[2], True, True).create_tf_dataset()
         # test_dataset, test_size = SequenceDataLoader(args, DATA_DIR + "multi_gen_shape_strafing/frames/multi_gen_shape_2nd_stage_test", nt, batch_size, im_shape[0], im_shape[1], im_shape[2]).create_tf_dataset()
 
         print(f"Working on dataset: {args['dataset']} - {args['data_subset']} {'1st Stage' if not args['second_stage'] else '2nd Stage'}")
@@ -81,13 +89,14 @@ def main(args):
         # PICK MODEL
         if args["model_choice"] == "baseline":
             from PN_models.PN_Baseline import PredNet
+            print("*** Using Baseline PredNet ***")
         elif args["model_choice"] == "object_centric":
             assert args["decompose_images"], "Object-Centric PredNet requires images to be decomposed"
             from PN_models.PN_ObjectCentric import PredNet
             if args["object_representations"]:
-                print("Using the Object-Centric PredNet; Decomposing & classifying inputs, and maintaining & applying object representations.")
+                print("*** Using the Object-Centric PredNet; Decomposing & classifying inputs, and maintaining & applying object representations ***")
             else:
-                print("Using the Object-Centric PredNet; Decomposing inputs.")
+                print("*** Using the Object-Centric PredNet; Decomposing inputs ***")
         else:
             raise ValueError("Invalid model choice")
         
@@ -95,8 +104,6 @@ def main(args):
         ##########DEBUG MODE###############
         ###################################
         if args["debug_model"]:
-            print("Debugging model...")
-            tf.config.run_functions_eagerly(True)
             PN = PredNet(args, im_height=im_shape[0], im_width=im_shape[1])
             # Ensure the model is built by calling it on a sample input or compiling it
             PN.compile(optimizer='adam', loss='mean_squared_error')  # Example optimizer and loss
@@ -107,7 +114,7 @@ def main(args):
                 with tf.GradientTape() as tape:
                     predictions = PN(x, training=True)  # Get model predictions
                     loss = tf.reduce_mean(tf.square(predictions - y))  # Calculate loss (example)
-                gradients = tape.gradient(loss, PN.trainable_variables)
+                # gradients = tape.gradient(loss, PN.trainable_variables)
                 # Debugging outputs
                 tf.print("Loss:", loss)
                 # for grad in gradients:
@@ -171,6 +178,7 @@ def main(args):
 
         def lr_schedule(epoch):
             if training_it == 0:
+                # First stage training
                 if epoch == 0:
                     return args["learning_rates"][0]
                 elif epoch < 2 * args["nb_epoch"] // 3:
@@ -178,12 +186,16 @@ def main(args):
                 else:
                     return args["learning_rates"][2]
             elif training_it == 1:
-                if epoch < 2 * args["nb_epoch"] // 3:
+                # Second stage training, first iteration
+                if epoch < args["nb_epoch"] // 3:
                     return args["learning_rates"][2]
-                else:
+                elif epoch < 2 * args["nb_epoch"] // 3:
                     return args["learning_rates"][3]
+                else:
+                    return args["learning_rates"][4]
             else:
-                return args["learning_rates"][3]
+                # Second stage training, remaining iterations
+                return args["learning_rates"][4]
 
         callbacks = [LearningRateScheduler(lr_schedule)]
         if save_model:
@@ -191,7 +203,7 @@ def main(args):
             callbacks.append(ModelCheckpoint(filepath=weights_file, monitor="val_loss", save_best_only=True, save_weights_only=True))
             callbacks.append(ModelCheckpoint(filepath=results_weights_file, monitor="val_loss", save_best_only=True, save_weights_only=True))
         if plot_intermediate:
-            callbacks.append(IntermediateEvaluations(data_dirs, val_dataset, val_size, batch_size=batch_size, nt=nt, output_channels=output_channels, dataset=args["dataset"], model_choice=args["model_choice"], iteration=training_it+1))
+            callbacks.append(IntermediateEvaluations(args, data_dirs, val_dataset, val_size, batch_size=batch_size, nt=nt, output_channels=output_channels, dataset=args["dataset"], model_choice=args["model_choice"], iteration=training_it+1))
         if tensorboard:
             callbacks.append(TensorBoard(log_dir=LOG_DIR, histogram_freq=1, write_graph=True, write_images=False))
 
@@ -209,37 +221,39 @@ if __name__ == "__main__":
 
     # Tuning args
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
-    parser.add_argument("--sequences_per_epoch_train", type=int, default=10, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_train", type=int, default=300, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=10, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
     parser.add_argument("--batch_size", type=int, default=10, help="batch size")
-    parser.add_argument("--nb_epoch", type=int, default=5, help="number of epochs")
+    parser.add_argument("--nb_epoch", type=int, default=3, help="number of epochs")
     parser.add_argument("--second_stage", type=bool, default=False, help="utilize 2nd stage training data even for first iteration through dataset")
 
     # Model args
-    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels. Decompose turns bottom 3 channels to 12")
+    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels. Decompose turns bottom 3 channels to 12. Including original frame adds 3 channels.")
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor for images prior to training")
     parser.add_argument("--resize_images", type=bool, default=False, help="whether or not to downscale images prior to training")
     parser.add_argument("--decompose_images", type=bool, default=True, help="whether or not to decompose images for training")
+    parser.add_argument("--include_frame", type=bool, default=True, help="whether or not to include the original frame stacked with the decomposed images for training")
     parser.add_argument("--object_representations", type=bool, default=False, help="whether or not to use object representations as input to Rep unit")
     parser.add_argument("--training_split", type=float, default=1, help="proportion of data for training (only for monkaa)")
 
     # Training args
     parser.add_argument("--seed", type=int, default=np.random.randint(0,1000), help="random seed")
     parser.add_argument("--results_subdir", type=str, default=f"{str(datetime.now())}", help="Specify results directory")
-    parser.add_argument("--restart_training", type=bool, default=True, help="whether or not to delete weights and restart")
+    parser.add_argument("--restart_training", type=bool, default=False, help="whether or not to delete weights and restart")
     parser.add_argument("--reserialize_dataset", type=bool, default=True, help="reserialize dataset")
     parser.add_argument("--output_mode", type=str, default="Error", help="Error, Predictions, or Error_Images_and_Prediction. Only trains on Error.")
-    parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-2, 1e-3, 5e-4, 1e-4], help="output channels")
+    parser.add_argument("--learning_rates", nargs="+", type=int, default=[3e-3, 1e-3, 5e-4, 2e-4, 5e-5], help="learning rates for each stage of training")
     parser.add_argument("--pretrain_classifier", type=bool, default=False, help="this will zero out the prediction errors, and focus on the classification diversity loss")
     parser.add_argument("--debug_model", type=bool, default=False, help="this will bypass model.fit and instead feed data through the model to debug the model")
 
     # Structure args
-    parser.add_argument("--model_choice", type=str, default="baseline", help="Choose which model. Options: 'baseline' or 'object_centric'")
+    parser.add_argument("--model_choice", type=str, default="object_centric", help="Choose which model. Options: 'baseline' or 'object_centric'")
     parser.add_argument("--system", type=str, default="laptop", help="laptop or delftblue")
     parser.add_argument("--dataset", type=str, default="SSM", help="SSM - Simple Shape Motion dataset")
     parser.add_argument("--data_subset", type=str, default="multiShape", help="provide descriptive name for results and weights")
     parser.add_argument("--dataset_size", type=int, default=100000, help="total number of images in data dir")
-    parser.add_argument("--num_iterations", type=int, default=4, help="number of iterations through the dataset")
+    parser.add_argument("--num_iterations", type=int, default=8, help="number of iterations through the dataset")
+    parser.add_argument("--restart_teration", type=int, default=2, help="In case training crashes, restart from this iteration (# of total_#) 0&1 are both start")
     parser.add_argument("--SSM_im_shape", nargs="+", type=int, default=[64, 64], help="output channels")
     """
     Avaialble dataset/data_subset arg combinations:
