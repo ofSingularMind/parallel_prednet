@@ -263,7 +263,7 @@ class PredNet(keras.Model):
                 recon_e_up = keras.backend.relu(reconstructed_image - original_image)
                 recon_error = keras.layers.Concatenate(axis=-1)([recon_e_down, recon_e_up])
                 recon_error = K.mean(K.batch_flatten(recon_error), axis=-1, keepdims=True)
-                total_prediction_errors = (1/2) * (recon_error  + 0.25*all_frame_errors) # (batch_size, 1), average of frame and reconstruction errors
+                total_prediction_errors = (1/1) * (0.1*recon_error  + all_frame_errors) # (batch_size, 1), average of frame and reconstruction errors
 
             elif self.output_mode == "Error" and self.training_args["decompose_images"] and not self.training_args["second_stage"]:
                 total_prediction_errors = all_frame_errors
@@ -479,10 +479,10 @@ class ObjectRepresentation(layers.Layer):
         # self.classifier = CustomMobileNetV2(num_classes=4, input_shape=(self.im_height, self.im_width, 3), name='classifier')
         self.classifier = CustomCNN(num_classes=4, num_conv_layers=3, trainable=not self.training_args["load_outside_pretrained_classifier_weights"], name='classifier')
 
-        self.class_states_h = self.add_weight(shape=(num_classes, batch_size, im_height, im_width, output_channels), initializer='zeros', trainable=False, name='class_state_h')
-        self.class_states_c = self.add_weight(shape=(num_classes, batch_size, im_height, im_width, output_channels), initializer='zeros', trainable=False, name='class_state_c')
-        self.general_states_h = self.add_weight(shape=(1, batch_size, im_height, im_width, output_channels), initializer='zeros', trainable=False, name='general_state_h')
-        self.general_states_c = self.add_weight(shape=(1, batch_size, im_height, im_width, output_channels), initializer='zeros', trainable=False, name='general_state_c')
+        self.class_states_h = self.add_weight(shape=(num_classes, 1, im_height, im_width, output_channels), initializer='zeros', trainable=False, name='class_state_h')
+        self.class_states_c = self.add_weight(shape=(num_classes, 1, im_height, im_width, output_channels), initializer='zeros', trainable=False, name='class_state_c')
+        self.general_states_h = self.add_weight(shape=(1, 1, im_height, im_width, output_channels), initializer='zeros', trainable=False, name='general_state_h')
+        self.general_states_c = self.add_weight(shape=(1, 1, im_height, im_width, output_channels), initializer='zeros', trainable=False, name='general_state_c')
 
         self.predicted_class_IDs = []
         self.plot_num = 0
@@ -491,7 +491,7 @@ class ObjectRepresentation(layers.Layer):
     def diff_gather(self, params, logits, beta=3):
         '''
         Differentiable gather operation.
-        Params shape: (num_classes, batch_size, ...)
+        Params shape: (num_classes, 1, ...)
         Logits shape: (batch_size, num_classes)
         '''
         weights = tf.transpose(tf.nn.softmax(logits * beta), [1, 0]) # (num_classes, batch_size)
@@ -500,7 +500,7 @@ class ObjectRepresentation(layers.Layer):
         for _ in range(len(params.shape) - len(current_weights_shape)):
             reshaped_weights = tf.expand_dims(reshaped_weights, axis=-1)
 
-        weighted_params = reshaped_weights * params
+        weighted_params = reshaped_weights * params # broadcasting to shape (num_classes, batch_size, ...)
         weighted_sum = tf.reduce_sum(weighted_params, axis=0)
         return weighted_sum
 
@@ -511,7 +511,7 @@ class ObjectRepresentation(layers.Layer):
         Like tf.tensor_scatter_nd_update, but differentiable, in the sense that integer class indices are not required.
 
         Args:
-        A (tf.Tensor): A tensor of shape (nc, bs, h, w, oc).
+        A (tf.Tensor): A tensor of shape (nc, 1, h, w, oc).
         B (tf.Tensor): A tensor of shape (bs, h, w, oc).
         logits (tf.Tensor): A logits matrix of shape (bs, nc).
 
@@ -526,8 +526,8 @@ class ObjectRepresentation(layers.Layer):
             raise ValueError("Input tensors must be of the shape (nc, bs, h, w, oc), (bs, h, w, oc), and (bs, nc) respectively.")
         
         # Check dimension matching
-        nc, bs, h, w, oc = A.shape
-        if ((B.shape != (bs, h, w, oc)) and (B.shape != (None, h, w, oc))) or ((one_hot.shape != (bs, nc)) and (one_hot.shape != (None, nc))):
+        nc, _, h, w, oc = A.shape
+        if (B.shape[1:] != (h, w, oc)) or (one_hot.shape[1:] != (nc)):
             raise ValueError("Dimension mismatch among inputs.")
 
         # Expand the one-hot matrix to match A's dimensions
@@ -545,6 +545,9 @@ class ObjectRepresentation(layers.Layer):
 
         # Combine the two components
         A_updated = A_masked + B_masked
+
+        # Reduce_mean over the batch dimension to create single updated class state
+        A_updated = tf.reduce_mean(A_updated, axis=1, keepdims=True)
 
         return A_updated
 
@@ -636,6 +639,9 @@ class ObjectRepresentation(layers.Layer):
         # get updated general object representation (hidden general object state)
         new_general_object_representation = general_states_h # (bs, 1, h, w, oc)
 
+        # tile the general object representation to match the batch size
+        new_general_object_representation = tf.tile(new_general_object_representation, [self.batch_size, 1, 1, 1, 1]) # (bs, 1, h, w, oc)
+
         # concatenate the general object representation with the input
         augmented_inputs = tf.concat([frame, new_general_object_representation], axis=-1) # (bs, 1, h, w, 3+oc)
         
@@ -644,10 +650,14 @@ class ObjectRepresentation(layers.Layer):
         assert (class_logits.shape == (self.batch_size, self.num_classes) or class_logits.shape == (None, self.num_classes))
 
         # get current class states
-        current_class_states = [self.diff_gather(self.class_states_h, class_logits), self.diff_gather(self.class_states_c, class_logits)] # (bs, h, w, oc)
+        current_class_states = [self.diff_gather(self.class_states_h, class_logits), self.diff_gather(self.class_states_c, class_logits)] # (bs, h, w, oc) via broadcasting
 
         # apply the shared class ConvLSTM layer to get the updated class states
         class_output, new_class_state_h, new_class_state_c = self.conv_lstm_class(augmented_inputs, initial_state=current_class_states) # (bs, h, w, oc) x 3
+
+        # # reduce_mean new class states across the batch dimension to create single updated class state
+        # new_class_state_h = tf.reduce_mean(new_class_state_h, axis=0, keepdims=True)
+        # new_class_state_c = tf.reduce_mean(new_class_state_c, axis=0, keepdims=True)
 
         # update the class states
         class_update_h = self.diff_scatter_nd_update(self.class_states_h, new_class_state_h, class_logits)
@@ -656,14 +666,9 @@ class ObjectRepresentation(layers.Layer):
         self.class_states_h.assign(class_update_h)
         self.class_states_c.assign(class_update_c)
 
-        # append the class output to the list of output_class_tensors
-        # output_class_tensors.append(class_output)
-    
         # print("Class output shape:", class_output.shape)
         assert (class_output.shape == (self.batch_size, self.im_height, self.im_width, self.output_channels) or class_output.shape == (None, self.im_height, self.im_width, self.output_channels))
 
-        # append the class logits to the list of all_class_logits
-        # all_class_logits.append(class_logits)
         return class_output, class_logits
 
 
@@ -680,15 +685,22 @@ class ObjectRepresentation(layers.Layer):
 
         '''Update General Object States'''
         # get all current class object representations (class object hidden states) as input
-        # reshaped to (nc, bs, h, w, oc) -> (bs, 1, h, w, nc*oc) for processing in ConvLSTM
-        all_class_object_representations = self.class_states_h # (nc, bs, h, w, oc)
-        all_class_object_representations = tf.expand_dims(tf.concat(tf.unstack(all_class_object_representations, axis=0), axis=-1), axis=1) # (bs, 1, h, w, nc*oc)
+        # reshaped to (nc, 1, h, w, oc) -> (1, 1, h, w, nc*oc) for processing in ConvLSTM
+        all_class_object_representations = self.class_states_h # (nc, 1, h, w, oc)
+        all_class_object_representations = tf.expand_dims(tf.concat(tf.unstack(all_class_object_representations, axis=0), axis=-1), axis=1) # (1, 1, h, w, nc*oc)
 
         # get current general object states
-        current_general_states = [self.general_states_h[0], self.general_states_c[0]] # (bs, h, w, oc) x 2
+        current_general_states = [self.general_states_h[0], self.general_states_c[0]] # (1, h, w, oc) x 2
+
+        # tile states to match the batch size
+        current_general_states = [tf.tile(current_general_states[0], [self.batch_size, 1, 1, 1]), tf.tile(current_general_states[1], [self.batch_size, 1, 1, 1])]
 
         # apply the general ConvLSTM layer to get the updated general states
         _, new_general_state_h, new_general_state_c = self.conv_lstm_general(all_class_object_representations, initial_state=current_general_states) # (bs, h, w, oc) x 3
+
+        # reduce_mean new general states across the batch dimension to create single updated general state
+        new_general_state_h = tf.reduce_mean(new_general_state_h, axis=0, keepdims=True)
+        new_general_state_c = tf.reduce_mean(new_general_state_c, axis=0, keepdims=True)
 
         # update the general states
         general_update_h = tf.tensor_scatter_nd_update(self.general_states_h, [[0]], [new_general_state_h])
