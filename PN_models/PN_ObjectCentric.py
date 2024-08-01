@@ -48,7 +48,7 @@ class PredLayer(keras.Model):
         if not self.bottom_layer:
             self.target = Target(output_channels, layer_num=self.layer_num, name=f"Target_Layer{self.layer_num}")
         if self.bottom_layer and self.training_args['object_representations']:
-            self.object_representations = ObjectRepresentation(num_classes=4, batch_size=self.batch_size, im_height=self.im_height, im_width=self.im_width, output_channels=12, name=f"ObjectRepresentation_Layer{self.layer_num}")
+            self.object_representations = ObjectRepresentation(training_args, num_classes=4, batch_size=self.batch_size, im_height=self.im_height, im_width=self.im_width, output_channels=12, name=f"ObjectRepresentation_Layer{self.layer_num}")
         self.error = Error(layer_num=self.layer_num, name=f"Error_Layer{self.layer_num}")
         self.upsample = layers.UpSampling2D((2, 2), name=f"Upsample_Layer{self.layer_num}")
         self.last_frame = None
@@ -263,7 +263,7 @@ class PredNet(keras.Model):
                 recon_e_up = keras.backend.relu(reconstructed_image - original_image)
                 recon_error = keras.layers.Concatenate(axis=-1)([recon_e_down, recon_e_up])
                 recon_error = K.mean(K.batch_flatten(recon_error), axis=-1, keepdims=True)
-                total_prediction_errors = all_frame_errors + recon_error # (batch_size, 1)
+                total_prediction_errors = (1/2) * (recon_error  + 0.25*all_frame_errors) # (batch_size, 1), average of frame and reconstruction errors
 
             elif self.output_mode == "Error" and self.training_args["decompose_images"] and not self.training_args["second_stage"]:
                 total_prediction_errors = all_frame_errors
@@ -350,9 +350,8 @@ class PredNet(keras.Model):
         return paddings
 
 
-
 class CustomCNN(keras.layers.Layer):
-    def __init__(self, num_classes, num_conv_layers=3, *args, **kwargs):
+    def __init__(self, num_classes, num_conv_layers=3, trainable=True, *args, **kwargs):
         super(CustomCNN, self).__init__(*args, **kwargs)
         self.num_classes = num_classes
         self.num_conv_layers = num_conv_layers
@@ -371,8 +370,23 @@ class CustomCNN(keras.layers.Layer):
         self.dense1024 = Dense(1024, activation='relu')  # Logits output
         self.predictions = Dense(self.num_classes, activation=None)
 
+        # Set trainability
+        self.set_trainable(trainable)
+
+    def convert_to_binary(self, input_tensor):
+        # Assume input_tensor is your input of shape (BS, h, w, c)
+        # Create a mask where non-black pixels are set to 1 and black pixels are set to 0
+        mask = tf.reduce_sum(input_tensor, axis=-1, keepdims=True) > 0
+        
+        # Convert the mask to float
+        binary_image = tf.cast(mask, tf.float32)
+        
+        # Return the binary image with the same number of channels
+        return tf.tile(binary_image, [1, 1, 1, input_tensor.shape[-1]])
+    
     def call(self, inputs):
-        x = inputs
+        # Convert inputs (BS, 64, 64, 3) to x (BS, 64, 64, 3) with binary 0.0 or 1.0 values
+        x = self.convert_to_binary(inputs)
         for layer in self.conv_layers:
             x = layer(x)
         x = self.flatten(x)
@@ -380,6 +394,14 @@ class CustomCNN(keras.layers.Layer):
         pre_out = self.predictions(x)
         out = pre_out + tf.random.uniform(tf.shape(pre_out), 0, 1e-6) # Add noise to prevent zero logits
         return out
+
+    def set_trainable(self, trainable):
+        for layer in self.conv_layers:
+            layer.trainable = trainable
+        self.dense1024.trainable = trainable
+        self.predictions.trainable = trainable
+        print(f"Classifier trainability set to: {trainable}")
+
 class CustomMobileNetV2(tf.keras.layers.Layer):
     def __init__(self, num_classes, input_shape, **kwargs):
         super(CustomMobileNetV2, self).__init__(**kwargs)
@@ -395,8 +417,8 @@ class CustomMobileNetV2(tf.keras.layers.Layer):
         # Add custom layers on top of the base model
         self.global_avg_pool = GlobalAveragePooling2D()
         self.dense_1024 = Dense(1024, activation='relu')
-        self.batch_norm = BatchNormalization()
-        self.dropout = Dropout(0.5)
+        # self.batch_norm = BatchNormalization()
+        # self.dropout = Dropout(0.5)
         self.predictions = Dense(self.num_classes, activation=None)
     
     def compute_output_shape(self, input_shape):
@@ -404,9 +426,9 @@ class CustomMobileNetV2(tf.keras.layers.Layer):
 
     def call(self, inputs):
         # Convert RGB to Grayscale
-        # x = tf.image.rgb_to_grayscale(inputs)
-        # # Convert grayscale back to 3 channels by duplicating the single channel three times
-        # x = tf.image.grayscale_to_rgb(x)
+        x = tf.image.rgb_to_grayscale(inputs)
+        # Convert grayscale back to 3 channels by duplicating the single channel three times
+        x = tf.image.grayscale_to_rgb(x)
         x = self.base_model(inputs)
         x = self.global_avg_pool(x)
         x = self.dense_1024(x)
@@ -416,22 +438,46 @@ class CustomMobileNetV2(tf.keras.layers.Layer):
         out = pre_out + tf.random.uniform(tf.shape(pre_out), 0, 1e-6) # Add noise to prevent zero logits
         return out
 
+class CustomConvLSTM(keras.layers.Layer):
+    def __init__(self, output_channels, layer_num=0, *args, **kwargs):
+        super(CustomConvLSTM, self).__init__(*args, **kwargs)
+        self.output_channels = output_channels
+        self.layer_num = layer_num
+        self.conv_i = Conv2D(output_channels, (3, 3), padding="same", activation="hard_sigmoid", name=f"Conv_i_Layer{layer_num}")
+        self.conv_f = Conv2D(output_channels, (3, 3), padding="same", activation="hard_sigmoid", name=f"Conv_f_Layer{layer_num}")
+        self.conv_o = Conv2D(output_channels, (3, 3), padding="same", activation="hard_sigmoid", name=f"Conv_o_Layer{layer_num}")
+        self.conv_c = Conv2D(output_channels, (3, 3), padding="same", activation="tanh", name=f"Conv_c_Layer{layer_num}")
+
+    def call(self, inputs, initial_state=None):
+        inputs = tf.squeeze(inputs, axis=1)
+        i = self.conv_i(inputs)
+        f = self.conv_f(inputs)
+        o = self.conv_o(inputs)
+        h, c = initial_state if initial_state is not None else 2 * [tf.zeros(f.shape, dtype=tf.float32)]
+        c = f * c + i * self.conv_c(inputs)
+        h = o * keras.activations.tanh(c)
+        output = h
+        states = [h, c]
+        return output, h, c
 
 class ObjectRepresentation(layers.Layer):
     '''
     Convert images of object masks to class IDs, then update and extract the corresponding object representations
     '''
-    def __init__(self, num_classes, batch_size, im_height, im_width, output_channels, **kwargs):
+    def __init__(self, training_args, num_classes, batch_size, im_height, im_width, output_channels, **kwargs):
         super(ObjectRepresentation, self).__init__(**kwargs)
+        self.training_args = training_args
         self.num_classes = num_classes
         self.batch_size = batch_size
         self.im_height = im_height
         self.im_width = im_width
         self.output_channels = output_channels
-        self.conv_lstm_general = ConvLSTM2D(filters=output_channels, kernel_size=(3, 3), padding='same', return_sequences=False, return_state=True, stateful=False, name='conv_lstm_general')
-        self.conv_lstm_class = ConvLSTM2D(filters=output_channels, kernel_size=(3, 3), padding='same', return_sequences=False, return_state=True, stateful=False, name='conv_lstm_class')
-        self.classifier = CustomMobileNetV2(num_classes=4, input_shape=(self.im_height, self.im_width, 3))
-        # self.classifier = CustomCNN(num_classes=4)
+        # self.conv_lstm_general = ConvLSTM2D(filters=output_channels, kernel_size=(3, 3), padding='same', return_sequences=False, return_state=True, stateful=True, name='conv_lstm_general')
+        # self.conv_lstm_class = ConvLSTM2D(filters=output_channels, kernel_size=(3, 3), padding='same', return_sequences=False, return_state=True, stateful=True, name='conv_lstm_class')
+        self.conv_lstm_general = CustomConvLSTM(output_channels=output_channels, name='conv_lstm_general')
+        self.conv_lstm_class = CustomConvLSTM(output_channels=output_channels, name='conv_lstm_class')
+        # self.classifier = CustomMobileNetV2(num_classes=4, input_shape=(self.im_height, self.im_width, 3), name='classifier')
+        self.classifier = CustomCNN(num_classes=4, num_conv_layers=3, trainable=not self.training_args["load_outside_pretrained_classifier_weights"], name='classifier')
 
         self.class_states_h = self.add_weight(shape=(num_classes, batch_size, im_height, im_width, output_channels), initializer='zeros', trainable=False, name='class_state_h')
         self.class_states_c = self.add_weight(shape=(num_classes, batch_size, im_height, im_width, output_channels), initializer='zeros', trainable=False, name='class_state_c')
@@ -439,6 +485,7 @@ class ObjectRepresentation(layers.Layer):
         self.general_states_c = self.add_weight(shape=(1, batch_size, im_height, im_width, output_channels), initializer='zeros', trainable=False, name='general_state_c')
 
         self.predicted_class_IDs = []
+        self.plot_num = 0
 
 
     def diff_gather(self, params, logits, beta=3):
@@ -456,6 +503,7 @@ class ObjectRepresentation(layers.Layer):
         weighted_params = reshaped_weights * params
         weighted_sum = tf.reduce_sum(weighted_params, axis=0)
         return weighted_sum
+
 
     def diff_scatter_nd_update(self, A, B, logits, beta=1e10):
         """
@@ -533,9 +581,10 @@ class ObjectRepresentation(layers.Layer):
             Returns:
             penalty: (batch_size,)
             '''
-            probs = tf.nn.softmax(logits, axis=-1)
-            max_probs = tf.reduce_max(probs, axis=-1)
-            penalty = tf.reduce_sum(tf.square(max_probs - 1.0 / self.num_classes), axis=-1)
+            preds = tf.nn.softmax(logits*1e10, axis=-1) # (batch_size, num_predictions, num_classes)
+            predicted_class_counts = tf.reduce_sum(preds, axis=-2) # (batch_size, num_classes)
+            ideal_class_counts = tf.ones_like(predicted_class_counts) # (batch_size, num_classes)
+            penalty = tf.reduce_mean(tf.square(ideal_class_counts - predicted_class_counts), axis=-1)
             return penalty
 
         def non_zero_logits_penalty(logits):
@@ -554,10 +603,76 @@ class ObjectRepresentation(layers.Layer):
         zero_logits_penalty = non_zero_logits_penalty(all_logits)
         
         # Combine the losses, scaling the penalty term
-        total_loss = entropy_loss + 0.1 * distinct_class_penalty_loss
+        total_loss = entropy_loss + distinct_class_penalty_loss
 
         return total_loss
 
+
+    def plot_images_with_labels(self, images, labels, save_path='images_with_labels'):
+        """images shaped: (nc, h, w, 3) and labels shaped (nc, )"""
+        # Convert tensors to numpy arrays
+        images_np = images.numpy()
+        labels_np = labels.numpy()
+        
+        nc = images_np.shape[0]
+        
+        # Create a plot
+        plt.figure(figsize=(15, 15))
+        
+        for i in range(nc):
+            plt.subplot(1, nc, i + 1)
+            plt.imshow(images_np[i])
+            plt.title(labels_np[i])
+            plt.axis('off')
+        
+        # Save the plot to disk
+        plt.savefig(save_path+f'/{self.plot_num}.png')
+        self.plot_num += 1
+        plt.close()
+
+    
+    def process_valid_frame(self, frame, general_states_h):
+        # Only process the frame if it is not empty
+        # get updated general object representation (hidden general object state)
+        new_general_object_representation = general_states_h # (bs, 1, h, w, oc)
+
+        # concatenate the general object representation with the input
+        augmented_inputs = tf.concat([frame, new_general_object_representation], axis=-1) # (bs, 1, h, w, 3+oc)
+        
+        # classify the input frame to get the class logits predictions
+        class_logits = self.classifier(tf.squeeze(frame, axis=1)) # (bs, nc)
+        assert (class_logits.shape == (self.batch_size, self.num_classes) or class_logits.shape == (None, self.num_classes))
+
+        # get current class states
+        current_class_states = [self.diff_gather(self.class_states_h, class_logits), self.diff_gather(self.class_states_c, class_logits)] # (bs, h, w, oc)
+
+        # apply the shared class ConvLSTM layer to get the updated class states
+        class_output, new_class_state_h, new_class_state_c = self.conv_lstm_class(augmented_inputs, initial_state=current_class_states) # (bs, h, w, oc) x 3
+
+        # update the class states
+        class_update_h = self.diff_scatter_nd_update(self.class_states_h, new_class_state_h, class_logits)
+        class_update_c = self.diff_scatter_nd_update(self.class_states_c, new_class_state_c, class_logits)
+        
+        self.class_states_h.assign(class_update_h)
+        self.class_states_c.assign(class_update_c)
+
+        # append the class output to the list of output_class_tensors
+        # output_class_tensors.append(class_output)
+    
+        # print("Class output shape:", class_output.shape)
+        assert (class_output.shape == (self.batch_size, self.im_height, self.im_width, self.output_channels) or class_output.shape == (None, self.im_height, self.im_width, self.output_channels))
+
+        # append the class logits to the list of all_class_logits
+        # all_class_logits.append(class_logits)
+        return class_output, class_logits
+
+
+    def process_null_frame(self,):
+        # If the input frame is empty, set the class output to zero
+        class_output = tf.zeros((self.batch_size, self.im_height, self.im_width, self.output_channels), dtype=tf.float32)
+        class_logits = tf.zeros((self.batch_size, self.num_classes), dtype=tf.float32)
+        return class_output, class_logits
+    
 
     @tf.function
     def call(self, inputs):
@@ -588,49 +703,25 @@ class ObjectRepresentation(layers.Layer):
         output_class_tensors = []
         all_class_logits = []
         self.predicted_class_IDs = []
+        self.frames = tf.stack([inputs[0, 0, ..., i*3:(i+1)*3] for i in range(self.num_classes)]) # (nc, h, w, 3)
         for i in range(self.num_classes):
 
             frame = inputs[..., i*3:(i+1)*3] # (bs, 1, h, w, 3)
+            class_logits = None
 
-            # get updated general object representation (hidden general object state)
-            new_general_object_representation = tf.expand_dims(new_general_state_h, axis=1) # (bs, 1, h, w, oc)
-
-            # concatenate the general object representation with the input
-            augmented_inputs = tf.concat([frame, new_general_object_representation], axis=-1) # (bs, 1, h, w, 3+oc)
-            
-            # classify the input frame to get the class logits predictions
-            class_logits = self.classifier(tf.squeeze(frame, axis=1)) # (bs, nc)
-            assert (class_logits.shape == (self.batch_size, self.num_classes) or class_logits.shape == (None, self.num_classes))
-
-            # get current class states
-            current_class_states = [self.diff_gather(self.class_states_h, class_logits), self.diff_gather(self.class_states_c, class_logits)] # (bs, h, w, oc)
-
-            # apply the shared class ConvLSTM layer to get the updated class states
-            class_output, new_class_state_h, new_class_state_c = self.conv_lstm_class(augmented_inputs, initial_state=current_class_states) # (bs, h, w, oc) x 3
-
-            # update the class states
-            class_update_h = self.diff_scatter_nd_update(self.class_states_h, new_class_state_h, class_logits)
-            class_update_c = self.diff_scatter_nd_update(self.class_states_c, new_class_state_c, class_logits)
-            
-            self.class_states_h.assign(class_update_h)
-            self.class_states_c.assign(class_update_c)
-
-            # append the class output to the list of output_class_tensors
+            # Process the frame
+            class_output, class_logits = tf.cond(tf.reduce_sum(frame) > 0, lambda: self.process_valid_frame(frame, general_update_h), lambda: self.process_null_frame())
             output_class_tensors.append(class_output)
-            # print("Class output shape:", class_output.shape)
-            assert (class_output.shape == (self.batch_size, self.im_height, self.im_width, self.output_channels) or class_output.shape == (None, self.im_height, self.im_width, self.output_channels))
-
-            # append the class logits to the list of all_class_logits
             all_class_logits.append(class_logits)
             
             """Debugging 1/2 - check if classifier is working"""
-            val = tf.argmax(tf.nn.softmax(class_logits*1e10), axis=-1) # (bs,)
-            try:
-                # val = tf.squeeze(tf.convert_to_tensor(val))
-                self.predicted_class_IDs.append(val)
-            except Exception:
-                # Skip symbolic tensors
-                pass
+            if self.training_args["debug_model"]:
+                try:
+                    val = tf.argmax(tf.nn.softmax(class_logits*1e10), axis=-1) if class_logits is not None else tf.constant(-1, tf.int32)
+                    self.predicted_class_IDs.append(val)
+                except Exception:
+                    # Skip symbolic tensors
+                    pass
 
         # stack the class outputs to get the final output
         output = tf.concat(output_class_tensors, axis=-1)
@@ -640,12 +731,18 @@ class ObjectRepresentation(layers.Layer):
         # calculate the classification diversity loss
         all_class_logits = tf.stack(all_class_logits) # (np, bs, nc)
         assert (all_class_logits.shape == (self.num_classes, self.batch_size, self.num_classes) or all_class_logits.shape == (self.num_classes, None, self.num_classes))
-        classification_diversity_loss = self.calculate_classification_diversity_loss(all_class_logits)
+        classification_diversity_loss = self.calculate_classification_diversity_loss(all_class_logits) if not self.training_args["load_outside_pretrained_classifier_weights"] else tf.constant(0.0, shape=(self.batch_size, 1))
         
         """Debugging 2/2 - check if classifier is working"""
-        vals = tf.stack(self.predicted_class_IDs, axis=-1) # (bs, nc)
-        tf.print("vals:", vals, output_stream=sys.stdout)
-        # tf.print("shape:", vals.shape, output_stream=sys.stdout)
+        if self.training_args["debug_model"]:
+            try:
+                vals = tf.stack(self.predicted_class_IDs, axis=-1) # (bs, nc)
+                vals = tf.squeeze(vals) # (nc,)
+                # self.plot_images_with_labels(self.frames, vals)
+                tf.print("vals:", vals, output_stream=sys.stdout)
+            except Exception:
+                # Skip symbolic tensors
+                pass
 
         # return the class-specific object representations (hidden class states)
         return output, classification_diversity_loss

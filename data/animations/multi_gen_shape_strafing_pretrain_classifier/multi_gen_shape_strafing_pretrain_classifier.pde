@@ -24,8 +24,8 @@ boolean save_gif = false; // only set save_gif or save_frames to true, not both,
 boolean save_frames = true;
 boolean second_stage = true; // switches to white background and grey occlusions to sharpen up predictions
 
-boolean train_mode = false; // just flip this one to switch between train and test modes
-boolean val_mode = true; // overwrites train_mode (saves to different folder)
+boolean train_mode = true; // just flip this one to switch between train and test modes
+boolean val_mode = false; // overwrites train_mode (saves to different folder)
 boolean test_mode = false;
 boolean image_pairs = false; // if true, only two frames are generated before new shapes
 
@@ -51,11 +51,12 @@ void setup() {
   if (save_gif && save_frames) {println("Error: save_gif and save_frames cannot both be true."); exit();}
   if (test_mode && !second_stage) {println("Error: test mode must be second stage"); exit();}
   if (save_gif) {num_frames = 150; frame_rate = 200;}
-  else if (save_frames && train_mode && !image_pairs) {num_frames = 100000; frame_rate = 10000;} // deleteDirectory(new File(save_dir));}
+  else if (save_frames && train_mode && !image_pairs) {num_frames = 50000; frame_rate = 10000;} // deleteDirectory(new File(save_dir));}
   else if (save_frames && val_mode && !image_pairs) {num_frames = 10000; frame_rate = 10000;} // deleteDirectory(new File(save_dir));}
-  else if (save_frames && train_mode && image_pairs) {num_frames = 100000; frame_rate = 10000;} // deleteDirectory(new File(save_dir));}
+  else if (save_frames && train_mode && image_pairs) {num_frames = 50000; frame_rate = 10000;} // deleteDirectory(new File(save_dir));}
+  else if (save_frames && val_mode && image_pairs) {num_frames = 10000; frame_rate = 10000;} // deleteDirectory(new File(save_dir));}
   else if (save_frames && test_mode) {num_frames = 10000; frame_rate = 10000;} // deleteDirectory(new File(save_dir));}
-  else {num_frames = 1000; frame_rate = 1;}
+  else {num_frames = 1000; frame_rate = 2;}
   images = new PImage[num_frames];
 
   frameRate(frame_rate);
@@ -94,7 +95,7 @@ void draw() {
     float stroke = 0; 
     if (shapes.size() == 0) { 
       // Just add a cross to start
-      color c = color(random(1, 255), random(1, 255), random(1, 255));
+      color c = color(255, 0, 0); // red crosses
       float[] len_wid = get_len_wid(1.5);
       float len = len_wid[0];
       float wid = len_wid[1];
@@ -109,7 +110,7 @@ void draw() {
     }
     
     else if (shapes.get(shapes.size()-1).type == "ellipse") { 
-      color c = color(random(1, 255), random(1, 255), random(1, 255));
+      color c = color(255, 0, 0); // red crosses
       float[] len_wid = get_len_wid(1.5);
       float len = len_wid[0];
       float wid = len_wid[1];
@@ -124,7 +125,7 @@ void draw() {
     } 
     
     else {
-      color c = color(random(1, 255), random(1, 255), random(1, 255));
+      color c = color(0, 255, 0); // green ellipses
       float[] len_wid = get_len_wid(1);
       float len = len_wid[0];
       float wid = len_wid[1];
@@ -174,7 +175,7 @@ void draw() {
       if (second_stage == false) {
         occ_colors[i] = color(random(255), random(255), random(255));
       } else {
-        occ_colors[i] = color(127, 127, 127); // switch to gray occlusions for second stage
+        occ_colors[i] = color(0, 0, 255); // blue occlusions
       }
       fill(occ_colors[i]);
       strokeWeight(1 * (width / ws));
@@ -206,7 +207,8 @@ void draw() {
     else if (second_stage) {
       if (train_mode && !image_pairs) {saveFrame("frames/multi_gen_shape_2nd_stage_train/######.png");}
       else if (val_mode && !image_pairs) {saveFrame("frames/multi_gen_shape_2nd_stage_val/######.png");}
-      else if (train_mode && image_pairs) {saveFrame("frames/multi_gen_shape_2nd_stage_for_objects/######.png");}
+      else if (train_mode && image_pairs) {saveFrame("frames/multi_gen_shape_2nd_stage_for_objects_train/######.png");}
+      else if (val_mode && image_pairs) {saveFrame("frames/multi_gen_shape_2nd_stage_for_objects_val/######.png");}
       else if (test_mode && (num_shapes == 1)) {saveFrame("frames/multi_gen_shape_test_1shape/######.png");}
       else if (test_mode && (num_shapes == 2)) {saveFrame("frames/multi_gen_shape_2nd_stage_test/######.png");}
     }

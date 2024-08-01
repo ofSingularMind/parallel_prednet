@@ -18,6 +18,7 @@ def main(args):
         import keras
         import tensorflow as tf
         from data_utils import IntermediateEvaluations, create_dataset_from_generator, create_dataset_from_serialized_generator, sequence_dataset_creator, SequenceDataLoader
+
         from keras.callbacks import LearningRateScheduler, ModelCheckpoint, TensorBoard
         import matplotlib.pyplot as plt
 
@@ -40,6 +41,10 @@ def main(args):
                 print("Baseline PredNet does not use decomposed images or object representations, disabling both.")
                 args["decompose_images"] = False
                 args["object_representations"] = False
+        if args["object_representations"]:
+            args["batch_size"] = 1
+            args["include_frame"] = False
+            print("Object representations are being used, batch size is set to 1. Not predicting last frame either.")
         if args["decompose_images"]:
             args["output_channels"][0] = 12 # We constrain to the SSM dataset and four object images
             if args["include_frame"]:
@@ -74,8 +79,8 @@ def main(args):
         
         # Always 2nd stage training for object-centric model because the random backgrounds are applied at decomposition time
         stage = ("2nd_stage" if args["second_stage"] else "1st_stage") if args["model_choice"] == "baseline" else "2nd_stage"
-        train_dataset, train_size = SequenceDataLoader(args, DATA_DIR + f"multi_gen_shape_strafing/frames/multi_gen_shape_{stage}_train", nt, batch_size, im_shape[0], im_shape[1], im_shape[2], True, True).create_tf_dataset()
-        val_dataset, val_size = SequenceDataLoader(args, DATA_DIR + f"multi_gen_shape_strafing/frames/multi_gen_shape_{stage}_val", nt, batch_size, im_shape[0], im_shape[1], im_shape[2], True, True).create_tf_dataset()
+        train_dataset, train_size = SequenceDataLoader(args, DATA_DIR + f"multi_gen_shape_strafing/frames/multi_gen_shape_{stage}_train", nt, batch_size, im_shape[0], im_shape[1], im_shape[2], True, args["include_frame"]).create_tf_dataset()
+        val_dataset, val_size = SequenceDataLoader(args, DATA_DIR + f"multi_gen_shape_strafing/frames/multi_gen_shape_{stage}_val", nt, batch_size, im_shape[0], im_shape[1], im_shape[2], True, args["include_frame"]).create_tf_dataset()
         # test_dataset, test_size = SequenceDataLoader(args, DATA_DIR + "multi_gen_shape_strafing/frames/multi_gen_shape_2nd_stage_test", nt, batch_size, im_shape[0], im_shape[1], im_shape[2]).create_tf_dataset()
 
         print(f"Working on dataset: {args['dataset']} - {args['data_subset']} {'1st Stage' if not args['second_stage'] else '2nd Stage'}")
@@ -95,6 +100,8 @@ def main(args):
             from PN_models.PN_ObjectCentric import PredNet
             if args["object_representations"]:
                 print("*** Using the Object-Centric PredNet; Decomposing & classifying inputs, and maintaining & applying object representations ***")
+                if args["pretrain_classifier"]:
+                    from PN_models.PN_ObjectCentric import BatchDataLoader_pretrainC
             else:
                 print("*** Using the Object-Centric PredNet; Decomposing inputs ***")
         else:
@@ -104,39 +111,28 @@ def main(args):
         ##########DEBUG MODE###############
         ###################################
         if args["debug_model"]:
-            PN = PredNet(args, im_height=im_shape[0], im_width=im_shape[1])
-            # Ensure the model is built by calling it on a sample input or compiling it
-            PN.compile(optimizer='adam', loss='mean_squared_error')  # Example optimizer and loss
+            # PN = PredNet(args, im_height=im_shape[0], im_width=im_shape[1])
+            # # Ensure the model is built by calling it on a sample input or compiling it
+            # PN.compile(optimizer='adam', loss='mean_squared_error')  # Example optimizer and loss
 
-            # Create a TensorFlow function for optimized execution
             # @tf.function
             def debug_step(x, y):
                 with tf.GradientTape() as tape:
-                    predictions = PN(x, training=True)  # Get model predictions
-                    loss = tf.reduce_mean(tf.square(predictions - y))  # Calculate loss (example)
-                # gradients = tape.gradient(loss, PN.trainable_variables)
-                # Debugging outputs
-                tf.print("Loss:", loss)
-                # for grad in gradients:
-                #     tf.print("Gradient norm:", tf.norm(grad))
-
-            # Iterate over the dataset
-            for x, y in train_dataset:
-                debug_step(x, y)
+                    predictions = PN(x, training=True)
         ###################################
         ##########END DEBUG MODE###########
         ###################################
         
-        else:
+        # else:
             # Create PredNet with animation specific input shapes
-            inputs = keras.Input(shape=(nt, im_shape[0], im_shape[1], im_shape[2]), batch_size=batch_size)
-            PN = PredNet(args, im_height=im_shape[0], im_width=im_shape[1])
-            outputs = PN(inputs)
-            PN = keras.Model(inputs=inputs, outputs=outputs)
+        inputs = keras.Input(shape=(nt, im_shape[0], im_shape[1], im_shape[2]), batch_size=batch_size)
+        PN = PredNet(args, im_height=im_shape[0], im_width=im_shape[1])
+        outputs = PN(inputs)
+        PN = keras.Model(inputs=inputs, outputs=outputs)
         
         # Finalize model
         resos = PN.layers[-1].resolutions
-        PN.compile(optimizer="adam", loss="mean_squared_error")
+        PN.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), loss="mean_squared_error")
         print("PredNet compiled...")
         PN.build(input_shape=(batch_size, nt) + im_shape)
         print(PN.summary())
@@ -154,30 +150,47 @@ def main(args):
             weights_file_name = "objectCentric_weights.hdf5"
         elif args["model_choice"] == "object_centric" and args["object_representations"]:
             weights_file_name = "objectCentric_withObjectRepresentations_weights.hdf5"
+            classifier_weights_file_name = "OCPN_wOR_Classifier_weights.npz"
         weights_file = os.path.join(WEIGHTS_DIR, weights_file_name)
         # Define where weights will be saved with results
         results_weights_file = os.path.join(RESULTS_SAVE_DIR, "tensorflow_weights/" + weights_file_name)
         # Remove weights file if restarting training. Previous weights can still be found with the results
-        if args["restart_training"] and training_it == 0:
-            if os.path.exists(weights_file):
-                os.remove(weights_file)
+        if args["restart_training"]:
+            # if os.path.exists(weights_file):
+                # os.remove(weights_file)
             print("Restarting training from scratch")
         # load previously saved weights
-        if os.path.exists(weights_file):
-            try: 
-                PN.load_weights(weights_file)
-                print("Weights loaded successfully - continuing training from last epoch")
-            except: 
-                os.remove(weights_file) # model architecture has changed, so weights cannot be loaded
-                print("Weights don't fit - restarting training from scratch")
-        else: print("No weights found - starting training from scratch") if not args["restart_training"] else None
+        else:
+            print("Loading weights...")
+            if os.path.exists(weights_file):
+                try: 
+                    PN.load_weights(weights_file)
+                    print("PN model weights loaded successfully - continuing training from last epoch")
+                except: 
+                    # os.remove(weights_file) # model architecture has changed, so weights cannot be loaded
+                    print("PN model weights don't fit - restarting training from scratch")
+            else: print("No PN model weights found - starting training from scratch") if not args["restart_training"] else None
+        if args["load_outside_pretrained_classifier_weights"] and args["object_representations"]:
+            if os.path.exists(os.path.join(WEIGHTS_DIR, classifier_weights_file_name)):
+                try:
+                    # custom_objects = {'dummy_model': dummy_model}
+                    # trained_classifier_weights = keras.models.load_model(os.path.join(WEIGHTS_DIR, classifier_weights_file_name), custom_objects=custom_objects).layers[1].layers[0].classifier.get_weights()
+                    trained_classifier_weights = np.load(os.path.join(WEIGHTS_DIR, classifier_weights_file_name), allow_pickle=True)
+                    trained_classifier_weights = [trained_classifier_weights[key] for key in trained_classifier_weights.keys()]
+                    un_trained_classifier = PN.layers[1].layers[0].layers[2].classifier
+                    un_trained_classifier.set_weights(trained_classifier_weights)
+                    print("Pre-trained Classifier weights loaded successfully")
+                except:
+                    print("Pre-trained Classifier weights don't fit... better fix it")
+            else:
+                print("No classifier weights found - starting training from scratch")
 
 
         """Training Setup"""
         print(f"Training iteration {training_it+1} of {args['num_iterations']}")
 
         def lr_schedule(epoch):
-            if training_it == 0:
+            if (training_it+1) == 1:
                 # First stage training
                 if epoch == 0:
                     return args["learning_rates"][0]
@@ -185,7 +198,7 @@ def main(args):
                     return args["learning_rates"][1]
                 else:
                     return args["learning_rates"][2]
-            elif training_it == 1:
+            elif (training_it+1) == 2:
                 # Second stage training, first iteration
                 if epoch < args["nb_epoch"] // 3:
                     return args["learning_rates"][2]
@@ -196,17 +209,54 @@ def main(args):
             else:
                 # Second stage training, remaining iterations
                 return args["learning_rates"][4]
+        
+        # class CustomLRScheduler(tf.keras.callbacks.Callback):
+        #     def __init__(self, patience=3, min_delta=0.01, factor=0.5, min_lr=1e-6):
+        #         super(CustomLRScheduler, self).__init__()
+        #         self.patience = patience
+        #         self.min_delta = min_delta
+        #         self.factor = factor
+        #         self.min_lr = min_lr
+        #         self.val_losses = []
+        #         self.new_lr = 0.001
+
+        #     def on_epoch_end(self, epoch, lr, logs=None):
+        #         current_val_loss = logs.get('val_loss')
+        #         self.val_losses.append(current_val_loss)
+                
+        #         if len(self.val_losses) > self.patience:
+        #             recent_losses = self.val_losses[-self.patience-1:-1]
+        #             avg_recent_loss = np.mean(recent_losses)
+        #             if (recent_losses[-1] - avg_recent_loss) / avg_recent_loss > -self.min_delta:
+        #                 self.new_lr = max(self.factor * float(tf.keras.backend.get_value(self.model.optimizer.learning_rate)), self.min_lr)
+        #                 tf.keras.backend.set_value(self.model.optimizer.learning_rate, self.new_lr)
+        #                 tf.print(f"\nEpoch {epoch+1}: reducing learning rate to {self.new_lr}.")
+
+        # custom_lr_scheduler = CustomLRScheduler(patience=3, min_delta=0.01, factor=0.5, min_lr=1e-6)
+        # def pass_lr(epoch, lr):
+        #     return custom_lr_scheduler.new_lr
 
         callbacks = [LearningRateScheduler(lr_schedule)]
         if save_model:
             if not os.path.exists(WEIGHTS_DIR): os.makedirs(WEIGHTS_DIR, exist_ok=True)
-            callbacks.append(ModelCheckpoint(filepath=weights_file, monitor="val_loss", save_best_only=True, save_weights_only=True))
+            callbacks.append(ModelCheckpoint(filepath=weights_file, monitor="val_loss", save_best_only=True, save_weights_only=True, verbose=1))
             callbacks.append(ModelCheckpoint(filepath=results_weights_file, monitor="val_loss", save_best_only=True, save_weights_only=True))
         if plot_intermediate:
             callbacks.append(IntermediateEvaluations(args, data_dirs, val_dataset, val_size, batch_size=batch_size, nt=nt, output_channels=output_channels, dataset=args["dataset"], model_choice=args["model_choice"], iteration=training_it+1))
         if tensorboard:
             callbacks.append(TensorBoard(log_dir=LOG_DIR, histogram_freq=1, write_graph=True, write_images=False))
 
+        ###################################
+        ##########DEBUG MODE###############
+        ###################################
+        if args["debug_model"]:
+            # Iterate over the dataset
+            for x, y in train_dataset:
+                debug_step(x, y)
+        ###################################
+        ##########END DEBUG MODE###########
+        ###################################
+        
         history = PN.fit(train_dataset, steps_per_epoch=sequences_per_epoch_train, epochs=nb_epoch, callbacks=callbacks, 
                             validation_data=val_dataset, validation_steps=sequences_per_epoch_val)
 
@@ -221,11 +271,11 @@ if __name__ == "__main__":
 
     # Tuning args
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
-    parser.add_argument("--sequences_per_epoch_train", type=int, default=300, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_train", type=int, default=100, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=10, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
-    parser.add_argument("--batch_size", type=int, default=10, help="batch size")
-    parser.add_argument("--nb_epoch", type=int, default=3, help="number of epochs")
-    parser.add_argument("--second_stage", type=bool, default=False, help="utilize 2nd stage training data even for first iteration through dataset")
+    parser.add_argument("--batch_size", type=int, default=1, help="batch size")
+    parser.add_argument("--nb_epoch", type=int, default=1000, help="number of epochs")
+    parser.add_argument("--second_stage", type=bool, default=True, help="utilize 2nd stage training data even for first iteration through dataset")
 
     # Model args
     parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels. Decompose turns bottom 3 channels to 12. Including original frame adds 3 channels.")
@@ -233,7 +283,7 @@ if __name__ == "__main__":
     parser.add_argument("--resize_images", type=bool, default=False, help="whether or not to downscale images prior to training")
     parser.add_argument("--decompose_images", type=bool, default=True, help="whether or not to decompose images for training")
     parser.add_argument("--include_frame", type=bool, default=True, help="whether or not to include the original frame stacked with the decomposed images for training")
-    parser.add_argument("--object_representations", type=bool, default=False, help="whether or not to use object representations as input to Rep unit")
+    parser.add_argument("--object_representations", type=bool, default=True, help="whether or not to use object representations as input to Rep unit")
     parser.add_argument("--training_split", type=float, default=1, help="proportion of data for training (only for monkaa)")
 
     # Training args
@@ -242,8 +292,9 @@ if __name__ == "__main__":
     parser.add_argument("--restart_training", type=bool, default=False, help="whether or not to delete weights and restart")
     parser.add_argument("--reserialize_dataset", type=bool, default=True, help="reserialize dataset")
     parser.add_argument("--output_mode", type=str, default="Error", help="Error, Predictions, or Error_Images_and_Prediction. Only trains on Error.")
-    parser.add_argument("--learning_rates", nargs="+", type=int, default=[3e-3, 1e-3, 5e-4, 2e-4, 5e-5], help="learning rates for each stage of training")
+    parser.add_argument("--learning_rates", nargs="+", type=int, default=[3e-3, 1e-3, 1e-3, 5e-4, 2e-4], help="learning rates for each stage of training")
     parser.add_argument("--pretrain_classifier", type=bool, default=False, help="this will zero out the prediction errors, and focus on the classification diversity loss")
+    parser.add_argument("--load_outside_pretrained_classifier_weights", type=bool, default=True, help="this will zero out the prediction errors, and focus on the classification diversity loss")
     parser.add_argument("--debug_model", type=bool, default=False, help="this will bypass model.fit and instead feed data through the model to debug the model")
 
     # Structure args
@@ -253,7 +304,7 @@ if __name__ == "__main__":
     parser.add_argument("--data_subset", type=str, default="multiShape", help="provide descriptive name for results and weights")
     parser.add_argument("--dataset_size", type=int, default=100000, help="total number of images in data dir")
     parser.add_argument("--num_iterations", type=int, default=8, help="number of iterations through the dataset")
-    parser.add_argument("--restart_teration", type=int, default=2, help="In case training crashes, restart from this iteration (# of total_#) 0&1 are both start")
+    parser.add_argument("--restart_teration", type=int, default=2, help="In case training crashes, restart from this iteration (# of total_#) 0&1 are both start. 2 skips 1st stage")
     parser.add_argument("--SSM_im_shape", nargs="+", type=int, default=[64, 64], help="output channels")
     """
     Avaialble dataset/data_subset arg combinations:
