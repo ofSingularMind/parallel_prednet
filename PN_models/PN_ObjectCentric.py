@@ -479,10 +479,10 @@ class ObjectRepresentation(layers.Layer):
         # self.classifier = CustomMobileNetV2(num_classes=4, input_shape=(self.im_height, self.im_width, 3), name='classifier')
         self.classifier = CustomCNN(num_classes=4, num_conv_layers=3, trainable=not self.training_args["load_outside_pretrained_classifier_weights"], name='classifier')
 
-        self.class_states_h = self.add_weight(shape=(num_classes, 1, im_height, im_width, output_channels), initializer='zeros', trainable=False, name='class_state_h')
-        self.class_states_c = self.add_weight(shape=(num_classes, 1, im_height, im_width, output_channels), initializer='zeros', trainable=False, name='class_state_c')
         self.general_states_h = self.add_weight(shape=(1, 1, im_height, im_width, output_channels), initializer='zeros', trainable=False, name='general_state_h')
         self.general_states_c = self.add_weight(shape=(1, 1, im_height, im_width, output_channels), initializer='zeros', trainable=False, name='general_state_c')
+        self.class_states_h = self.add_weight(shape=(num_classes, 1, im_height, im_width, output_channels), initializer='zeros', trainable=False, name='class_state_h')
+        self.class_states_c = self.add_weight(shape=(num_classes, 1, im_height, im_width, output_channels), initializer='zeros', trainable=False, name='class_state_c')
 
         self.predicted_class_IDs = []
         self.plot_num = 0

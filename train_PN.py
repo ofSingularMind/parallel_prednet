@@ -44,7 +44,7 @@ def main(args):
         if args["object_representations"]:
             # args["batch_size"] = 1
             args["include_frame"] = False
-            print("Object representations are being used, batch size is set to 1. Not predicting last frame either.")
+            print("Object representations are being used. Not predicting last frame either.")
         if args["decompose_images"]:
             args["output_channels"][0] = 12 # We constrain to the SSM dataset and four object images
             if args["include_frame"]:
@@ -146,9 +146,11 @@ def main(args):
         # Define where weights will be loaded/saved
         if args["model_choice"] == "baseline":
             weights_file_name = "baseline_weights.hdf5"
-        elif args["model_choice"] == "object_centric" and not args["object_representations"]:
+        elif args["model_choice"] == "object_centric" and not args["object_representations"] and not args["include_frame"]:
             weights_file_name = "objectCentric_weights.hdf5"
-        elif args["model_choice"] == "object_centric" and args["object_representations"]:
+        elif args["model_choice"] == "object_centric" and not args["object_representations"] and args["include_frame"]:
+            weights_file_name = "objectCentric_weights_includeFrame.hdf5"
+        elif args["model_choice"] == "object_centric" and args["object_representations"] and not args["include_frame"]:
             weights_file_name = "objectCentric_withObjectRepresentations_weights.hdf5"
             classifier_weights_file_name = "OCPN_wOR_Classifier_weights.npz"
         weights_file = os.path.join(WEIGHTS_DIR, weights_file_name)
@@ -271,10 +273,10 @@ if __name__ == "__main__":
 
     # Tuning args
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
-    parser.add_argument("--sequences_per_epoch_train", type=int, default=125, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_train", type=int, default=100, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=10, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
-    parser.add_argument("--batch_size", type=int, default=4, help="batch size")
-    parser.add_argument("--nb_epoch", type=int, default=200, help="number of epochs")
+    parser.add_argument("--batch_size", type=int, default=10, help="batch size")
+    parser.add_argument("--nb_epoch", type=int, default=50, help="number of epochs")
     parser.add_argument("--second_stage", type=bool, default=True, help="utilize 2nd stage training data even for first iteration through dataset")
 
     # Model args
@@ -283,7 +285,7 @@ if __name__ == "__main__":
     parser.add_argument("--resize_images", type=bool, default=False, help="whether or not to downscale images prior to training")
     parser.add_argument("--decompose_images", type=bool, default=True, help="whether or not to decompose images for training")
     parser.add_argument("--include_frame", type=bool, default=True, help="whether or not to include the original frame stacked with the decomposed images for training")
-    parser.add_argument("--object_representations", type=bool, default=True, help="whether or not to use object representations as input to Rep unit")
+    parser.add_argument("--object_representations", type=bool, default=False, help="whether or not to use object representations as input to Rep unit")
     parser.add_argument("--training_split", type=float, default=1, help="proportion of data for training (only for monkaa)")
 
     # Training args
@@ -292,7 +294,7 @@ if __name__ == "__main__":
     parser.add_argument("--restart_training", type=bool, default=False, help="whether or not to delete weights and restart")
     parser.add_argument("--reserialize_dataset", type=bool, default=True, help="reserialize dataset")
     parser.add_argument("--output_mode", type=str, default="Error", help="Error, Predictions, or Error_Images_and_Prediction. Only trains on Error.")
-    parser.add_argument("--learning_rates", nargs="+", type=int, default=[3e-3, 1e-3, 1e-3, 5e-4, 2e-4], help="learning rates for each stage of training")
+    parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-3, 1e-3, 1e-3, 5e-4, 1e-4], help="learning rates for each stage of training")
     parser.add_argument("--pretrain_classifier", type=bool, default=False, help="this will zero out the prediction errors, and focus on the classification diversity loss")
     parser.add_argument("--load_outside_pretrained_classifier_weights", type=bool, default=True, help="this will zero out the prediction errors, and focus on the classification diversity loss")
     parser.add_argument("--debug_model", type=bool, default=False, help="this will bypass model.fit and instead feed data through the model to debug the model")
