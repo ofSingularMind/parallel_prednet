@@ -16,13 +16,13 @@ color[] occ_colors = new color[num_occlusions];
 float[] occ_rot = new float[num_occlusions];
 boolean rand_occlusions = true;
 int ws = 64;
-int image_pairs_interval = 1;
+int image_pairs_interval = 2;
 
 String rand_background = "pixels"; // can be "pixels", "whole", "white"
 
 boolean save_gif = false; // only set save_gif or save_frames to true, not both, or both to false
-boolean save_frames = true;
-boolean second_stage = false; // switches to white background and grey occlusions to sharpen up predictions
+boolean save_frames = false;
+boolean second_stage = true; // switches to white background and grey occlusions to sharpen up predictions
 
 boolean train_mode = true; // just flip this one to switch between train and test modes
 boolean val_mode = false; // overwrites train_mode (saves to different folder)
@@ -53,9 +53,9 @@ void setup() {
   if (save_gif) {num_frames = 150; frame_rate = 200;}
   else if (save_frames && train_mode && !image_pairs) {num_frames = 100000; frame_rate = 10000;} // deleteDirectory(new File(save_dir));}
   else if (save_frames && val_mode && !image_pairs) {num_frames = 10000; frame_rate = 10000;} // deleteDirectory(new File(save_dir));}
-  else if (save_frames && train_mode && image_pairs) {num_frames = 100000; frame_rate = 10000;} // deleteDirectory(new File(save_dir));}
+  else if (save_frames && train_mode && image_pairs) {num_frames = 10000; frame_rate = 10000;} // deleteDirectory(new File(save_dir));}
   else if (save_frames && test_mode) {num_frames = 10000; frame_rate = 10000;} // deleteDirectory(new File(save_dir));}
-  else {num_frames = 1000; frame_rate = 1;}
+  else {num_frames = 1000; frame_rate = 7;}
   images = new PImage[num_frames];
 
   frameRate(frame_rate);
@@ -100,7 +100,7 @@ void draw() {
       float wid = len_wid[1];
       if (image_pairs) {
         x = random(width*0.1, width*0.9);
-        y = random(height*0.1, height*1.15);
+        y = random(height*0.1, height*0.9);
       } else {
         x = random(width*0.1, width*0.9);
         y = random(height*0.1, height*0.5);
@@ -114,7 +114,7 @@ void draw() {
       float len = len_wid[0];
       float wid = len_wid[1];
       if (image_pairs) {
-        x = random(width*0.1, width*1.15);
+        x = random(width*0.1, width*0.9);
         y = random(height*0.1, height*0.9);
       } else {
         x = random(width*0.1, width*0.5);
@@ -206,9 +206,12 @@ void draw() {
     else if (second_stage) {
       if (train_mode && !image_pairs) {saveFrame("frames/multi_gen_shape_2nd_stage_train/######.png");}
       else if (val_mode && !image_pairs) {saveFrame("frames/multi_gen_shape_2nd_stage_val/######.png");}
-      else if (train_mode && image_pairs) {saveFrame("frames/multi_gen_shape_2nd_stage_for_objects/######.png");}
-      else if (test_mode && (num_shapes == 1)) {saveFrame("frames/multi_gen_shape_test_1shape/######.png");}
-      else if (test_mode && (num_shapes == 2)) {saveFrame("frames/multi_gen_shape_2nd_stage_test/######.png");}
+      else if (test_mode && !image_pairs) {saveFrame("frames/multi_gen_shape_2nd_stage_test/######.png");}
+      else if (train_mode && image_pairs) {saveFrame("frames/multi_gen_shape_2nd_stage_image_pairs_train/######.png");}
+      else if (val_mode && image_pairs) {saveFrame("frames/multi_gen_shape_2nd_stage_image_pairs_val/######.png");}
+      else if (test_mode && image_pairs) {saveFrame("frames/multi_gen_shape_2nd_stage_image_pairs_test/######.png");}
+      // else if (test_mode && (num_shapes == 1)) {saveFrame("frames/multi_gen_shape_test_1shape/######.png");}
+      // else if (test_mode && (num_shapes == 2)) {saveFrame("frames/multi_gen_shape_2nd_stage_test/######.png");}
     }
     else {println("Error: train_mode and test_mode not defined."); exit();}
     if (frameCount == num_frames) {

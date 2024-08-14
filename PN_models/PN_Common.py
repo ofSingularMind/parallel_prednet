@@ -29,7 +29,7 @@ class Prediction(keras.layers.Layer):
         super().__init__(*args, **kwargs)
         self.output_channels = output_channels
         self.layer_num = layer_num
-        self.conv_layer = layers.Conv2D(self.output_channels, (3, 3), padding="same", activation=activation, name=f"Prediction_Conv_Layer{layer_num}")
+        self.conv_layer = layers.Conv2D(self.output_channels, (7, 7), padding="same", activation=activation, name=f"Prediction_Conv_Layer{layer_num}")
 
     def call(self, inputs):
         return self.conv_layer(inputs)

@@ -6,6 +6,7 @@ import numpy as np
 import os
 import warnings
 from PN_models.PN_Common import Target, Prediction, Error, Representation
+from PN_models.PN_ObjectCentric import unet_attention
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -37,10 +38,16 @@ class PredLayer(keras.Model):
             self.target = Target(output_channels, layer_num=self.layer_num, name=f"Target_Layer{self.layer_num}")
         self.error = Error(layer_num=self.layer_num, name=f"Error_Layer{self.layer_num}")
         self.upsample = layers.UpSampling2D((2, 2), name=f"Upsample_Layer{self.layer_num}")
+        
+        # if self.training_args['top_down_attention'] and not self.top_layer:
+        #     self.attention = unet_attention((self.im_height, self.im_width, self.training_args["output_channels"][layer_num+1]), self.output_channels)
+        # else:
+        #     self.attention = None
 
     def initialize_states(self, batch_size):
         # Initialize internal layer states
         self.states["R"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
+        # self.states["R_out"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
         self.states["P_M"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
         self.states["P"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
         self.states["T"] = tf.zeros((batch_size, self.im_height, self.im_width, self.output_channels))
@@ -65,18 +72,35 @@ class PredLayer(keras.Model):
         if direction == "top_down":
             # UPDATE REPRESENTATION
             if self.top_layer:
+                # R_inp = keras.layers.Concatenate()([self.states["E"], self.states["R"], self.states["R_out"]])
                 R_inp = keras.layers.Concatenate()([self.states["E"], self.states["R"]])
             else:
                 self.states["TD_inp"] = self.upsample(inputs[1])
                 self.states["TD_inp"] = keras.layers.ZeroPadding2D(paddings)(self.states["TD_inp"])
+
+                # if self.attention:
+                #     R_inp = keras.layers.Concatenate()([self.states["E"], self.states["R"], self.states["R"] * self.attention(self.states["TD_inp"]), self.states["TD_inp"]])
+                # else:
+                # R_inp = keras.layers.Concatenate()([self.states["E"], self.states["R"], self.states["R_out"], self.states["TD_inp"]])
                 R_inp = keras.layers.Concatenate()([self.states["E"], self.states["R"], self.states["TD_inp"]])
+
 
             if self.states["lstm"] is None:
                 self.states["R"], self.states["lstm"] = self.representation(R_inp)
             else:
                 self.states["R"], self.states["lstm"] = self.representation(R_inp, initial_states=self.states["lstm"])
 
+            # C1 = tf.expand_dims(self.states["R"][..., -2], axis=-1)
+            # B = tf.expand_dims(self.states["R"][..., -1], axis=-1)
+
+            # self.states["R_out"] = self.states["R"][..., :-2] * C1 + B
+
             # FORM PREDICTION(S)
+            # if self.attention:
+            #     P_inp = keras.layers.Concatenate()([self.states["R"], self.states["R"] * self.attention(self.states["TD_inp"])])
+            #     self.states["P"] = K.minimum(self.prediction(P_inp), self.pixel_max) if self.bottom_layer else self.prediction(P_inp)
+            # else:
+            # self.states["P"] = K.minimum(self.prediction(self.states["R_out"]), self.pixel_max) if self.bottom_layer else self.prediction(self.states["R_out"])
             self.states["P"] = K.minimum(self.prediction(self.states["R"]), self.pixel_max) if self.bottom_layer else self.prediction(self.states["R"])
 
         elif direction == "bottom_up":

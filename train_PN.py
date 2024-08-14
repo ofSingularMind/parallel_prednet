@@ -44,16 +44,11 @@ def main(args):
         if args["object_representations"]:
             # args["batch_size"] = 1
             args["include_frame"] = False
-            print("Object representations are being used. Not predicting last frame either.")
         if args["decompose_images"]:
             args["output_channels"][0] = 12 # We constrain to the SSM dataset and four object images
             if args["include_frame"]:
                 args["output_channels"][0] += 3 # Add the original frame channels
-        if args["pretrain_classifier"]:
-            args["output_channels"] = args["output_channels"][:1] # Just need the bottom layer
-            # args["nt"] = 1
-            # args["batch_size"] = args["batch_size"] * 16
-            # args["sequences_per_epoch_train"] = args["sequences_per_epoch_train"] // 16
+        if args["pretrain_latent_lpn"]:
             plot_intermediate = False
         nt = args["nt"]  # number of time steps
         nb_epoch = args["nb_epoch"]  # 150
@@ -94,37 +89,21 @@ def main(args):
         # PICK MODEL
         if args["model_choice"] == "baseline":
             from PN_models.PN_Baseline import PredNet
-            print("*** Using Baseline PredNet ***")
-        elif args["model_choice"] == "object_centric":
-            assert args["decompose_images"], "Object-Centric PredNet requires images to be decomposed"
-            from PN_models.PN_ObjectCentric import PredNet
-            if args["object_representations"]:
-                print("*** Using the Object-Centric PredNet; Decomposing & classifying inputs, and maintaining & applying object representations ***")
-                if args["pretrain_classifier"]:
-                    from PN_models.PN_ObjectCentric import BatchDataLoader_pretrainC
+            if args["top_down_attention"]:
+                print("*** Using the Baseline PredNet with attention ***")
             else:
+                print("*** Using Baseline PredNet ***")
+
+        elif args["model_choice"] == "object_centric":
+            # assert args["decompose_images"], "Object-Centric PredNet requires images to be decomposed"
+            from PN_models.PN_ObjectCentric import PredNet
+            if args["object_representations"] and args["decompose_images"]:
+                print("*** Using the Object-Centric PredNet; Decomposing & classifying inputs, and maintaining & applying object representations ***")
+            elif args["decompose_images"]:
                 print("*** Using the Object-Centric PredNet; Decomposing inputs ***")
         else:
             raise ValueError("Invalid model choice")
         
-        ###################################
-        ##########DEBUG MODE###############
-        ###################################
-        if args["debug_model"]:
-            # PN = PredNet(args, im_height=im_shape[0], im_width=im_shape[1])
-            # # Ensure the model is built by calling it on a sample input or compiling it
-            # PN.compile(optimizer='adam', loss='mean_squared_error')  # Example optimizer and loss
-
-            # @tf.function
-            def debug_step(x, y):
-                with tf.GradientTape() as tape:
-                    predictions = PN(x, training=True)
-        ###################################
-        ##########END DEBUG MODE###########
-        ###################################
-        
-        # else:
-            # Create PredNet with animation specific input shapes
         inputs = keras.Input(shape=(nt, im_shape[0], im_shape[1], im_shape[2]), batch_size=batch_size)
         PN = PredNet(args, im_height=im_shape[0], im_width=im_shape[1])
         outputs = PN(inputs)
@@ -132,20 +111,30 @@ def main(args):
         
         # Finalize model
         resos = PN.layers[-1].resolutions
-        PN.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), loss="mean_squared_error")
+        PN.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001, clipnorm=1.0), loss="mean_squared_error")
         print("PredNet compiled...")
-        PN.build(input_shape=(batch_size, nt) + im_shape)
-        print(PN.summary())
-        num_layers = len(output_channels)  # number of layers in the architecture
-        print(f"{num_layers} PredNet layers with resolutions:")
-        for i in reversed(range(num_layers)):
-            print(f"Layer {i+1}:  {resos[i][0]} x {resos[i][1]} x {output_channels[i]}")
+
+        if args["object_representations"]:
+            # PN.layers[-1].layers[0].layers[2].conv_vae_class.encoder.trainable = False
+            # PN.layers[-1].layers[0].layers[2].conv_vae_class.decoder.trainable = False
+            # PN.layers[-1].layers[0].layers[2].classifier.trainable = False
+            PN.layers[1].layers[0].object_representations.sVAE.trainable = False
+            PN.layers[1].layers[0].object_representations.classifier.trainable = False
+            # PN.layers[-1].layers[0].layers[2].latent_LSTM.trainable = True
+            PN.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001, clipnorm=1.0), loss="mean_squared_error")
+            print("Freezing sVAE and classifier layers")
+
+        # "Build" the model
+        data_sample = next(iter(train_dataset))
+        PN(data_sample[0])
 
 
         """Weights Setup"""
         # Define where weights will be loaded/saved
-        if args["model_choice"] == "baseline":
+        if args["model_choice"] == "baseline" and not args["top_down_attention"]:
             weights_file_name = "baseline_weights.hdf5"
+        elif args["model_choice"] == "baseline" and args["top_down_attention"]:
+            weights_file_name = "baseline_attention_weights.hdf5"
         elif args["model_choice"] == "object_centric" and not args["object_representations"] and not args["include_frame"]:
             weights_file_name = "objectCentric_weights.hdf5"
         elif args["model_choice"] == "object_centric" and not args["object_representations"] and args["include_frame"]:
@@ -153,39 +142,73 @@ def main(args):
         elif args["model_choice"] == "object_centric" and args["object_representations"] and not args["include_frame"]:
             weights_file_name = "objectCentric_withObjectRepresentations_weights.hdf5"
             classifier_weights_file_name = "OCPN_wOR_Classifier_weights.npz"
+            vae_weights_file_name = "OCPN_wOR_ConvVAE_weights.npz"
+            object_representations_weights_file =  os.path.join(WEIGHTS_DIR, "OCPN_wOR_OR_weights_32_2_16.h5")
         weights_file = os.path.join(WEIGHTS_DIR, weights_file_name)
         # Define where weights will be saved with results
         results_weights_file = os.path.join(RESULTS_SAVE_DIR, "tensorflow_weights/" + weights_file_name)
-        # Remove weights file if restarting training. Previous weights can still be found with the results
-        if args["restart_training"]:
-            # if os.path.exists(weights_file):
-                # os.remove(weights_file)
-            print("Restarting training from scratch")
-        # load previously saved weights
-        else:
+
+        def load_pretrained_weights():
+            if args["load_outside_pretrained_classifier_weights"] and args["object_representations"]:
+                if os.path.exists(os.path.join(WEIGHTS_DIR, classifier_weights_file_name)):
+                    try:
+                        trained_classifier_weights = np.load(os.path.join(WEIGHTS_DIR, classifier_weights_file_name), allow_pickle=True)
+                        trained_classifier_weights = [trained_classifier_weights[key] for key in trained_classifier_weights.keys()]
+                        un_trained_classifier = PN.layers[1].layers[0].layers[2].classifier
+                        un_trained_classifier.set_weights(trained_classifier_weights)
+                        print("Pre-trained Classifier weights loaded successfully")
+                    except:
+                        print("Pre-trained Classifier weights don't fit... better fix it")
+                else:
+                    print("No classifier weights found - starting training from scratch")
+            if args["load_outside_pretrained_vae_weights"] and args["object_representations"]:
+                if os.path.exists(os.path.join(WEIGHTS_DIR, vae_weights_file_name)):
+                    try:
+                        trained_vae_weights = np.load(os.path.join(WEIGHTS_DIR, vae_weights_file_name), allow_pickle=True)
+                        trained_vae_weights = [trained_vae_weights[key] for key in trained_vae_weights.keys()]
+                        un_trained_vae = PN.layers[1].layers[0].layers[2].conv_vae_class
+                        un_trained_vae.set_weights(trained_vae_weights)
+                        print("Pre-trained VAE weights loaded successfully")
+                    except:
+                        print("Pre-trained VAE weights don't fit... better fix it")
+                else:
+                    print("No VAE weights found - starting training from scratch")
+
+        if not args["restart_training"]:
+            # load previously saved weights
             print("Loading weights...")
             if os.path.exists(weights_file):
                 try: 
                     PN.load_weights(weights_file)
                     print("PN model weights loaded successfully - continuing training from last epoch")
                 except: 
-                    # os.remove(weights_file) # model architecture has changed, so weights cannot be loaded
                     print("PN model weights don't fit - restarting training from scratch")
-            else: print("No PN model weights found - starting training from scratch") if not args["restart_training"] else None
-        if args["load_outside_pretrained_classifier_weights"] and args["object_representations"]:
-            if os.path.exists(os.path.join(WEIGHTS_DIR, classifier_weights_file_name)):
-                try:
-                    # custom_objects = {'dummy_model': dummy_model}
-                    # trained_classifier_weights = keras.models.load_model(os.path.join(WEIGHTS_DIR, classifier_weights_file_name), custom_objects=custom_objects).layers[1].layers[0].classifier.get_weights()
-                    trained_classifier_weights = np.load(os.path.join(WEIGHTS_DIR, classifier_weights_file_name), allow_pickle=True)
-                    trained_classifier_weights = [trained_classifier_weights[key] for key in trained_classifier_weights.keys()]
-                    un_trained_classifier = PN.layers[1].layers[0].layers[2].classifier
-                    un_trained_classifier.set_weights(trained_classifier_weights)
-                    print("Pre-trained Classifier weights loaded successfully")
-                except:
-                    print("Pre-trained Classifier weights don't fit... better fix it")
-            else:
-                print("No classifier weights found - starting training from scratch")
+                    if args["model_choice"] == "object_centric" and args["object_representations"]: 
+                        print("but loading object representations weights")
+                        PN.layers[1].layers[0].object_representations.load_weights(object_representations_weights_file)
+                        print("Object representations weights loaded successfully")
+                    # load_pretrained_weights()
+            else: 
+                print("No PN model weights found - starting training from scratch")
+                if args["model_choice"] == "object_centric" and args["object_representations"]: 
+                    print("but loading object representations weights")
+                    PN.layers[1].layers[0].object_representations.load_weights(object_representations_weights_file)
+                    print("Object representations weights loaded successfully")
+                # load_pretrained_weights()
+        else:
+            print("Restarting training from scratch")
+            if args["model_choice"] == "object_centric" and args["object_representations"]: 
+                print("but loading object representations weights")
+                PN.layers[1].layers[0].object_representations.load_weights(object_representations_weights_file)
+                print("Object representations weights loaded successfully")
+            # load_pretrained_weights()
+            
+        # PN.build(input_shape=(batch_size, nt) + im_shape)
+        print(PN.summary())
+        num_layers = len(output_channels)  # number of layers in the architecture
+        print(f"{num_layers} PredNet layers with resolutions:")
+        for i in reversed(range(num_layers)):
+            print(f"Layer {i+1}:  {resos[i][0]} x {resos[i][1]} x {output_channels[i]}")
 
 
         """Training Setup"""
@@ -248,18 +271,34 @@ def main(args):
         if tensorboard:
             callbacks.append(TensorBoard(log_dir=LOG_DIR, histogram_freq=1, write_graph=True, write_images=False))
 
+        
         ###################################
         ##########DEBUG MODE###############
         ###################################
-        if args["debug_model"]:
-            # Iterate over the dataset
-            for x, y in train_dataset:
-                debug_step(x, y)
+        # if args["debug_model"]:
+        #     @tf.function
+        #     def debug_step(x, y):
+        #         with tf.GradientTape() as tape:
+        #             predictions = PN(x)
+        #             loss = tf.reduce_mean(tf.square(predictions - y))
+        #         # gradients = tape.gradient(loss, PN.trainable_variables)
+        #         # PN.optimizer.apply_gradients(zip(gradients, PN.trainable_variables))
+        #         # PN.save_weights(os.path.join(WEIGHTS_DIR, "debug_objectCentric_withObjectRepresentations_weights.hdf5"))
+        #         print(f"Loss: {loss}")
+
+        #     try:
+        #         PN.load_weights(os.path.join(WEIGHTS_DIR, "objectCentric_withObjectRepresentations_weights.hdf5"))
+        #     except:
+        #         print("No debug weights found - starting training from scratch")
+
+        #     # Iterate over the dataset
+        #     for x, y in train_dataset:
+        #         debug_step(x, y)
         ###################################
         ##########END DEBUG MODE###########
         ###################################
         
-        history = PN.fit(train_dataset, steps_per_epoch=sequences_per_epoch_train, epochs=nb_epoch, callbacks=callbacks, 
+        history = PN.fit(train_dataset, batch_size=batch_size, steps_per_epoch=sequences_per_epoch_train, epochs=nb_epoch, callbacks=callbacks, 
                             validation_data=val_dataset, validation_steps=sequences_per_epoch_val)
 
 if __name__ == "__main__":
@@ -273,31 +312,33 @@ if __name__ == "__main__":
 
     # Tuning args
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
-    parser.add_argument("--sequences_per_epoch_train", type=int, default=100, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
-    parser.add_argument("--sequences_per_epoch_val", type=int, default=10, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
-    parser.add_argument("--batch_size", type=int, default=10, help="batch size")
+    parser.add_argument("--sequences_per_epoch_train", type=int, default=200, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_val", type=int, default=30, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
+    parser.add_argument("--batch_size", type=int, default=1, help="batch size")
     parser.add_argument("--nb_epoch", type=int, default=50, help="number of epochs")
-    parser.add_argument("--second_stage", type=bool, default=True, help="utilize 2nd stage training data even for first iteration through dataset")
+    parser.add_argument("--second_stage", type=bool, default=False, help="utilize 2nd stage training data even for first iteration through dataset")
 
     # Model args
-    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels. Decompose turns bottom 3 channels to 12. Including original frame adds 3 channels.")
+    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 128], help="output channels. Decompose turns bottom 3 channels to 12. Including original frame adds 3 channels.")
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor for images prior to training")
     parser.add_argument("--resize_images", type=bool, default=False, help="whether or not to downscale images prior to training")
     parser.add_argument("--decompose_images", type=bool, default=True, help="whether or not to decompose images for training")
-    parser.add_argument("--include_frame", type=bool, default=True, help="whether or not to include the original frame stacked with the decomposed images for training")
-    parser.add_argument("--object_representations", type=bool, default=False, help="whether or not to use object representations as input to Rep unit")
+    parser.add_argument("--include_frame", type=bool, default=False, help="whether or not to include the original frame stacked with the decomposed images for training")
+    parser.add_argument("--object_representations", type=bool, default=True, help="whether or not to use object representations as input to Rep unit")
+    parser.add_argument("--top_down_attention", type=bool, default=False, help="whether or not to use object representations as input to Rep unit")
     parser.add_argument("--training_split", type=float, default=1, help="proportion of data for training (only for monkaa)")
 
     # Training args
     parser.add_argument("--seed", type=int, default=np.random.randint(0,1000), help="random seed")
     parser.add_argument("--results_subdir", type=str, default=f"{str(datetime.now())}", help="Specify results directory")
-    parser.add_argument("--restart_training", type=bool, default=False, help="whether or not to delete weights and restart")
+    parser.add_argument("--restart_training", type=bool, default=True, help="whether or not to delete weights and restart")
     parser.add_argument("--reserialize_dataset", type=bool, default=True, help="reserialize dataset")
-    parser.add_argument("--output_mode", type=str, default="Error", help="Error, Predictions, or Error_Images_and_Prediction. Only trains on Error.")
-    parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-3, 1e-3, 1e-3, 5e-4, 1e-4], help="learning rates for each stage of training")
-    parser.add_argument("--pretrain_classifier", type=bool, default=False, help="this will zero out the prediction errors, and focus on the classification diversity loss")
-    parser.add_argument("--load_outside_pretrained_classifier_weights", type=bool, default=True, help="this will zero out the prediction errors, and focus on the classification diversity loss")
-    parser.add_argument("--debug_model", type=bool, default=False, help="this will bypass model.fit and instead feed data through the model to debug the model")
+    parser.add_argument("--output_mode", type=str, default="Error", help="Error, Prediction, or Error_Images_and_Prediction. Only trains on Error.")
+    parser.add_argument("--learning_rates", nargs="+", type=int, default=[5e-4, 5e-4, 1e-3, 5e-4, 1e-4], help="learning rates for each stage of training")
+    parser.add_argument("--pretrain_latent_lpn", type=bool, default=False, help="this will zero out the prediction errors, and focus on the latent lstm loss")
+    parser.add_argument("--load_outside_pretrained_classifier_weights", type=bool, default=True, help="load pretrained weights")
+    parser.add_argument("--load_outside_pretrained_vae_weights", type=bool, default=True, help="load pretrained weights")
+    parser.add_argument("--debug_model", type=bool, default=True, help="this will bypass model.fit and instead feed data through the model to debug the model")
 
     # Structure args
     parser.add_argument("--model_choice", type=str, default="object_centric", help="Choose which model. Options: 'baseline' or 'object_centric'")
@@ -306,8 +347,9 @@ if __name__ == "__main__":
     parser.add_argument("--data_subset", type=str, default="multiShape", help="provide descriptive name for results and weights")
     parser.add_argument("--dataset_size", type=int, default=100000, help="total number of images in data dir")
     parser.add_argument("--num_iterations", type=int, default=8, help="number of iterations through the dataset")
-    parser.add_argument("--restart_teration", type=int, default=2, help="In case training crashes, restart from this iteration (# of total_#) 0&1 are both start. 2 skips 1st stage")
+    parser.add_argument("--restart_teration", type=int, default=2, help="Start from this iteration (# of total_#) 0 & 1 are both start. 2 skips 1st stage")
     parser.add_argument("--SSM_im_shape", nargs="+", type=int, default=[64, 64], help="output channels")
+    parser.add_argument("--num_classes", type=int, default=4, help="number of classes for object-centric model")
     """
     Avaialble dataset/data_subset arg combinations:
     - SSM / *: Specify within dataset-creation block which datasets to use. arg["data_subset"] can provide descriptive name for results and weights
