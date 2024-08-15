@@ -120,6 +120,8 @@ def main(args):
             # PN.layers[-1].layers[0].layers[2].classifier.trainable = False
             PN.layers[1].layers[0].object_representations.sVAE.trainable = False
             PN.layers[1].layers[0].object_representations.classifier.trainable = False
+            # PN.layers[1].layers[0].object_representations.seq_latent_maintainer.trainable = True
+            # PN.layers[1].layers[0].object_representations.or_decoder.trainable = True
             # PN.layers[-1].layers[0].layers[2].latent_LSTM.trainable = True
             PN.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001, clipnorm=1.0), loss="mean_squared_error")
             print("Freezing sVAE and classifier layers")
@@ -184,23 +186,29 @@ def main(args):
                 except: 
                     print("PN model weights don't fit - restarting training from scratch")
                     if args["model_choice"] == "object_centric" and args["object_representations"]: 
-                        print("but loading object representations weights")
-                        PN.layers[1].layers[0].object_representations.load_weights(object_representations_weights_file)
+                        print("but loading object representations weights and resetting stored class-object experiences (sequence latent vectors)")
+                        PN.layers[1].layers[0].object_representations.load_weights(object_representations_weights_file, by_name=True, skip_mismatch=True)
                         print("Object representations weights loaded successfully")
+                        PN.layers[1].layers[0].object_representations.seq_latent_maintainer.reset_stored_sequence_latent_vectors()
+                        print("Stored class-object experiences (sequence latent vectors) reset")
                     # load_pretrained_weights()
             else: 
                 print("No PN model weights found - starting training from scratch")
                 if args["model_choice"] == "object_centric" and args["object_representations"]: 
-                    print("but loading object representations weights")
-                    PN.layers[1].layers[0].object_representations.load_weights(object_representations_weights_file)
+                    print("but loading object representations weights and resetting stored class-object experiences (sequence latent vectors)")
+                    PN.layers[1].layers[0].object_representations.load_weights(object_representations_weights_file, by_name=True, skip_mismatch=True)
                     print("Object representations weights loaded successfully")
+                    PN.layers[1].layers[0].object_representations.seq_latent_maintainer.reset_stored_sequence_latent_vectors()
+                    print("Stored class-object experiences (sequence latent vectors) reset")
                 # load_pretrained_weights()
         else:
             print("Restarting training from scratch")
             if args["model_choice"] == "object_centric" and args["object_representations"]: 
-                print("but loading object representations weights")
-                PN.layers[1].layers[0].object_representations.load_weights(object_representations_weights_file)
+                print("but loading object representations weights and resetting stored class-object experiences (sequence latent vectors)")
+                PN.layers[1].layers[0].object_representations.load_weights(object_representations_weights_file, by_name=True, skip_mismatch=True)
                 print("Object representations weights loaded successfully")
+                PN.layers[1].layers[0].object_representations.seq_latent_maintainer.reset_stored_sequence_latent_vectors()
+                print("Stored class-object experiences (sequence latent vectors) reset")
             # load_pretrained_weights()
             
         # PN.build(input_shape=(batch_size, nt) + im_shape)
@@ -225,7 +233,9 @@ def main(args):
                     return args["learning_rates"][2]
             elif (training_it+1) == 2:
                 # Second stage training, first iteration
-                if epoch < args["nb_epoch"] // 3:
+                if epoch < 2:
+                    return args["learning_rates"][1]
+                elif epoch < args["nb_epoch"] // 3:
                     return args["learning_rates"][2]
                 elif epoch < 2 * args["nb_epoch"] // 3:
                     return args["learning_rates"][3]
@@ -312,14 +322,14 @@ if __name__ == "__main__":
 
     # Tuning args
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
-    parser.add_argument("--sequences_per_epoch_train", type=int, default=200, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
-    parser.add_argument("--sequences_per_epoch_val", type=int, default=30, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_train", type=int, default=1000, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_val", type=int, default=50, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
     parser.add_argument("--batch_size", type=int, default=1, help="batch size")
-    parser.add_argument("--nb_epoch", type=int, default=50, help="number of epochs")
+    parser.add_argument("--nb_epoch", type=int, default=100, help="number of epochs")
     parser.add_argument("--second_stage", type=bool, default=False, help="utilize 2nd stage training data even for first iteration through dataset")
 
     # Model args
-    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 128], help="output channels. Decompose turns bottom 3 channels to 12. Including original frame adds 3 channels.")
+    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 24, 48, 96], help="output channels. Decompose turns bottom 3 channels to 12. Including original frame adds 3 channels.")
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor for images prior to training")
     parser.add_argument("--resize_images", type=bool, default=False, help="whether or not to downscale images prior to training")
     parser.add_argument("--decompose_images", type=bool, default=True, help="whether or not to decompose images for training")
@@ -334,11 +344,11 @@ if __name__ == "__main__":
     parser.add_argument("--restart_training", type=bool, default=True, help="whether or not to delete weights and restart")
     parser.add_argument("--reserialize_dataset", type=bool, default=True, help="reserialize dataset")
     parser.add_argument("--output_mode", type=str, default="Error", help="Error, Prediction, or Error_Images_and_Prediction. Only trains on Error.")
-    parser.add_argument("--learning_rates", nargs="+", type=int, default=[5e-4, 5e-4, 1e-3, 5e-4, 1e-4], help="learning rates for each stage of training")
+    parser.add_argument("--learning_rates", nargs="+", type=int, default=[5e-4, 5e-3, 1e-3, 5e-4, 1e-4], help="learning rates for each stage of training")
     parser.add_argument("--pretrain_latent_lpn", type=bool, default=False, help="this will zero out the prediction errors, and focus on the latent lstm loss")
     parser.add_argument("--load_outside_pretrained_classifier_weights", type=bool, default=True, help="load pretrained weights")
-    parser.add_argument("--load_outside_pretrained_vae_weights", type=bool, default=True, help="load pretrained weights")
-    parser.add_argument("--debug_model", type=bool, default=True, help="this will bypass model.fit and instead feed data through the model to debug the model")
+    parser.add_argument("--load_outside_pretrained_vae_weights", type=bool, default=False, help="load pretrained weights")
+    parser.add_argument("--debug_model", type=bool, default=False, help="this will bypass model.fit and instead feed data through the model to debug the model")
 
     # Structure args
     parser.add_argument("--model_choice", type=str, default="object_centric", help="Choose which model. Options: 'baseline' or 'object_centric'")

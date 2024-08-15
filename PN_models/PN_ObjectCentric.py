@@ -21,7 +21,7 @@ import numpy as np
 from PIL import Image
 from scipy.spatial.distance import cdist
 from scipy.optimize import linear_sum_assignment
-# from PN_models.ObjectRepresentations import ObjectRepresentations
+from PN_models.ObjectRepresentations import ObjectRepresentations, ObjectRepDecoder
 
 import pdb
 
@@ -66,6 +66,10 @@ class PredLayer(keras.Model):
         self.error = Error(layer_num=self.layer_num, name=f"Error_Layer{self.layer_num}")
         
         self.upsample = layers.UpSampling2D((2, 2), name=f"Upsample_Layer{self.layer_num}")
+
+        if self.training_args['object_representations']:
+            self.or_decoder = ObjectRepDecoder(training_args=self.training_args, layer_num=self.layer_num, im_height=self.im_height, im_width=self.im_width, latent_dim=32, num_slv_keep=20, num_im_in_seq=2, num_classes=self.num_classes, name=f"Object_Rep_Decoder_Layer_{self.layer_num}")
+
         
         # if self.training_args['top_down_attention'] and not self.top_layer:
         #     self.attention = unet_attention((self.im_height, self.im_width, self.training_args["output_channels"][layer_num+1]), self.output_channels)
@@ -86,6 +90,7 @@ class PredLayer(keras.Model):
         self.states["E"] = tf.zeros((batch_size, self.im_height, self.im_width, 2 * self.output_channels)) # double for the pos/neg concatenated error
         self.states["TD_inp"] = None
         self.states["lstm"] = None
+        self.states["ORs"] = tf.zeros((batch_size, self.im_height, self.im_width, self.num_classes * 1)) # Object representations are single channel
 
         self.last_frame = tf.zeros((batch_size, self.im_height, self.im_width, self.training_args['output_channels'][0]))
 
@@ -102,6 +107,7 @@ class PredLayer(keras.Model):
         self.states["TD_inp"] = None
         self.states["lstm"] = None
         self.states["E_raw"] = None
+        self.states["ORs"] = None
 
         self.clear_last_frame()
 
@@ -115,6 +121,15 @@ class PredLayer(keras.Model):
 
     def clear_last_frame(self):
         self.last_frame = None
+
+    def update_object_representations(self, meta_latent_vectors, recent_frame_sequences):
+        self.states["ORs"] = self.or_decoder([meta_latent_vectors, recent_frame_sequences])
+
+    def get_meta_latent_vectors_and_recent_frame_sequences(self):
+        assert self.bottom_layer == True, "Meta latent vectors are only created by the bottom PredLayer."
+        meta_latent_vectors, recent_frame_sequences = self.object_representations(self.last_frame)
+        return meta_latent_vectors, recent_frame_sequences
+
 
     def call(self, inputs=None, direction="top_down", paddings=None):
         # PredLayer should update internal states when called with new TD and BU inputs, inputs[0] = BU, inputs[1] = TD
@@ -133,10 +148,10 @@ class PredLayer(keras.Model):
                 # else:
                 R_inp = keras.layers.Concatenate()([self.states["E"], self.states["R"], self.states["TD_inp"]])
             
-            if self.bottom_layer and self.training_args['object_representations']:
+            if self.training_args['object_representations']:
                 # object_representations, classification_diversity_loss = self.object_representations(tf.expand_dims(self.last_frame, axis=1)) # Inputs shape: (bs, 1, h, w, ic), Outputs shape: (bs, h, w, nc*oc)
-                object_representations, maintained_vectors_loss = self.object_representations(self.last_frame) # Inputs shape: (bs, 1, h, w, ic), Outputs shape: (bs, h, w, nc*oc)
-                R_inp = keras.layers.Concatenate()([R_inp, object_representations])
+                # object_representations = self.object_representations(self.last_frame) # Inputs shape: (bs, 1, h, w, ic), Outputs shape: (bs, h, w, nc*oc)
+                R_inp = keras.layers.Concatenate()([self.states["ORs"], R_inp])
 
             if self.states["lstm"] is None:
                 self.states["R"], self.states["lstm"] = self.representation(R_inp)
@@ -161,7 +176,7 @@ class PredLayer(keras.Model):
             self.states["P"] = K.minimum(self.prediction(self.states["R"]), self.pixel_max) if self.bottom_layer else self.prediction(self.states["R"])
 
             # return classification_diversity_loss if self.bottom_layer and self.training_args['object_representations'] else tf.constant(0.0, shape=(self.batch_size, 1))
-            return maintained_vectors_loss if self.bottom_layer and self.training_args['object_representations'] else 0.0 #{"lpn_loss":0, "vae_loss":0}
+            # return maintained_vectors_loss if self.bottom_layer and self.training_args['object_representations'] else 0.0 #{"lpn_loss":0, "vae_loss":0}
 
         elif direction == "bottom_up":
             # RETRIEVE TARGET(S) (bottom-up input) ~ (batch_size, im_height, im_width, output_channels)
@@ -239,26 +254,35 @@ class PredNet(keras.Model):
         # Iterate through the time-steps manually
         for t in range(self.nt):
             """Perform top-down pass, starting from the top layer"""
+
+            if self.training_args['object_representations']:
+                # Get updated meta latent vectors from object representations unit in the bottom PredLayer
+                meta_latent_vectors, recent_frame_sequences = self.predlayers[0].get_meta_latent_vectors_and_recent_frame_sequences()
+
             for l, layer in reversed(list(enumerate(self.predlayers))):
                 # BU_inp = bottom-up input, TD_inp = top-down input
+
+                if self.training_args['object_representations']:
+                    # Each layer creates its own object representations based on the class-specific meta latent vectors and recent frame sequences for each class
+                    layer.update_object_representations(meta_latent_vectors, recent_frame_sequences)
 
                 # Top layer
                 if l == self.num_layers - 1:
                     BU_inp = None
                     TD_inp = None
-                    _ = layer([BU_inp, TD_inp], direction="top_down", paddings=self.paddings[l])
+                    layer([BU_inp, TD_inp], direction="top_down", paddings=self.paddings[l])
 
                 # Middle layers
                 elif l < self.num_layers - 1 and l > 0:
                     BU_inp = None
                     TD_inp = self.predlayers[l + 1].states["R"]
-                    _ = layer([BU_inp, TD_inp], direction="top_down", paddings=self.paddings[l])
+                    layer([BU_inp, TD_inp], direction="top_down", paddings=self.paddings[l])
 
                 # Bottom layer
                 else:
                     BU_inp = None
                     TD_inp = self.predlayers[l + 1].states["R"]
-                    maintained_vectors_loss = layer([BU_inp, TD_inp], direction="top_down", paddings=self.paddings[l])
+                    layer([BU_inp, TD_inp], direction="top_down", paddings=self.paddings[l])
 
             """ Perform bottom-up pass, starting from the bottom layer """
             for l, layer in list(enumerate(self.predlayers)):
@@ -314,9 +338,6 @@ class PredNet(keras.Model):
 
             elif self.output_mode == "Error" and (not self.training_args["decompose_images"] or not self.training_args["second_stage"]):
                 total_prediction_errors = all_frame_errors
-
-            if self.output_mode == "Error" and self.training_args["object_representations"]:
-                total_prediction_errors += 0.1*maintained_vectors_loss
 
             # save outputs over time
             if self.output_mode == "Error":
