@@ -1,8 +1,11 @@
 def main(args):
     for training_it in range(args["num_iterations"]):
 
-        if (training_it+1) < args["restart_teration"]:
+        if (training_it+1) < args["restart_iteration"]:
             continue
+
+        elif (training_it+1) > args["restart_iteration"]:
+            args["restart_training"] = False
         
         if training_it > 0:
             args["second_stage"] = True
@@ -68,7 +71,7 @@ def main(args):
         print("Creating datasets...")
         # Define image shape
         assert args["dataset"] == "SSM", "this branch is focused on the SSM dataset"
-        original_im_shape = (args["SSM_im_shape"][0], args["SSM_im_shape"][1], args["output_channels"][0])
+        original_im_shape = (args["dataset_im_shape"][0], args["dataset_im_shape"][1], args["output_channels"][0])
         downscale_factor = args["downscale_factor"]
         im_shape = (original_im_shape[0] // downscale_factor, original_im_shape[1] // downscale_factor, args["output_channels"][0]) if args["resize_images"] else original_im_shape
         
@@ -148,7 +151,7 @@ def main(args):
             object_representations_weights_file =  os.path.join(WEIGHTS_DIR, "OCPN_wOR_OR_weights_32_2_16.h5")
         weights_file = os.path.join(WEIGHTS_DIR, weights_file_name)
         # Define where weights will be saved with results
-        results_weights_file = os.path.join(RESULTS_SAVE_DIR, "tensorflow_weights/" + weights_file_name)
+        results_weights_file = os.path.join(RESULTS_SAVE_DIR, f"tensorflow_weights/iteration_{training_it+1}" + weights_file_name)
 
         def load_pretrained_weights():
             if args["load_outside_pretrained_classifier_weights"] and args["object_representations"]:
@@ -181,7 +184,7 @@ def main(args):
             print("Loading weights...")
             if os.path.exists(weights_file):
                 try: 
-                    PN.load_weights(weights_file)
+                    PN.load_weights(weights_file, by_name=True, skip_mismatch=True)
                     print("PN model weights loaded successfully - continuing training from last epoch")
                 except: 
                     print("PN model weights don't fit - restarting training from scratch")
@@ -223,6 +226,7 @@ def main(args):
         print(f"Training iteration {training_it+1} of {args['num_iterations']}")
 
         def lr_schedule(epoch):
+            # return 1e-4
             if (training_it+1) == 1:
                 # First stage training
                 if epoch == 0:
@@ -233,9 +237,9 @@ def main(args):
                     return args["learning_rates"][2]
             elif (training_it+1) == 2:
                 # Second stage training, first iteration
-                if epoch < 2:
-                    return args["learning_rates"][1]
-                elif epoch < args["nb_epoch"] // 3:
+                # if epoch < 2:
+                #     return args["learning_rates"][1]
+                if epoch < args["nb_epoch"] // 3:
                     return args["learning_rates"][2]
                 elif epoch < 2 * args["nb_epoch"] // 3:
                     return args["learning_rates"][3]
@@ -322,14 +326,14 @@ if __name__ == "__main__":
 
     # Tuning args
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
-    parser.add_argument("--sequences_per_epoch_train", type=int, default=1000, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_train", type=int, default=2000, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
     parser.add_argument("--sequences_per_epoch_val", type=int, default=50, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
     parser.add_argument("--batch_size", type=int, default=1, help="batch size")
-    parser.add_argument("--nb_epoch", type=int, default=100, help="number of epochs")
+    parser.add_argument("--nb_epoch", type=int, default=30, help="number of epochs")
     parser.add_argument("--second_stage", type=bool, default=False, help="utilize 2nd stage training data even for first iteration through dataset")
 
     # Model args
-    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 24, 48, 96], help="output channels. Decompose turns bottom 3 channels to 12. Including original frame adds 3 channels.")
+    parser.add_argument("--output_channels", nargs="+", type=int, default=[3, 48, 96, 192], help="output channels. Decompose turns bottom 3 channels to 12. Including original frame adds 3 channels.")
     parser.add_argument("--downscale_factor", type=int, default=4, help="downscale factor for images prior to training")
     parser.add_argument("--resize_images", type=bool, default=False, help="whether or not to downscale images prior to training")
     parser.add_argument("--decompose_images", type=bool, default=True, help="whether or not to decompose images for training")
@@ -344,7 +348,7 @@ if __name__ == "__main__":
     parser.add_argument("--restart_training", type=bool, default=True, help="whether or not to delete weights and restart")
     parser.add_argument("--reserialize_dataset", type=bool, default=True, help="reserialize dataset")
     parser.add_argument("--output_mode", type=str, default="Error", help="Error, Prediction, or Error_Images_and_Prediction. Only trains on Error.")
-    parser.add_argument("--learning_rates", nargs="+", type=int, default=[5e-4, 5e-3, 1e-3, 5e-4, 1e-4], help="learning rates for each stage of training")
+    parser.add_argument("--learning_rates", nargs="+", type=int, default=[5e-4, 2e-3, 1e-3, 5e-4, 1e-4], help="learning rates for each stage of training")
     parser.add_argument("--pretrain_latent_lpn", type=bool, default=False, help="this will zero out the prediction errors, and focus on the latent lstm loss")
     parser.add_argument("--load_outside_pretrained_classifier_weights", type=bool, default=True, help="load pretrained weights")
     parser.add_argument("--load_outside_pretrained_vae_weights", type=bool, default=False, help="load pretrained weights")
@@ -357,8 +361,8 @@ if __name__ == "__main__":
     parser.add_argument("--data_subset", type=str, default="multiShape", help="provide descriptive name for results and weights")
     parser.add_argument("--dataset_size", type=int, default=100000, help="total number of images in data dir")
     parser.add_argument("--num_iterations", type=int, default=8, help="number of iterations through the dataset")
-    parser.add_argument("--restart_teration", type=int, default=2, help="Start from this iteration (# of total_#) 0 & 1 are both start. 2 skips 1st stage")
-    parser.add_argument("--SSM_im_shape", nargs="+", type=int, default=[64, 64], help="output channels")
+    parser.add_argument("--restart_iteration", type=int, default=2, help="Start from this iteration (# of total_#) 0 & 1 are both start. 2 skips 1st stage")
+    parser.add_argument("--dataset_im_shape", nargs="+", type=int, default=[64, 64], help="output channels")
     parser.add_argument("--num_classes", type=int, default=4, help="number of classes for object-centric model")
     """
     Avaialble dataset/data_subset arg combinations:

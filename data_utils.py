@@ -512,7 +512,7 @@ class sequence_dataset_creator():
         @tf.function
         def tf_decompose_image_sequence(sequence):
             decomposed_sequence = tf.py_function(func=decompose_image_sequence, inp=[sequence], Tout=tf.float32)
-            decomposed_sequence.set_shape((sequence_length, self.training_args["SSM_im_shape"][0], self.training_args["SSM_im_shape"][1], self.training_args["output_channels"][0]))  # Explicitly set the shape
+            decomposed_sequence.set_shape((sequence_length, self.training_args["dataset_im_shape"][0], self.training_args["dataset_im_shape"][1], self.training_args["output_channels"][0]))  # Explicitly set the shape
             return decomposed_sequence
 
         if self.training_args["decompose_images"]:

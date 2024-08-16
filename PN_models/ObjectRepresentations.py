@@ -93,8 +93,8 @@ class SequenceVAE(keras.Model):
 
         self.training_args = training_args
         self.batch_size = self.training_args["batch_size"]
-        self.im_height = self.training_args["SSM_im_shape"][0]
-        self.im_width = self.training_args["SSM_im_shape"][1]
+        self.im_height = self.training_args["dataset_im_shape"][0]
+        self.im_width = self.training_args["dataset_im_shape"][1]
 
         ###### Start ConvVAE ######
         self.latent_dim = latent_dim
@@ -208,8 +208,8 @@ class MetaLatentVAE(keras.Model):
 
         self.training_args = training_args
         self.batch_size = self.training_args["batch_size"]
-        self.im_height = self.training_args["SSM_im_shape"][0]
-        self.im_width = self.training_args["SSM_im_shape"][1]
+        self.im_height = self.training_args["dataset_im_shape"][0]
+        self.im_width = self.training_args["dataset_im_shape"][1]
 
         ###### Start ConvVAE ######
         self.num_slv_keep = num_slv_keep
@@ -333,8 +333,8 @@ class ObjectRepDecoder(keras.Model):
         self.im_height = im_height
         self.im_width = im_width
         self.num_classes = num_classes
-        self.target_im_height = self.training_args["SSM_im_shape"][0]
-        self.target_im_width = self.training_args["SSM_im_shape"][1]
+        self.target_im_height = self.training_args["dataset_im_shape"][0]
+        self.target_im_width = self.training_args["dataset_im_shape"][1]
         self.layer_num = layer_num
 
         ###### Start ConvVAE ######
@@ -356,18 +356,19 @@ class ObjectRepDecoder(keras.Model):
                 pooled = layers.MaxPooling2D((2, 2))(pooled)
             return pooled
 
-        encoder_inputs3 = keras.Input(shape=class_sequence_input_shape, batch_size=self.batch_size, name=f"object_rep_encoder_input_Layer_{self.layer_num}")
-        meta_latent_inputs3 = keras.Input(shape=(latent_dim,), batch_size=self.batch_size, name=f"object_rep_meta_latent_input_Layer_{self.layer_num}")
-        label_inputs3 = keras.Input(shape=(num_classes,), batch_size=self.batch_size, name=f"object_rep_label_input_Layer_{self.layer_num}")
-        x = layers.Concatenate(name=f"object_rep_concat_1_Layer_{self.layer_num}")([meta_latent_inputs3, label_inputs3])
-        x = layers.Dense(8 * 8 * 64, activation="relu", name=f"object_rep_dense_1_Layer_{self.layer_num}")(x)
-        x = layers.Reshape((8, 8, 64), name=f"object_rep_reshape_Layer_{self.layer_num}")(x)
+        frame_sequence_inputs = keras.Input(shape=class_sequence_input_shape, batch_size=self.batch_size, name=f"object_rep_frame_sequence_input_Layer_{self.layer_num}")
+        meta_latent_inputs = keras.Input(shape=(latent_dim,), batch_size=self.batch_size, name=f"object_rep_meta_latent_input_Layer_{self.layer_num}")
+        latest_sequence_latent_vector_inputs = keras.Input(shape=(latent_dim,), batch_size=self.batch_size, name=f"object_rep_latest_SLV_input_Layer_{self.layer_num}")
+        label_inputs = keras.Input(shape=(num_classes,), batch_size=self.batch_size, name=f"object_rep_label_input_Layer_{self.layer_num}")
+        x = layers.Concatenate(name=f"object_rep_concat_1_Layer_{self.layer_num}")([meta_latent_inputs, latest_sequence_latent_vector_inputs, label_inputs])
+        x = layers.Dense(8 * 8 * 128, activation="relu", name=f"object_rep_dense_1_Layer_{self.layer_num}")(x)
+        x = layers.Reshape((8, 8, 128), name=f"object_rep_reshape_Layer_{self.layer_num}")(x)
         x = layers.Conv2DTranspose(64, 3, activation="relu", strides=2, padding="same", name=f"object_rep_conv2d_transpose_1_Layer_{self.layer_num}")(x)
         x = layers.Conv2DTranspose(32, 3, activation="relu", strides=2, padding="same", name=f"object_rep_conv2d_transpose_2_Layer_{self.layer_num}")(x)
         x = layers.Conv2DTranspose(16, 3, activation="relu", strides=2, padding="same", name=f"object_rep_conv2d_transpose_3_Layer_{self.layer_num}")(x)
-        x = layers.Conv2DTranspose(8, 3, activation="sigmoid", padding="same", name=f"object_rep_conv2d_transpose_4_Layer_{self.layer_num}")(x)
+        # x = layers.Conv2DTranspose(8, 3, activation="relu", padding="same", name=f"object_rep_conv2d_transpose_3_Layer_{self.layer_num}")(x)
         # Unstack and concatenate the encoder inputs
-        encoder_inputs3_unstacked = layers.Lambda(unstack_and_concat, name=f"object_rep_unstack_and_concat_Layer_{self.layer_num}")(encoder_inputs3)
+        encoder_inputs3_unstacked = layers.Lambda(unstack_and_concat, name=f"object_rep_unstack_and_concat_Layer_{self.layer_num}")(frame_sequence_inputs)
         # Concatenate the decoder output with the stacked encoder inputs
         x = layers.Concatenate(name=f"object_rep_concat_2_Layer_{self.layer_num}")([x, encoder_inputs3_unstacked])
         x1 = layers.Conv2D(32, 3, activation="relu", padding="same", name=f"object_rep_conv2d_1_Layer_{self.layer_num}")(x)
@@ -376,17 +377,17 @@ class ObjectRepDecoder(keras.Model):
         x = layers.Concatenate(name=f"object_rep_concat_3_Layer_{self.layer_num}")([x3, x2, x1])
         object_rep_decoder_outputs_unpooled = layers.Conv2D(class_sequence_input_shape[-1], 3, activation="relu", padding="same", name=f"object_rep_output_conv2d_Layer_{self.layer_num}")(x)
         object_rep_decoder_outputs_pooled = layers.Lambda(max_pooling, name=f"object_rep_final_output_Layer_{self.layer_num}")(object_rep_decoder_outputs_unpooled)
-        object_rep_decoder = keras.Model([meta_latent_inputs3, label_inputs3, encoder_inputs3], object_rep_decoder_outputs_pooled, name=f"object_rep_decoder_Layer_{self.layer_num}")
+        object_rep_decoder = keras.Model([meta_latent_inputs, latest_sequence_latent_vector_inputs, frame_sequence_inputs, label_inputs], object_rep_decoder_outputs_pooled, name=f"object_rep_decoder_Layer_{self.layer_num}")
 
         self.object_rep_decoder = object_rep_decoder
     
     def call(self, data, training=True):
-        meta_latent_vectors, recent_frame_sequences = data # meta_latent_vectors = (num_classes, BS, latent_dim), recent_frame_sequences = (num_classes, BS, num_im_in_seq, SSM_H, SSM_W, 3)
+        meta_latent_vectors, latest_sequence_latent_vectors, recent_frame_sequences = data # meta_latent_vectors = (num_classes, BS, latent_dim), recent_frame_sequences = (num_classes, BS, num_im_in_seq, SSM_H, SSM_W, 3)
         object_representations = []
         for i in range(self.num_classes):
             class_sequence_binary_masks = self.images_to_masks(recent_frame_sequences[i])
             labels = tf.one_hot(tf.fill((self.batch_size,), i), self.num_classes) # (BS, num_classes)
-            object_rep = self.object_rep_decoder([meta_latent_vectors[i], labels, class_sequence_binary_masks], training=training) # (BS, H, W, 1)
+            object_rep = self.object_rep_decoder([meta_latent_vectors[i], latest_sequence_latent_vectors[i], class_sequence_binary_masks, labels], training=training) # (BS, H, W, 1)
             object_representations.append(object_rep)
         object_representations = tf.concat(object_representations, axis=-1) # (BS, H, W, num_classes)
         return object_representations
@@ -552,7 +553,6 @@ class SequenceLatentMaintainer(layers.Layer):
     def reset_stored_sequence_latent_vectors(self):
         [self.historic_sequence_latent_vectors_stored[i].assign(tf.keras.initializers.GlorotUniform()((self.num_slv_keep, self.latent_dim))) for i in range(self.num_classes)]
 
-
     def pad_to_num_slv_keep(self, tensor):
         # Ensure that the tensor has the correct shape by padding with zeros if necessary
         num_vectors = tf.shape(tensor)[0]
@@ -573,8 +573,8 @@ class ObjectRepresentations(keras.Model):
         self.pretraining_step = self.training_args.get("pretraining_step", 0)
         self.nt = self.training_args["nt"] # for pretraining sequence VAE only
         self.batch_size = self.training_args["batch_size"]
-        self.im_height = self.training_args["SSM_im_shape"][0]
-        self.im_width = self.training_args["SSM_im_shape"][1]
+        self.im_height = self.training_args["dataset_im_shape"][0]
+        self.im_width = self.training_args["dataset_im_shape"][1]
         self.num_classes = self.training_args["num_classes"]
         self.shape_of_input = (self.batch_size, 1, self.im_height, self.im_width, self.num_classes * 3) # (BS, 1, H, W, num_classes * 3)
         self.latent_dim = latent_dim
@@ -612,24 +612,20 @@ class ObjectRepresentations(keras.Model):
 
     def call(self, frame):
         # Assume frame is a single decomposed image (BS, 1, H, W, num_classes * 3)
-        # frame = tf.squeeze(frame, axis=1)  # Remove the time dimension
         self.update_historic_frames(frame)
 
-        # output_object_representations = []
+        # Return the latest created sequence latent vectors as further context for the object rep decoders
+        latest_sequence_latent_vectors = [] # List of tensors of shape (BS, latent_dim)
         # Process each classes' historic-frame sequence separately
         for i in range(self.num_classes):
             class_sequence = self.recent_frame_sequences[i] # (BS, num_im_in_seq, H, W, 3)
             labels = tf.one_hot(tf.fill((self.batch_size,), i), self.num_classes) # (BS, num_classes)
             new_class_sequence_latent_vectors = self.sVAE.encode([class_sequence, labels])  # (BS, latent_dim)
+            latest_sequence_latent_vectors.append(new_class_sequence_latent_vectors)
             _, _ = self.seq_latent_maintainer(new_class_sequence_latent_vectors, i) # Update stored sequence latent vectors
         meta_latent_vectors = self.create_meta_latent_vectors() # List of tensors of shape (BS, latent_dim)
-        # for i in range(self.num_classes):
-        #     object_rep = self.or_decoder((meta_latent_vectors[i], labels, class_sequence))  # (BS, H, W, 1)
-        #     output_object_representations.append(object_rep)
 
-        # return tf.concat(output_object_representations, axis=-1) # (BS, H, W, num_classes * 1), (BS,)
-
-        return meta_latent_vectors, self.recent_frame_sequences
+        return meta_latent_vectors, latest_sequence_latent_vectors, self.recent_frame_sequences
     
     def create_meta_latent_vectors(self):
         # Assume sequence_latent_vectors is a tensor of shape (num_slv_keep, latent_dim)
@@ -868,7 +864,7 @@ class ObjectRepresentations(keras.Model):
 #     "second_stage": True,
 #     "nt": 10,
 #     "batch_size": 1,
-#     "SSM_im_shape": [64, 64],
+#     "dataset_im_shape": [64, 64],
 #     "num_classes": 4,
 #     "include_frame": False
 # }
@@ -890,7 +886,7 @@ class ObjectRepresentations(keras.Model):
 
 # nt = training_args["nt"]
 # batch_size = training_args["batch_size"]
-# im_shape = training_args["SSM_im_shape"] + [12] # 3 channels per class, 4 classes
+# im_shape = training_args["dataset_im_shape"] + [12] # 3 channels per class, 4 classes
 
 # from data_utils import SequenceDataLoader
 # train_dataset, train_size = SequenceDataLoader(training_args, "/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/multi_gen_shape_strafing/frames/multi_gen_shape_2nd_stage_train", nt, batch_size, im_shape[0], im_shape[1], im_shape[2], True, training_args["include_frame"]).create_tf_dataset()

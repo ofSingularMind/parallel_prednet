@@ -122,13 +122,13 @@ class PredLayer(keras.Model):
     def clear_last_frame(self):
         self.last_frame = None
 
-    def update_object_representations(self, meta_latent_vectors, recent_frame_sequences):
-        self.states["ORs"] = self.or_decoder([meta_latent_vectors, recent_frame_sequences])
+    def update_object_representations(self, meta_latent_vectors, latest_sequence_latent_vectors, recent_frame_sequences):
+        self.states["ORs"] = self.or_decoder([meta_latent_vectors, latest_sequence_latent_vectors, recent_frame_sequences])
 
     def get_meta_latent_vectors_and_recent_frame_sequences(self):
-        assert self.bottom_layer == True, "Meta latent vectors are only created by the bottom PredLayer."
-        meta_latent_vectors, recent_frame_sequences = self.object_representations(self.last_frame)
-        return meta_latent_vectors, recent_frame_sequences
+        assert self.bottom_layer == True, "Meta and sequence latent vectors are only created by the bottom PredLayer."
+        meta_latent_vectors, latest_sequence_latent_vectors, recent_frame_sequences = self.object_representations(self.last_frame)
+        return meta_latent_vectors, latest_sequence_latent_vectors, recent_frame_sequences
 
 
     def call(self, inputs=None, direction="top_down", paddings=None):
@@ -257,14 +257,14 @@ class PredNet(keras.Model):
 
             if self.training_args['object_representations']:
                 # Get updated meta latent vectors from object representations unit in the bottom PredLayer
-                meta_latent_vectors, recent_frame_sequences = self.predlayers[0].get_meta_latent_vectors_and_recent_frame_sequences()
+                meta_latent_vectors, latest_sequence_latent_vectors, recent_frame_sequences = self.predlayers[0].get_meta_latent_vectors_and_recent_frame_sequences()
 
             for l, layer in reversed(list(enumerate(self.predlayers))):
                 # BU_inp = bottom-up input, TD_inp = top-down input
 
                 if self.training_args['object_representations']:
                     # Each layer creates its own object representations based on the class-specific meta latent vectors and recent frame sequences for each class
-                    layer.update_object_representations(meta_latent_vectors, recent_frame_sequences)
+                    layer.update_object_representations(meta_latent_vectors, latest_sequence_latent_vectors, recent_frame_sequences)
 
                 # Top layer
                 if l == self.num_layers - 1:
