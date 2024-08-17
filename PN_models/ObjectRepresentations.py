@@ -460,7 +460,10 @@ class SequenceLatentMaintainer(layers.Layer):
         # selected_vectors = self.hard_select_vectors(combined_vectors, logits) # Shape: (num_slv_keep, latent_dim)
 
         # # OPTION 3: Just take the last num_slv_keep vectors...
-        selected_vectors = combined_vectors[-self.num_slv_keep:]
+        # selected_vectors = combined_vectors[-self.num_slv_keep:]
+
+        # # OPTION 4: Randomly select num_slv_keep vectors
+        selected_vectors = tf.random.shuffle(combined_vectors)[:self.num_slv_keep]
         
         # Store the selected vectors back to the maintained state
         self.historic_sequence_latent_vectors_stored[class_label].assign(selected_vectors)
