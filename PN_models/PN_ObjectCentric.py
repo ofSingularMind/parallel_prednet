@@ -68,7 +68,7 @@ class PredLayer(keras.Model):
         self.upsample = layers.UpSampling2D((2, 2), name=f"Upsample_Layer{self.layer_num}")
 
         if self.training_args['object_representations']:
-            self.or_decoder = ObjectRepDecoder(training_args=self.training_args, layer_num=self.layer_num, im_height=self.im_height, im_width=self.im_width, latent_dim=32, num_slv_keep=20, num_im_in_seq=2, num_classes=self.num_classes, name=f"Object_Rep_Decoder_Layer_{self.layer_num}")
+            self.or_decoder = ObjectRepDecoder(training_args=self.training_args, layer_num=self.layer_num, im_height=self.im_height, im_width=self.im_width, latent_dim=32, output_channels=output_channels//self.num_classes, num_slv_keep=20, num_im_in_seq=2, num_classes=self.num_classes, name=f"Object_Rep_Decoder_Layer_{self.layer_num}")
 
         
         # if self.training_args['top_down_attention'] and not self.top_layer:

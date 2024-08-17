@@ -325,7 +325,7 @@ class MetaLatentVAE(keras.Model):
         return total_loss, sequence_latent_vector_reconstruction_loss, kl_loss
 
 class ObjectRepDecoder(keras.Model):
-    def __init__(self, training_args, layer_num, im_height, im_width, latent_dim, num_slv_keep, num_im_in_seq, num_classes, **kwargs):
+    def __init__(self, training_args, layer_num, im_height, im_width, latent_dim, output_channels, num_slv_keep, num_im_in_seq, num_classes, **kwargs):
         super().__init__(**kwargs)
 
         self.training_args = training_args
@@ -340,6 +340,7 @@ class ObjectRepDecoder(keras.Model):
         ###### Start ConvVAE ######
         self.num_slv_keep = num_slv_keep
         self.latent_dim = latent_dim
+        self.output_channels = output_channels
         class_sequence_input_shape = (num_im_in_seq, self.target_im_height, self.target_im_width, 1)  # binary masks: (BS, num_im_in_seq, H, W, 1)
 
         # Object Representation Decoder
@@ -375,7 +376,7 @@ class ObjectRepDecoder(keras.Model):
         x2 = layers.Conv2D(16, 3, activation="relu", padding="same", name=f"object_rep_conv2d_2_Layer_{self.layer_num}")(x1)
         x3 = layers.Conv2D(8, 3, activation="relu", padding="same", name=f"object_rep_conv2d_3_Layer_{self.layer_num}")(x2)
         x = layers.Concatenate(name=f"object_rep_concat_3_Layer_{self.layer_num}")([x3, x2, x1])
-        object_rep_decoder_outputs_unpooled = layers.Conv2D(class_sequence_input_shape[-1], 3, activation="relu", padding="same", name=f"object_rep_output_conv2d_Layer_{self.layer_num}")(x)
+        object_rep_decoder_outputs_unpooled = layers.Conv2D(output_channels, 3, activation="relu", padding="same", name=f"object_rep_output_conv2d_Layer_{self.layer_num}")(x)
         object_rep_decoder_outputs_pooled = layers.Lambda(max_pooling, name=f"object_rep_final_output_Layer_{self.layer_num}")(object_rep_decoder_outputs_unpooled)
         object_rep_decoder = keras.Model([meta_latent_inputs, latest_sequence_latent_vector_inputs, frame_sequence_inputs, label_inputs], object_rep_decoder_outputs_pooled, name=f"object_rep_decoder_Layer_{self.layer_num}")
 
