@@ -11,7 +11,7 @@ from keras import backend as K
 import keras
 import numpy as np
 import sys
-from keras.layers import Dense, GlobalAveragePooling2D, ConvLSTM2D, BatchNormalization, Dropout, Conv2D, MaxPooling2D, Flatten, Input, UpSampling2D, Concatenate, Add, Activation, Multiply
+from keras.layers import Dense, GlobalAveragePooling2D, ConvLSTM2D, BatchNormalization, Dropout, Conv2D, MaxPooling2D, Flatten, Input, UpSampling2D, Concatenate, Add, Activation, Multiply, TimeDistributed, Conv2DTranspose
 from keras.models import Model
 from keras.applications import MobileNetV2
 import matplotlib.pyplot as plt
@@ -105,65 +105,48 @@ class SequenceVAE(keras.Model):
         # Encoder
         encoder_inputs1 = keras.Input(shape=input_shape, batch_size=self.batch_size, name="seq_encoder_input")
         label_inputs1 = keras.Input(shape=(num_classes,), batch_size=self.batch_size, name="seq_encoder_label_input")
-        x = ConvLSTM2D(self.conv_lstm_channels, (3, 3), padding='same', return_sequences=False, return_state=False, name="seq_encoder_convlstm")(encoder_inputs1)
-        x = layers.Conv2D(32, 7, activation="relu", strides=2, padding="same", name="seq_encoder_conv2d_1")(x)
-        x = layers.Conv2D(32, 5, activation="relu", strides=2, padding="same", name="seq_encoder_conv2d_2")(x)
-        x = layers.Conv2D(64, 7, activation="relu", strides=2, padding="same", name="seq_encoder_conv2d_3")(x)
-        x = layers.Conv2D(64, 3, activation="relu", strides=2, padding="same", name="seq_encoder_conv2d_4")(x)
+        # x = TimeDistributed(Conv2D(32, 4, activation="relu", strides=1, padding="same", name="seq_encoder_conv2d_1"))(encoder_inputs1)
+        # x = TimeDistributed(Conv2D(32, 4, activation="relu", strides=1, padding="same", name="seq_encoder_conv2d_1"))(x)
+        x = ConvLSTM2D(self.conv_lstm_channels, 3, padding='same', return_sequences=False, return_state=False, name="seq_encoder_convlstm")(encoder_inputs1)
+        x = Conv2D(64, 5, activation=layers.LeakyReLU(alpha=0.01), strides=2, padding="same", name="seq_encoder_conv2d_1")(x)
+        x = Conv2D(64, 5, activation=layers.LeakyReLU(alpha=0.01), strides=2, padding="same", name="seq_encoder_conv2d_2")(x)
+        x = Conv2D(128, 3, activation=layers.LeakyReLU(alpha=0.01), strides=2, padding="same", name="seq_encoder_conv2d_3")(x)
+        # x = Conv2D(64, 3, activation=layers.LeakyReLU(alpha=0.01), strides=2, padding="same", name="seq_encoder_conv2d_4")(x)
+        # x = layers.Dropout(0.5, name="seq_encoder_dropout")(x)
         x = layers.Flatten(name="seq_encoder_flatten")(x)
+        # x = layers.Dense(256, activation=layers.LeakyReLU(alpha=0.01), name="seq_encoder_dense_1")(x)
+        # x = layers.Dense(128, activation=layers.LeakyReLU(alpha=0.01), name="seq_encoder_dense_2")(x)
         x = layers.Concatenate(name="seq_encoder_concat")([x, label_inputs1])
-        x = layers.Dense(128, activation="relu", name="seq_encoder_dense_1")(x)
-        x = layers.Dense(latent_dim, activation="relu", name="seq_encoder_dense_2")(x)
+        x = layers.Dense(256, activation=layers.LeakyReLU(alpha=0.01), name="seq_encoder_dense_3")(x)
+        x = layers.Dense(latent_dim, activation=layers.LeakyReLU(alpha=0.01), name="seq_encoder_dense_4")(x)
         z_mean = layers.Dense(latent_dim, name="seq_z_mean")(x)
         z_log_var = layers.Dense(latent_dim, name="seq_z_log_var")(x)
         z = KerasSampling(name="seq_encoder_sampling")([z_mean, z_log_var])
         encoder = keras.Model([encoder_inputs1, label_inputs1], [z_mean, z_log_var, z], name="seq_encoder")
 
+        def sep_seq_imgs(x):
+            unstacked = tf.unstack(x, axis=-1) # Unstack along the channel axis
+            stacked = tf.stack(unstacked, axis=1) # Stack along the sequence dimension
+            stacked = tf.expand_dims(stacked, axis=-1) # Add channel dimension
+            return stacked
+
         # Decoder
         latent_inputs2 = keras.Input(shape=(latent_dim,), batch_size=self.batch_size, name="seq_decoder_latent_input")
         label_inputs2 = keras.Input(shape=(num_classes,), batch_size=self.batch_size, name="seq_decoder_label_input")
         x = layers.Concatenate(name="seq_decoder_concat_1")([latent_inputs2, label_inputs2])
-        x = layers.Dense(8 * 8 * 128, activation="relu", name="seq_decoder_dense_1")(x)
+        # x = layers.Dense(8 * 8 * 128    , activation=layers.LeakyReLU(alpha=0.01), name="seq_decoder_dense_1")(x)
+        x = layers.Dense(8 * 8 * 128, activation=layers.LeakyReLU(alpha=0.01), name="seq_decoder_dense_2")(x)
         x = layers.Reshape((8, 8, 128), name="seq_decoder_reshape")(x)
-        x = layers.Conv2DTranspose(32, 3, activation="relu", strides=2, padding="same", name="seq_decoder_conv2d_transpose_1")(x)
-        x = layers.Conv2DTranspose(48, 3, activation="relu", strides=2, padding="same", name="seq_decoder_conv2d_transpose_2")(x)
-        x = layers.Conv2DTranspose(64, 3, activation="relu", strides=2, padding="same", name="seq_decoder_conv2d_transpose_3")(x)
-        x = layers.Conv2DTranspose(num_im_in_seq, 3, activation="sigmoid", padding="same", name="seq_decoder_conv2d_transpose_4")(x)
-        decoder_outputs = layers.Reshape((num_im_in_seq, self.im_height, self.im_width, input_shape[-1]), name="seq_decoder_output_reshape")(x)
+        x = Conv2DTranspose(128, 3, activation=layers.LeakyReLU(alpha=0.01), strides=2, padding="same", name="seq_decoder_conv2d_transpose_1")(x)
+        x = Conv2DTranspose(64, 5, activation=layers.LeakyReLU(alpha=0.01), strides=2, padding="same", name="seq_decoder_conv2d_transpose_2")(x)
+        x = Conv2DTranspose(32, 5, activation=layers.LeakyReLU(alpha=0.01), strides=2, padding="same", name="seq_decoder_conv2d_transpose_3")(x)
+        x = Conv2DTranspose(num_im_in_seq, 7, activation="sigmoid", padding="same", name="seq_decoder_conv2d_transpose_4")(x)
+        decoder_outputs = layers.Lambda(sep_seq_imgs, name=f"seq_decoder_output_reshape")(x)
+        # decoder_outputs = layers.Reshape((num_im_in_seq, self.im_height, self.im_width, input_shape[-1]), name="seq_decoder_output_reshape")(x)
         decoder = keras.Model([latent_inputs2, label_inputs2], decoder_outputs, name="seq_decoder")
-
-        # # Object Representation Decoder
-        # def unstack_and_concat(x):
-        #     # Unstack along axis 1 (sequence dimension)
-        #     unstacked = tf.unstack(x, axis=1)
-        #     # Concatenate along the channel axis (axis=-1)
-        #     concatenated = tf.concat(unstacked, axis=-1)
-        #     return concatenated
-
-        # encoder_inputs3 = keras.Input(shape=input_shape, batch_size=self.batch_size, name="object_rep_encoder_input")
-        # meta_latent_inputs3 = keras.Input(shape=(meta_latent_dim,), batch_size=self.batch_size, name="object_rep_meta_latent_input")
-        # label_inputs3 = keras.Input(shape=(num_classes,), batch_size=self.batch_size, name="object_rep_label_input")
-        # x = layers.Concatenate(name="object_rep_concat_1")([meta_latent_inputs3, label_inputs3])
-        # x = layers.Dense(8 * 8 * 128, activation="relu", name="object_rep_dense_1")(x)
-        # x = layers.Reshape((8, 8, 128), name="object_rep_reshape")(x)
-        # x = layers.Conv2DTranspose(32, 3, activation="relu", strides=2, padding="same", name="object_rep_conv2d_transpose_1")(x)
-        # x = layers.Conv2DTranspose(48, 3, activation="relu", strides=2, padding="same", name="object_rep_conv2d_transpose_2")(x)
-        # x = layers.Conv2DTranspose(64, 3, activation="relu", strides=2, padding="same", name="object_rep_conv2d_transpose_3")(x)
-        # x = layers.Conv2DTranspose(64, 3, activation="sigmoid", padding="same", name="object_rep_conv2d_transpose_4")(x)
-        # # Unstack and concatenate the encoder inputs
-        # encoder_inputs3_stacked = layers.Lambda(unstack_and_concat, name="object_rep_unstack_and_concat")(encoder_inputs3)
-        # # Concatenate the decoder output with the stacked encoder inputs
-        # x = layers.Concatenate(name="object_rep_concat_2")([x, encoder_inputs3_stacked])
-        # x1 = layers.Conv2D(64, 3, activation="relu", padding="same", name="object_rep_conv2d_1")(x)
-        # x2 = layers.Conv2D(32, 3, activation="relu", padding="same", name="object_rep_conv2d_2")(x1)
-        # x3 = layers.Conv2D(16, 3, activation="relu", padding="same", name="object_rep_conv2d_3")(x2)
-        # x = layers.Concatenate(name="object_rep_concat_3")([x3, x2, x1])
-        # object_rep_decoder_outputs = layers.Conv2D(input_shape[-1], 3, activation="relu", padding="same", name="object_rep_output_conv2d")(x)
-        # object_rep_decoder = keras.Model([meta_latent_inputs3, label_inputs3, encoder_inputs3], object_rep_decoder_outputs, name="object_rep_decoder")
 
         self.encoder = encoder
         self.decoder = decoder
-        # self.object_rep_decoder = object_rep_decoder
     
     def call(self, data, training=True):
         images, labels = data
@@ -174,7 +157,7 @@ class SequenceVAE(keras.Model):
 
     def images_to_masks(self, images):
         # images = (BS, num_im_in_seq, H, W, 3)
-        binary_masks = tf.expand_dims(tf.cast(tf.reduce_any(tf.not_equal(images, 0), axis=-1), tf.float32), axis=-1)
+        binary_masks = tf.expand_dims(tf.cast(tf.reduce_any(tf.not_equal(images, 0), axis=-1), tf.float32), axis=-1) # (BS, num_im_in_seq, H, W, 1)
         return binary_masks
 
     def encode(self, data, training=True):
@@ -195,11 +178,11 @@ class SequenceVAE(keras.Model):
                 keras.losses.binary_crossentropy(masks, recon_masks),
                 axis=(1, 2),
             )
-        ) * 64 * 64 * 1
+        )
         
         kl_loss = -0.5 * (1 + z_log_var - tf.math.square(z_mean) - tf.math.exp(z_log_var))
         kl_loss = tf.reduce_mean(tf.reduce_sum(kl_loss, axis=1))
-        total_loss = mask_reconstruction_loss + 0.25*kl_loss
+        total_loss = mask_reconstruction_loss + 5*kl_loss
         return total_loss, mask_reconstruction_loss, kl_loss
 
 class MetaLatentVAE(keras.Model):
@@ -694,8 +677,8 @@ class ObjectRepresentations(keras.Model):
         seq_kl_loss = 0
         for i in range(self.nt):
             frame = frames[:, i, :, :, :]
-            # self.update_historic_frames(frame)
-            _, _ = self(frame)
+            self.update_historic_frames(frame)
+            # _, _, _ = self(frame)
             # Process each classes' historic-frame sequence separately
             total_loss = 0
             mask_loss = 0
@@ -706,9 +689,11 @@ class ObjectRepresentations(keras.Model):
                 binary_masks, recon_masks, z_mean, z_log_var = self.sVAE([class_sequence, labels])
                 total_loss_part, mask_loss_part, kl_loss_part = self.sVAE.compute_loss(binary_masks, recon_masks, z_mean, z_log_var)
                 
-                total_loss += total_loss_part
-                mask_loss += mask_loss_part
-                kl_loss += kl_loss_part
+                occlusion_defactor = 1.0
+
+                total_loss += total_loss_part * occlusion_defactor
+                mask_loss += mask_loss_part * occlusion_defactor
+                kl_loss += kl_loss_part * occlusion_defactor
                 
             total_loss /= self.num_classes
             mask_loss /= self.num_classes
@@ -722,7 +707,7 @@ class ObjectRepresentations(keras.Model):
         seq_mask_loss /= self.nt
         seq_kl_loss /= self.nt
         self.clear_states()
-        self.seq_latent_maintainer.reset_stored_sequence_latent_vectors()
+        # self.seq_latent_maintainer.reset_stored_sequence_latent_vectors()
         
         return seq_total_loss, seq_mask_loss, seq_kl_loss
 
@@ -856,128 +841,133 @@ class ObjectRepresentations(keras.Model):
             total_loss, seq_lv_loss, mask_loss, kl_loss = self.pretrain_meta_latent_vae(data)
             return {"loss": total_loss, "L_seq_lv": seq_lv_loss, "L_mask": mask_loss, "KL": kl_loss}
 
-# ###### Pre-train Sequence or Meta-Latent VAEs ######
+###### Pre-train Sequence or Meta-Latent VAEs ######
+# Note, you need to comment out the following line in PN_models/PN_ObjectCentric.py before running the pre-training code because I can't figure out namescopes: from PN_models.ObjectRepresentations import ObjectRepresentations, ObjectRepDecoder
 
-# # TRAINING STAGES
-# # 0. Pre-train the Sequence VAE
-# # 1. (Nevermind, train with PredNet) Pre-train the Sequence Latent Maintainer
-# # 2. (Nevermind, we don't use this) Pre-train the Meta-Latent VAE
+# TRAINING STAGES
+# 0. Pre-train the Sequence VAE
+# 1. (Nevermind, there's nothing to train) Pre-train the Sequence Latent Maintainer
+# 2. (Nevermind, we don't use this) Pre-train the Meta-Latent VAE
 
-# training_args = {
-#     "decompose_images": True, 
-#     "second_stage": True,
-#     "nt": 10,
-#     "batch_size": 1,
-#     "dataset_im_shape": [64, 64],
-#     "num_classes": 4,
-#     "include_frame": False
-# }
+training_args = {
+    "decompose_images": True, 
+    "second_stage": True,
+    "nt": 10,
+    "batch_size": 1,
+    "dataset_im_shape": [64, 64],
+    "num_classes": 4,
+    "include_frame": False
+}
 
-# latent_dim=32
-# num_im_in_seq = 2
-# seq_vae_convlstm_channels = 16
+latent_dim=32
+num_im_in_seq = 2
+seq_vae_convlstm_channels = 32
 
-# seq_VAE_weights_file = f"/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/SSM/multiShape/seq_vae_weights_{latent_dim}_{num_im_in_seq}_{seq_vae_convlstm_channels}.h5"
-# seq_maintainer_weights_file = f"/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/SSM/multiShape/seq_maint_weights.h5"
-# or_decoder_weights_file = f"/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/SSM/multiShape/OCPN_wOR_OR_weights_final.h5"
+seq_VAE_weights_file = f"/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/SSM/multiShape/seq_vae_weights_{latent_dim}_{num_im_in_seq}_{seq_vae_convlstm_channels}.h5"
+seq_maintainer_weights_file = f"/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/SSM/multiShape/seq_maint_weights.h5"
+or_decoder_weights_file = f"/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/SSM/multiShape/OCPN_wOR_OR_weights_final.h5"
 
-# ### SET PRETRAINING STEP HERE ###
-# training_args["pretraining_step"] = 0
-# # if training_args["pretraining_step"] == 2: training_args["batch_size"] = 5
-# weights_files = [seq_VAE_weights_file, seq_maintainer_weights_file, or_decoder_weights_file]
-# load_weights_file = weights_files[training_args["pretraining_step"]-1] if training_args["pretraining_step"] > 0 else weights_files[training_args["pretraining_step"]]
-# save_weights_file = weights_files[training_args["pretraining_step"]]
+### SET PRETRAINING STEP HERE ###
+training_args["pretraining_step"] = 0
+# if training_args["pretraining_step"] == 2: training_args["batch_size"] = 5
+weights_files = [seq_VAE_weights_file, seq_maintainer_weights_file, or_decoder_weights_file]
+load_weights_file = weights_files[training_args["pretraining_step"]-1] if training_args["pretraining_step"] > 0 else weights_files[training_args["pretraining_step"]]
+save_weights_file = weights_files[training_args["pretraining_step"]]
 
-# nt = training_args["nt"]
-# batch_size = training_args["batch_size"]
-# im_shape = training_args["dataset_im_shape"] + [12] # 3 channels per class, 4 classes
+nt = training_args["nt"]
+batch_size = training_args["batch_size"]
+im_shape = training_args["dataset_im_shape"] + [12] # 3 channels per class, 4 classes
 
-# from data_utils import SequenceDataLoader
-# train_dataset, train_size = SequenceDataLoader(training_args, "/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/multi_gen_shape_strafing/frames/multi_gen_shape_2nd_stage_train", nt, batch_size, im_shape[0], im_shape[1], im_shape[2], True, training_args["include_frame"]).create_tf_dataset()
-# val_dataset, val_size = SequenceDataLoader(training_args, "/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/multi_gen_shape_strafing/frames/multi_gen_shape_2nd_stage_val", nt, batch_size, im_shape[0], im_shape[1], im_shape[2], True, training_args["include_frame"]).create_tf_dataset()
+from data_utils import SequenceDataLoader
+train_dataset, train_size = SequenceDataLoader(training_args, "/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/multi_gen_shape_strafing/frames/multi_gen_shape_2nd_stage_train", nt, batch_size, im_shape[0], im_shape[1], im_shape[2], True, training_args["include_frame"]).create_tf_dataset()
+val_dataset, val_size = SequenceDataLoader(training_args, "/home/evalexii/Documents/Thesis/code/parallel_prednet/data/animations/multi_gen_shape_strafing/frames/multi_gen_shape_2nd_stage_val", nt, batch_size, im_shape[0], im_shape[1], im_shape[2], True, training_args["include_frame"]).create_tf_dataset()
 
-# OR_generator = ObjectRepresentations(training_args, latent_dim=latent_dim, num_im_in_seq=num_im_in_seq, seq_vae_convlstm_channels=seq_vae_convlstm_channels, name="Object_Representations")
-# OR_generator.compile(optimizer='adam')
+OR_generator = ObjectRepresentations(training_args, latent_dim=latent_dim, num_im_in_seq=num_im_in_seq, seq_vae_convlstm_channels=seq_vae_convlstm_channels, name="Object_Representations")
+OR_generator.compile(optimizer='adam')
 
-# # "Build" the model
+# "Build" the model
+data_sample = next(iter(train_dataset))
+_ = OR_generator(data_sample[0][:,0,...])
+OR_generator.compile(optimizer='adam')
+
+# Set pre-weight-loading trainability based on pretraining step
+OR_generator.classifier.trainable = False
+if training_args["pretraining_step"] == 0:
+    OR_generator.sVAE.trainable = True
+    OR_generator.seq_latent_maintainer.trainable = False
+    # OR_generator.or_decoder.trainable = True
+elif training_args["pretraining_step"] == 1:
+    OR_generator.sVAE.trainable = True
+    OR_generator.seq_latent_maintainer.trainable = False
+    # OR_generator.or_decoder.trainable = False
+elif training_args["pretraining_step"] == 2:
+    raise ValueError("This pretraining step is not used anymore.")
+    # OR_generator.sVAE.trainable = False
+    # OR_generator.seq_latent_maintainer.trainable = True
+    # OR_generator.or_decoder.trainable = False
+OR_generator.compile(optimizer='adam')
+
+# Load model weights
+try: 
+    OR_generator.load_weights(load_weights_file, by_name=True, skip_mismatch=True) 
+    print("Successfully loaded model weights.")
+except Exception as e: 
+    print(e)
+    print("Could not load model weights. Starting from scratch but loading classifier weights.")
+
+    # Apply classifier weights
+    classifier_weights_file = "/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/SSM/multiShape/OCPN_wOR_Classifier_weights.npz"
+    trained_classifier_weights = np.load(os.path.join(classifier_weights_file), allow_pickle=True)
+    trained_classifier_weights = [trained_classifier_weights[key] for key in trained_classifier_weights.keys()]
+    OR_generator.classifier.set_weights(trained_classifier_weights)
+    print("Successfully loaded classifier weights.")
+
+# Set post-weight-loading trainability based on pretraining step
+OR_generator.classifier.trainable = False
+if training_args["pretraining_step"] == 0:
+    OR_generator.sVAE.trainable = True
+    OR_generator.seq_latent_maintainer.trainable = False
+    # OR_generator.or_decoder.trainable = True
+elif training_args["pretraining_step"] == 1:
+    OR_generator.sVAE.trainable = False
+    OR_generator.seq_latent_maintainer.trainable = True
+    # OR_generator.or_decoder.trainable = False
+elif training_args["pretraining_step"] == 2:
+    raise ValueError("This pretraining step is not used anymore.")
+    # OR_generator.sVAE.trainable = False
+    # OR_generator.seq_latent_maintainer.trainable = True
+    # OR_generator.or_decoder.trainable = True
+OR_generator.compile(optimizer='adam')
+
+# # Debug the model
+# tf.config.run_functions_eagerly(True)
 # data_sample = next(iter(train_dataset))
-# _ = OR_generator(data_sample[0][:,0,...])
-# OR_generator.compile(optimizer='adam')
+# _ = OR_generator.train_step(data_sample)
 
-# # Set pre-weight-loading trainability based on pretraining step
-# OR_generator.classifier.trainable = False
-# if training_args["pretraining_step"] == 0:
-#     OR_generator.sVAE.trainable = False
-#     OR_generator.seq_latent_maintainer.trainable = True
-#     # OR_generator.or_decoder.trainable = True
-# elif training_args["pretraining_step"] == 1:
-#     OR_generator.sVAE.trainable = True
-#     OR_generator.seq_latent_maintainer.trainable = False
-#     # OR_generator.or_decoder.trainable = False
-# elif training_args["pretraining_step"] == 2:
-#     OR_generator.sVAE.trainable = False
-#     OR_generator.seq_latent_maintainer.trainable = True
-#     # OR_generator.or_decoder.trainable = False
-# OR_generator.compile(optimizer='adam')
+# Training setup
+epochs = 4
+def lr_schedule(epoch):
+    """
+    Returns a custom learning rate that decreases as epochs progress.
+    """
+    if epoch == 0:
+        learning_rate = 0.001
+    elif epoch < (epochs // 3):
+        learning_rate = 0.0005
+    elif epoch < 2*(epochs // 3):
+        learning_rate = 0.0001
+    else:
+        learning_rate = 0.00003
+    return learning_rate
+    # return 0.00001
 
-# # Load model weights
-# try: 
-#     OR_generator.load_weights(load_weights_file, by_name=True, skip_mismatch=True) 
-#     print("Successfully loaded model weights.")
-# except Exception as e: 
-#     print("Could not load model weights. Starting from scratch but loading classifier weights.")
-#     print(e)
+# Create checkpoints
+callbacks = [LearningRateScheduler(lr_schedule)]
+callbacks.append(ModelCheckpoint(filepath=save_weights_file, monitor="val_loss", save_best_only=True, save_weights_only=True, verbose=1))
 
-#     # Apply classifier weights
-#     classifier_weights_file = "/home/evalexii/Documents/Thesis/code/parallel_prednet/model_weights/SSM/multiShape/OCPN_wOR_Classifier_weights.npz"
-#     trained_classifier_weights = np.load(os.path.join(classifier_weights_file), allow_pickle=True)
-#     trained_classifier_weights = [trained_classifier_weights[key] for key in trained_classifier_weights.keys()]
-#     OR_generator.classifier.set_weights(trained_classifier_weights)
-#     print("Successfully loaded classifier weights.")
+# Train sequence VAE
+OR_generator.fit(train_dataset, epochs=epochs, validation_data=val_dataset, steps_per_epoch=500, validation_steps=50, callbacks=callbacks)
 
-# # Set post-weight-loading trainability based on pretraining step
-# OR_generator.classifier.trainable = False
-# if training_args["pretraining_step"] == 0:
-#     OR_generator.sVAE.trainable = False
-#     OR_generator.seq_latent_maintainer.trainable = True
-#     # OR_generator.or_decoder.trainable = True
-# elif training_args["pretraining_step"] == 1:
-#     OR_generator.sVAE.trainable = False
-#     OR_generator.seq_latent_maintainer.trainable = True
-#     # OR_generator.or_decoder.trainable = False
-# elif training_args["pretraining_step"] == 2:
-#     OR_generator.sVAE.trainable = False
-#     OR_generator.seq_latent_maintainer.trainable = True
-#     # OR_generator.or_decoder.trainable = True
-# OR_generator.compile(optimizer='adam')
-
-# # # Debug the model
-# # tf.config.run_functions_eagerly(True)
-# # data_sample = next(iter(train_dataset))
-# # _ = OR_generator.train_step(data_sample)
-
-# # Training setup
-# epochs = 50
-# def lr_schedule(epoch):
-#     """
-#     Returns a custom learning rate that decreases as epochs progress.
-#     """
-#     # if epoch < (epochs // 3):
-#     #     learning_rate = 0.0005
-#     # elif epoch < 2*(epochs // 3):
-#     #     learning_rate = 0.0001
-#     # else:
-#     #     learning_rate = 0.00005
-#     # return learning_rate
-#     return 0.00001
-
-# # Create checkpoints
-# callbacks = [LearningRateScheduler(lr_schedule)]
-# callbacks.append(ModelCheckpoint(filepath=save_weights_file, monitor="val_loss", save_best_only=True, save_weights_only=True, verbose=1))
-
-# # Train sequence VAE
-# OR_generator.fit(train_dataset, epochs=epochs, validation_data=val_dataset, steps_per_epoch=3, validation_steps=1, callbacks=callbacks)
-
-# ### Scoreboard ###
-# # 31-2-16: val_loss = 19019, speed = 230ms/step
-# # 64-2-16: val_loss = 19274, speed = 231ms/step
+### Scoreboard ###
+# 31-2-16: val_loss = 19019, speed = 230ms/step
+# 64-2-16: val_loss = 19274, speed = 231ms/step
