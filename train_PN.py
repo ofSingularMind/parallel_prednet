@@ -326,8 +326,8 @@ if __name__ == "__main__":
 
     # Tuning args
     parser.add_argument("--nt", type=int, default=10, help="sequence length")
-    parser.add_argument("--sequences_per_epoch_train", type=int, default=1000, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
-    parser.add_argument("--sequences_per_epoch_val", type=int, default=50, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_train", type=int, default=11000, help="number of sequences per epoch for training, otherwise default to dataset size / batch size if None")
+    parser.add_argument("--sequences_per_epoch_val", type=int, default=200, help="number of sequences per epoch for validation, otherwise default to validation size / batch size if None")
     parser.add_argument("--batch_size", type=int, default=1, help="batch size")
     parser.add_argument("--nb_epoch", type=int, default=9, help="number of epochs")
     parser.add_argument("--second_stage", type=bool, default=False, help="utilize 2nd stage training data even for first iteration through dataset")
@@ -348,7 +348,7 @@ if __name__ == "__main__":
     parser.add_argument("--restart_training", type=bool, default=True, help="whether or not to delete weights and restart")
     parser.add_argument("--reserialize_dataset", type=bool, default=True, help="reserialize dataset")
     parser.add_argument("--output_mode", type=str, default="Error", help="Error, Prediction, or Error_Images_and_Prediction. Only trains on Error.")
-    parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-3, 5e-4, 5e-4, 5e-4, 1e-4], help="learning rates for each stage of training")
+    parser.add_argument("--learning_rates", nargs="+", type=int, default=[1e-3, 5e-4, 1e-3, 5e-4, 1e-4], help="learning rates for each stage of training")
     parser.add_argument("--pretrain_latent_lpn", type=bool, default=False, help="this will zero out the prediction errors, and focus on the latent lstm loss")
     parser.add_argument("--load_outside_pretrained_classifier_weights", type=bool, default=True, help="load pretrained weights")
     parser.add_argument("--load_outside_pretrained_vae_weights", type=bool, default=False, help="load pretrained weights")
@@ -360,8 +360,8 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", type=str, default="SSM", help="SSM - Simple Shape Motion dataset")
     parser.add_argument("--data_subset", type=str, default="multiShape", help="provide descriptive name for results and weights")
     parser.add_argument("--dataset_size", type=int, default=100000, help="total number of images in data dir")
-    parser.add_argument("--num_iterations", type=int, default=8, help="number of iterations through the dataset")
-    parser.add_argument("--restart_iteration", type=int, default=1, help="Start from this iteration (# of total_#) 0 is start. 1+ skips 1st stage")
+    parser.add_argument("--num_iterations", type=int, default=2, help="number of iterations through the dataset")
+    parser.add_argument("--restart_iteration", type=int, default=2, help="Start from this iteration (# of total_#) 0 is start. 1+ skips 1st stage")
     parser.add_argument("--dataset_im_shape", nargs="+", type=int, default=[64, 64], help="output channels")
     parser.add_argument("--num_classes", type=int, default=4, help="number of classes for object-centric model")
     """
